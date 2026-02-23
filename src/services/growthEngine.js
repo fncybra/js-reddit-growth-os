@@ -37,7 +37,7 @@ export const SettingsService = {
     }
 };
 
-import OpenAI from 'openai';
+import { GoogleGenAI } from '@google/genai';
 
 export const TitleGeneratorService = {
     // Scrapes top 50 titles from a subreddit and regenerates a high-quality title conforming to rules
@@ -66,14 +66,11 @@ export const TitleGeneratorService = {
                 ];
             }
 
-            // Call OpenAI if the key is available
+            // Call Gemini if the key is available
             const settings = await SettingsService.getSettings();
-            if (settings.openaiApiKey) {
+            if (settings.geminiApiKey) {
                 try {
-                    const openai = new OpenAI({
-                        apiKey: settings.openaiApiKey,
-                        dangerouslyAllowBrowser: true // Running explicitly in the browser client for this MVP
-                    });
+                    const ai = new GoogleGenAI({ apiKey: settings.geminiApiKey });
 
                     const prompt = `
 You are a senior behavioral psychologist and a shadowban avoidance expert acting natively on Reddit.
@@ -98,16 +95,15 @@ SYSTEM INTELLIGENCE RULES:
 Output ONLY the single generated title as plain text without quotes. Break the rules of grammar if it makes you sound more like a genuine, casual poster on a late-night phone.
 `;
 
-
-                    const completion = await openai.chat.completions.create({
-                        messages: [{ role: "system", content: prompt }],
-                        model: "gpt-4o-mini",
+                    const response = await ai.models.generateContent({
+                        model: 'gemini-2.5-flash',
+                        contents: prompt,
                     });
 
-                    return completion.choices[0].message.content.trim().replace(/^"/, '').replace(/"$/, '');
+                    return response.text().trim().replace(/^"/, '').replace(/"$/, '');
 
                 } catch (err) {
-                    console.error("OpenAI Generation Error:", err);
+                    console.error("Gemini Generation Error:", err);
                     // Fallthrough to mock logic if it fails
                 }
             }
