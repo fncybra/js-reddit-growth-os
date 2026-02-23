@@ -3,7 +3,7 @@ import { db } from '../db/db';
 import { AnalyticsEngine } from '../services/growthEngine';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Link } from 'react-router-dom';
-import { TrendingUp, Users, Smartphone, Activity } from 'lucide-react';
+import { TrendingUp, Users, Smartphone, Activity, Heart, ShieldAlert } from 'lucide-react';
 
 export function Dashboard() {
     const [metrics, setMetrics] = useState(null);
@@ -131,6 +131,23 @@ export function Dashboard() {
                         <span className="metric-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><Activity size={16} /> Agency Removal Rate</span>
                         <span className="metric-value" style={isHighRemoval ? { color: 'var(--status-danger)' } : {}}>
                             {agencyRemovalRate}%
+                        </span>
+                    </div>
+
+                    <div className="card metric-card">
+                        <span className="metric-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><Heart size={16} /> Agency Health</span>
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                            <span className="metric-value">{leaderboard.reduce((acc, m) => acc + (m.metrics.accountHealth?.activeCount || 0), 0)}</span>
+                            <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                                Accounts Healthy
+                            </span>
+                        </div>
+                    </div>
+
+                    <div className="card metric-card">
+                        <span className="metric-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><ShieldAlert size={16} /> Suspended</span>
+                        <span className="metric-value" style={{ color: leaderboard.some(m => m.metrics.accountHealth?.suspendedCount > 0) ? 'var(--status-danger)' : 'inherit' }}>
+                            {leaderboard.reduce((acc, m) => acc + (m.metrics.accountHealth?.suspendedCount || 0), 0)}
                         </span>
                     </div>
                 </div>

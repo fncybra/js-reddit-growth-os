@@ -1,12 +1,16 @@
 import React, { useState } from 'react';
 import { db } from '../db/db';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { AccountSyncService } from '../services/growthEngine';
+import { Smartphone, RefreshCw, AlertTriangle } from 'lucide-react';
 
 export function Accounts() {
     const models = useLiveQuery(() => db.models.toArray());
     const accounts = useLiveQuery(() => db.accounts.toArray());
 
     const [selectedModelId, setSelectedModelId] = useState('');
+
+    const [syncing, setSyncing] = useState(false);
 
     React.useEffect(() => {
         if (models && models.length > 0 && !selectedModelId) {
@@ -17,6 +21,12 @@ export function Accounts() {
     const [formData, setFormData] = useState({
         handle: '', dailyCap: 10, status: 'active', cqsStatus: 'High', removalRate: 0, notes: ''
     });
+
+    async function handleRefreshAll() {
+        setSyncing(true);
+        await AccountSyncService.syncAllAccounts();
+        setSyncing(false);
+    }
 
     if (!models || models.length === 0) {
         return (
@@ -45,9 +55,18 @@ export function Accounts() {
                 <div>
                     <h1 className="page-title">Agency Reddit Accounts</h1>
                     <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '4px' }}>
-                        Manage all operational Reddit accounts across your agency.
+                        Manage health and karma for all operational handles.
                     </div>
                 </div>
+                <button
+                    className="btn btn-outline"
+                    onClick={handleRefreshAll}
+                    disabled={syncing}
+                    style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                >
+                    <RefreshCw size={16} className={syncing ? 'spin' : ''} />
+                    {syncing ? 'Refreshing Health...' : 'Refresh All Health Data'}
+                </button>
             </header>
             <div className="page-content">
                 <div className="grid-cards mb-6" style={{ marginBottom: '32px' }}>
@@ -118,10 +137,11 @@ export function Accounts() {
                                     <tr>
                                         <th>Handle</th>
                                         <th>Assigned Model</th>
+                                        <th>Karma</th>
+                                        <th>Account Health</th>
                                         <th>Status</th>
                                         <th>CQS</th>
-                                        <th>Daily Cap</th>
-                                        <th>Removal Rate</th>
+                                        <th>Last Sync</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -135,14 +155,27 @@ export function Accounts() {
                                                     </a>
                                                 </td>
                                                 <td>{model ? model.name : 'Unassigned'}</td>
+                                                <td style={{ fontWeight: '600' }}>
+                                                    {(acc.totalKarma || 0).toLocaleString()}
+                                                </td>
+                                                <td>
+                                                    {acc.isSuspended ? (
+                                                        <span style={{ color: 'var(--status-danger)', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                                                            <AlertTriangle size={14} /> SUSPENDED
+                                                        </span>
+                                                    ) : (
+                                                        <span style={{ color: 'var(--status-success)', fontSize: '0.8rem', fontWeight: 'bold' }}>✅ HEALTHY</span>
+                                                    )}
+                                                </td>
                                                 <td>
                                                     <span className={`badge ${acc.status === 'active' ? 'badge-success' : acc.status === 'warming' ? 'badge-warning' : 'badge-danger'}`}>
                                                         {acc.status}
                                                     </span>
                                                 </td>
                                                 <td>{acc.cqsStatus}</td>
-                                                <td>{acc.dailyCap}</td>
-                                                <td style={{ color: acc.removalRate > 20 ? 'var(--status-danger)' : 'inherit' }}>{acc.removalRate}%</td>
+                                                <td style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                                                    {acc.lastSyncDate ? new Date(acc.lastSyncDate).toLocaleDateString() : 'Never'}
+                                                </td>
                                             </tr>
                                         );
                                     })}

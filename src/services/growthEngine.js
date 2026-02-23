@@ -432,17 +432,12 @@ export const DailyPlanGenerator = {
             }
         }
 
-        if (newTasks.length > 0) {
+        if (newTasks.length > 0) { // Finalize
             await db.tasks.bulkAdd(newTasks);
-            console.log(`DailyPlanGenerator: Added ${newTasks.length} new tasks for model ${modelId}`);
+            console.log(`DailyPlanGenerator: Generated ${newTasks.length} tasks for model ${modelId}`);
 
-            // Cloud Sync Push
-            const { getSupabaseClient } = await import('../db/supabase.js');
-            const supabase = await getSupabaseClient();
-            if (supabase) {
-                console.log("Pushing new daily plan to cloud...");
-                await supabase.from('tasks').upsert(newTasks);
-            }
+            // Auto-push to cloud so others (VAs) see the new plan immediately
+            await CloudSyncService.autoPush();
         }
 
         return await db.tasks.where('modelId').equals(modelId).filter(t => t.date === todayStr).toArray();
@@ -481,7 +476,26 @@ export const AnalyticsEngine = {
             provenSubs,
             testingSubs,
             tasksCompleted: performances.length,
-            tasksTotal: allTasks.length
+            tasksTotal: allTasks.length,
+            accountHealth: await this.getAccountMetrics(modelId)
+        };
+    },
+
+    async getAccountMetrics(modelId) {
+        const accounts = await db.accounts.where('modelId').equals(modelId).toArray();
+        let totalKarma = 0;
+        let suspendedCount = 0;
+
+        accounts.forEach(acc => {
+            totalKarma += acc.totalKarma || 0;
+            if (acc.isSuspended) suspendedCount++;
+        });
+
+        return {
+            totalKarma,
+            suspendedCount,
+            activeCount: accounts.filter(a => a.status === 'active').length,
+            totalAccounts: accounts.length
         };
     },
 
@@ -541,23 +555,20 @@ export const CloudSyncService = {
         const supabase = await getSupabaseClient();
         if (!supabase) return;
 
-        const tables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances'];
+        const tables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'settings'];
 
         for (const table of tables) {
             const localData = await db[table].toArray();
             if (localData.length === 0) continue;
 
-            // Remove local auto-increment IDs for cloud insert if they are not BIGINT compatible or if we want cloud to handle it
-            // Actually, keep them if we want to maintain relationships
             const cleanData = localData.map(item => {
                 const { ...rest } = item;
-                // If it's assets, we need to handle the FileBlob specifically (Supabase doesn't store blobs in table, usually Storage)
-                if (table === 'assets' && rest.fileBlob) {
-                    delete rest.fileBlob; // Skip blobs for now, or handle later
-                }
+                if (table === 'assets' && rest.fileBlob) delete rest.fileBlob;
+                if (table === 'settings' && (rest.key === 'supabaseUrl' || rest.key === 'supabaseAnonKey')) return null;
                 return rest;
-            });
+            }).filter(Boolean);
 
+            if (cleanData.length === 0) continue;
             const { error } = await supabase.from(table).upsert(cleanData);
             if (error) console.error(`Sync Error (${table}):`, error.message);
         }
@@ -582,6 +593,46 @@ export const CloudSyncService = {
                 await db[table].bulkPut(data);
             }
         }
+    },
+
+    async autoPush() {
+        const settings = await SettingsService.getSettings();
+        if (settings.supabaseUrl && settings.supabaseAnonKey) {
+            console.log("CloudSync: Auto-pushing updates...");
+            this.pushLocalToCloud().catch(null);
+        }
+    }
+};
+
+export const AccountSyncService = {
+    async syncAccountHealth(accountId) {
+        const account = await db.accounts.get(accountId);
+        if (!account || !account.handle) return;
+
+        try {
+            const proxyUrl = await SettingsService.getProxyUrl();
+            const res = await fetch(`${proxyUrl}/api/scrape/user/stats/${account.handle}`);
+            if (!res.ok) throw new Error("Stats sync failed");
+            const data = await res.json();
+
+            await db.accounts.update(accountId, {
+                totalKarma: data.totalKarma,
+                linkKarma: data.linkKarma,
+                commentKarma: data.commentKarma,
+                createdUtc: data.created,
+                isSuspended: data.isSuspended,
+                lastSyncDate: new Date().toISOString()
+            });
+            return data;
+        } catch (err) {
+            console.error(`Account sync fail (${account.handle}):`, err);
+        }
+    },
+
+    async syncAllAccounts() {
+        const accounts = await db.accounts.toArray();
+        for (const acc of accounts) await this.syncAccountHealth(acc.id);
+        await CloudSyncService.autoPush();
     }
 };
 
@@ -617,6 +668,8 @@ export const PerformanceSyncService = {
             // After syncing one post, we should re-evaluate the subreddit it belongs to
             await SubredditLifecycleService.evaluateSubreddits(task.modelId);
 
+            await CloudSyncService.autoPush();
+
             return data;
         } catch (err) {
             console.error("Performance Sync Error:", err);
@@ -636,6 +689,8 @@ export const PerformanceSyncService = {
             // Throttle slightly to be nice to proxy/reddit
             await new Promise(r => setTimeout(r, 1000));
         }
+
+        await CloudSyncService.autoPush();
 
         return pendingTasks.length;
     }

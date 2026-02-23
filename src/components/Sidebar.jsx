@@ -9,8 +9,13 @@ import {
   CheckSquare,
   Settings,
   Activity,
-  Telescope
+  Telescope,
+  Cloud,
+  CloudOff
 } from 'lucide-react';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '../db/db';
+import { SettingsService } from '../services/growthEngine';
 
 const navItems = [
   { path: '/', label: 'Global Dashboard', icon: BarChart2 },
@@ -47,6 +52,22 @@ export function Sidebar() {
           );
         })}
       </nav>
+
+      <div style={{ marginTop: 'auto', padding: '16px', borderTop: '1px solid var(--border-color)', fontSize: '0.75rem' }}>
+        <CloudSyncStatus />
+      </div>
+    </div>
+  );
+}
+
+function CloudSyncStatus() {
+  const settings = useLiveQuery(() => db.settings.toArray());
+  const isSynced = settings?.some(s => s.key === 'supabaseUrl' && s.value && s.value.length > 0);
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: isSynced ? 'var(--status-success)' : 'var(--text-secondary)' }}>
+      {isSynced ? <Cloud size={14} /> : <CloudOff size={14} />}
+      <span>{isSynced ? "Agency Cloud: Connected" : "Cloud Sync: Offline"}</span>
     </div>
   );
 }

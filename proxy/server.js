@@ -45,6 +45,35 @@ if (SERVICE_ACCOUNT_JSON || fs.existsSync(KEY_FILE_PATH)) {
 
 
 // Proxy endpoint for Reddit User Scraping
+app.get('/api/scrape/user/stats/:username', async (req, res) => {
+    try {
+        const { username } = req.params;
+        const cleanName = username.replace(/^u\//i, '');
+        const url = `https://old.reddit.com/user/${cleanName}/about.json`;
+
+        const response = await axios.get(url, {
+            headers: {
+                'User-Agent': getRandomUserAgent(),
+                'Accept': 'application/json'
+            }
+        });
+
+        const data = response.data.data;
+        res.json({
+            name: data.name,
+            totalKarma: data.total_karma,
+            linkKarma: data.link_karma,
+            commentKarma: data.comment_karma,
+            created: data.created_utc,
+            isGold: data.is_gold,
+            isSuspended: data.is_suspended || false
+        });
+    } catch (error) {
+        console.error("Account Stats Scrape Error:", error.message);
+        res.status(500).json({ error: "Failed to fetch account stats" });
+    }
+});
+
 app.get('/api/scrape/user/:username', async (req, res) => {
     try {
         const { username } = req.params;
