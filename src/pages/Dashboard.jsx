@@ -3,7 +3,7 @@ import { db } from '../db/db';
 import { AnalyticsEngine } from '../services/growthEngine';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Link } from 'react-router-dom';
-import { TrendingUp, Users, Smartphone, Activity, Heart, ShieldAlert, RefreshCw, Cloud, RefreshCcw } from 'lucide-react';
+import { TrendingUp, Users, Smartphone, Activity, Heart, ShieldAlert, RefreshCw, Cloud, RefreshCcw, CheckCircle, AlertCircle, Zap } from 'lucide-react';
 
 export function Dashboard() {
     const [metrics, setMetrics] = useState(null);
@@ -98,6 +98,22 @@ export function Dashboard() {
                     <h1 className="page-title">Global Agency Dashboard</h1>
                     <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '4px' }}>
                         Overview of all models and operations
+                    </div>
+                </div>
+
+                {/* Agency Execution Progress */}
+                <div style={{ minWidth: '250px', textAlign: 'right' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '0.85rem' }}>
+                        <span style={{ fontWeight: '600' }}>Today's Execution</span>
+                        <span style={{ color: 'var(--text-secondary)' }}>{metrics.executionToday.completed} / {metrics.executionToday.total} posts</span>
+                    </div>
+                    <div style={{ width: '100%', height: '8px', backgroundColor: 'var(--surface-color)', borderRadius: '4px', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
+                        <div style={{
+                            width: `${metrics.executionToday.percent}%`,
+                            height: '100%',
+                            backgroundColor: metrics.executionToday.percent === 100 ? 'var(--status-success)' : 'var(--primary-color)',
+                            transition: 'width 0.5s ease'
+                        }} />
                     </div>
                 </div>
             </header>
@@ -232,9 +248,10 @@ export function Dashboard() {
                                 <tr>
                                     <th>Rank</th>
                                     <th>Model Name</th>
+                                    <th>Health</th>
                                     <th>Total Views</th>
                                     <th>Weekly Target</th>
-                                    <th>Avg Post View</th>
+                                    <th>Avg View/Post</th>
                                     <th>Action</th>
                                 </tr>
                             </thead>
@@ -250,6 +267,9 @@ export function Dashboard() {
                                                 #{idx + 1}
                                             </td>
                                             <td style={{ fontWeight: '600' }}>{model.name}</td>
+                                            <td>
+                                                <ModelStatusBadge metrics={m} />
+                                            </td>
                                             <td style={{ fontWeight: 'bold' }}>{m.totalViews.toLocaleString()}</td>
                                             <td>
                                                 {target > 0 ? (
@@ -279,4 +299,16 @@ export function Dashboard() {
             </div>
         </>
     );
+}
+
+function ModelStatusBadge({ metrics }) {
+    const isRisky = metrics.removalRatePct > 25;
+    const isHealthy = metrics.removalRatePct < 15 && metrics.totalViews > 0;
+    const lowAssets = metrics.tasksTotal < 5;
+
+    if (isRisky) return <span className="badge badge-danger" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><AlertCircle size={12} /> Risky</span>;
+    if (lowAssets) return <span className="badge badge-warning" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Zap size={12} /> Low Feed</span>;
+    if (isHealthy) return <span className="badge badge-success" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><CheckCircle size={12} /> Healthy</span>;
+
+    return <span className="badge badge-info">Stable</span>;
 }
