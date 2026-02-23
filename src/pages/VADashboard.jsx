@@ -231,8 +231,14 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
                 if (isHeic) {
                     alert("Converting iPhone HEIC photo to JPEG for Reddit... please wait a few seconds.");
                     const heic2any = (await import('heic2any')).default;
+                    const { SettingsService } = await import('../services/growthEngine');
+                    const proxyUrl = await SettingsService.getProxyUrl();
 
-                    const response = await fetch(asset.originalUrl);
+                    // Route through proxy to bypass Google Drive's strict CORS policy on direct fetch
+                    const fetchUrl = asset.driveFileId ? `${proxyUrl}/api/drive/download/${asset.driveFileId}` : asset.originalUrl;
+
+                    const response = await fetch(fetchUrl);
+                    if (!response.ok) throw new Error("Network request failed");
                     const blob = await response.blob();
 
                     const jpegBlob = await heic2any({
