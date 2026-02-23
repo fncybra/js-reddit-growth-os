@@ -21,6 +21,7 @@ export function Library() {
     });
 
     const [syncing, setSyncing] = useState(false);
+    const [uploading, setUploading] = useState(false);
 
     async function syncGoogleDrive() {
         if (!selectedModelId) return alert("Select a model first.");
