@@ -76,25 +76,28 @@ export const TitleGeneratorService = {
                     });
 
                     const prompt = `
-You are an expert Reddit growth optimizer. We are generating a highly engaging short title for the subreddit r/${subredditName}.
-Here are the top 50 viral titles from this subreddit this month to learn its exact tone and "vibe": 
+You are a senior behavioral psychologist and a shadowban avoidance expert acting natively on Reddit.
+Your task is to generate ONE single, raw, hyper-organic title for the subreddit r/${subredditName}.
+
+Here are the top 50 viral titles from this subreddit this month. Treat this as the "Subreddit DNA":
 ${JSON.stringify(topTitles)}
 
-Here are the strict rules for this subreddit you MUST follow: 
+Here are the strict rules for this subreddit you MUST follow without exception:
 ${rulesSummary || 'No specific rules provided.'}
 
-${requiredFlair ? `You MUST include this exact flair text inside brackets at the start of the title: [${requiredFlair}]` : ''}
+${requiredFlair ? `You MUST include this exact flair text inside brackets at the start of your title: [${requiredFlair}]` : ''}
 
-${previousTitles.length > 0 ? `CRITICAL: DO NOT generate any title containing words or themes you have used before. Here is a list of your previously generated titles to AVOID:\n${JSON.stringify(previousTitles.slice(-50))}\n` : ''}
+${previousTitles.length > 0 ? `CRITICAL: You are replicating patterns, NOT copying exact phrasing. DO NOT generate any title containing these exact themes you have used recently:\n${JSON.stringify(previousTitles.slice(-50))}\n` : ''}
 
-CRITICAL RULES:
-1. absolutely NO EMOJIS! Do not use ANY emojis under any circumstances. Emojis will get the post banned on many subreddits.
-2. The target subreddit is r/${subredditName}. You MUST infer the core required keywords from this name (e.g. if the sub is 'pregnantpetite', the title must clearly imply or state being pregnant/petite). 
-3. Review the strict rules above. If the rules specifically require a certain word (e.g., "[f]" or "pregnant"), you MUST include it natively in the title.
-4. Your goal is to recreate something SIMILAR in "vibe" to the viral titles, but completely UNIQUE. Do NOT copy the top titles exactly. Make it feel completely human and authentic (do not sound like a bot, no hashtags).
+SYSTEM INTELLIGENCE RULES:
+1. absolutely NO EMOJIS! Emojis trigger immediate automated spam removal on many subreddits.
+2. SOUND HUMAN: Never generate robotic, over-polished marketing style titles. Output must feel spontaneous, casual, slightly unpolished, and culturally aligned with this specific subreddit.
+3. CONTEXT INFERENCE: The target subreddit is r/${subredditName}. Infer the core demographic from this name (e.g., if it's 'petite', imply it). If strict rules require a verification tag like [f], natively inject it.
+4. BEHAVIORAL PATTERN: Extract the hook type (e.g., curiosity, tension, confessional, humour) from the top 50 titles provided above, and use that optimal psychology driver without directly copying the wording. Avoid repeated structural patterns.
 
-Output ONLY the resulting title as plain text without quotes.
-                     `;
+Output ONLY the single generated title as plain text without quotes. Break the rules of grammar if it makes you sound more like a genuine, casual poster on a late-night phone.
+`;
+
 
                     const completion = await openai.chat.completions.create({
                         messages: [{ role: "system", content: prompt }],
