@@ -239,20 +239,32 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
                     if (!response.ok) throw new Error("Network request failed");
                     const blob = await response.blob();
 
-                    const jpegBlob = await heic2any({
-                        blob,
-                        toType: "image/jpeg",
-                        quality: 0.9
-                    });
+                    try {
+                        const jpegBlob = await heic2any({
+                            blob,
+                            toType: "image/jpeg",
+                            quality: 0.9
+                        });
 
-                    const newFileName = (asset.fileName || 'converted').replace(/\.hei[cf]$/i, '.jpg');
+                        const newFileName = (asset.fileName || 'converted').replace(/\.hei[cf]$/i, '.jpg');
 
-                    const a = document.createElement('a');
-                    a.href = URL.createObjectURL(jpegBlob);
-                    a.download = newFileName;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
+                        const a = document.createElement('a');
+                        a.href = URL.createObjectURL(jpegBlob);
+                        a.download = newFileName;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                    } catch (conversionErr) {
+                        console.warn("Client HEIC conversion failed, falling back to raw download:", conversionErr);
+                        alert("Auto-conversion to JPEG unsupported for this file codec. Downloading the raw image instead.");
+
+                        const a = document.createElement('a');
+                        a.href = URL.createObjectURL(blob);
+                        a.download = asset.fileName || 'media_raw.heic';
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                    }
 
                 } else {
                     // Standard Download (JPEG, PNG, MP4, etc)
