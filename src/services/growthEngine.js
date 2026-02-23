@@ -115,14 +115,11 @@ Output ONLY the single generated title as plain text. Do not use quotes around t
             }
 
 
-            // Mock AI Modification (Fallback if no API key or API fails)
+            // Fallback if no API key or API fails
             const baseTitle = topTitles[Math.floor(Math.random() * topTitles.length)];
-            const prefixes = ["", "Honestly, ", "Not gonna lie, ", "OC - ", "Just wanted to share: "];
-            const suffixes = ["...", " <3", " x", " :)", ""];
 
-            let generatedTitle = prefixes[Math.floor(Math.random() * prefixes.length)]
-                + baseTitle
-                + suffixes[Math.floor(Math.random() * suffixes.length)];
+            // Just use a top title directly as a fallback if the AI fails
+            let generatedTitle = baseTitle || "Generated Post";
 
             // Ensure flair is respected if we generated it
             if (requiredFlair && !generatedTitle.includes(requiredFlair)) {
