@@ -13,8 +13,8 @@ export function Settings() {
             let modified = false;
             const updates = {};
 
-            if (!data.openaiApiKey) {
-                updates.openaiApiKey = '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';
+            if (!data.geminiApiKey) {
+                updates.geminiApiKey = '';
                 modified = true;
             }
             if (!data.proxyUrl || data.proxyUrl === 'http://localhost:3001') {
@@ -57,7 +57,7 @@ export function Settings() {
         for (const [key, value] of Object.entries(settings)) {
             // Handle mixing types: vaPin stays string, others are numbers, api key is string
             let finalValue = value;
-            const textKeys = ['vaPin', 'openaiApiKey', 'supabaseUrl', 'supabaseAnonKey', 'proxyUrl'];
+            const textKeys = ['vaPin', 'geminiApiKey', 'supabaseUrl', 'supabaseAnonKey', 'proxyUrl'];
             if (!textKeys.includes(key) && value !== '') {
                 finalValue = Number(value);
             }
@@ -118,15 +118,15 @@ export function Settings() {
                     <div className="card">
                         <h2 style={{ fontSize: '1.2rem', marginBottom: '20px' }}>AI Brain Integration</h2>
                         <div className="input-group">
-                            <label className="input-label">OpenAI / OpenRouter API Key</label>
+                            <label className="input-label">Gemini API Key</label>
                             <input
                                 type="password"
                                 className="input-field"
-                                placeholder="sk-..."
-                                value={settings.openaiApiKey || ''}
-                                onChange={e => setSettings({ ...settings, openaiApiKey: e.target.value })}
+                                placeholder="AIza..."
+                                value={settings.geminiApiKey || ''}
+                                onChange={e => setSettings({ ...settings, geminiApiKey: e.target.value })}
                             />
-                            <small style={{ color: 'var(--text-secondary)' }}>Used for the AI Viral Title Engine. Supports standard OpenAI keys.</small>
+                            <small style={{ color: 'var(--text-secondary)' }}>Used for the AI Viral Title Engine. Supports standard Google Gemini API keys.</small>
                         </div>
                         <button onClick={handleSave} className="btn btn-outline" style={{ width: '100%', marginTop: '16px' }}>Save AI Key</button>
                     </div>
