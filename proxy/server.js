@@ -234,6 +234,25 @@ app.get('/api/drive/list/:folderId', async (req, res) => {
     }
 });
 
+// Google Drive: Download a file (for HEIC conversions on frontend)
+app.get('/api/drive/download/:fileId', async (req, res) => {
+    if (!drive) return res.status(503).json({ error: "Google Drive not configured" });
+
+    try {
+        const { fileId } = req.params;
+        const response = await drive.files.get(
+            { fileId: fileId, alt: 'media' },
+            { responseType: 'stream' }
+        );
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Content-Disposition', `attachment; filename="${fileId}"`);
+        response.data.pipe(res);
+    } catch (error) {
+        console.error("Drive Download Error:", error.message);
+        res.status(500).json({ error: "Failed to download Drive file" });
+    }
+});
+
 // Google Drive: Move file to "Used" folder
 app.post('/api/drive/move', async (req, res) => {
     if (!drive) return res.status(503).json({ error: "Google Drive not configured" });
