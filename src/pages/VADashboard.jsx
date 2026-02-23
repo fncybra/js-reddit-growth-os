@@ -11,6 +11,7 @@ export function VADashboard() {
     const [syncing, setSyncing] = useState(false);
     const [cooldownUntil, setCooldownUntil] = useState(0);
     const [timeLeft, setTimeLeft] = useState(0);
+    const [authorizedModels, setAuthorizedModels] = useState([]);
 
     const models = useLiveQuery(() => db.models.toArray());
     const postInterval = useLiveQuery(async () => {
@@ -60,10 +61,10 @@ export function VADashboard() {
     }, [authenticated]);
 
     useEffect(() => {
-        if (models && models.length > 0 && !selectedModelId) {
-            setSelectedModelId(models[0].id);
+        if (authorizedModels && authorizedModels.length > 0 && !selectedModelId) {
+            setSelectedModelId(authorizedModels[0].id);
         }
-    }, [models, selectedModelId]);
+    }, [authorizedModels, selectedModelId]);
 
     const activeModelId = selectedModelId ? Number(selectedModelId) : null;
 
@@ -74,11 +75,27 @@ export function VADashboard() {
     );
 
     function handleAuth() {
+        if (!models) return;
+
+        // 1. Master/Manager PIN (Global Setting)
         if (pinInput === vaPin) {
+            setAuthorizedModels(models);
+            if (models.length > 0) setSelectedModelId(models[0].id);
+            setAuthenticated(true);
+            setError('');
+            return;
+        }
+
+        // 2. VA-Specific PIN (Assigned to one or more Models)
+        const matchingModels = models.filter(m => m.vaPin && m.vaPin.trim() === pinInput);
+
+        if (matchingModels.length > 0) {
+            setAuthorizedModels(matchingModels);
+            setSelectedModelId(matchingModels[0].id);
             setAuthenticated(true);
             setError('');
         } else {
-            setError('Invalid PIN');
+            setError('Invalid access PIN');
         }
     }
 
@@ -136,10 +153,10 @@ export function VADashboard() {
                     {syncing && <span style={{ color: '#fbbf24', fontSize: '0.8rem' }}>☁️ Syncing...</span>}
                     <select
                         style={{ padding: '8px', backgroundColor: '#2d313a', color: '#fff', border: 'none', borderRadius: '4px', outline: 'none' }}
-                        value={selectedModelId}
+                        value={selectedModelId || ''}
                         onChange={e => setSelectedModelId(e.target.value)}
                     >
-                        {models?.map(m => (
+                        {authorizedModels?.map(m => (
                             <option key={m.id} value={m.id}>{m.name}</option>
                         ))}
                     </select>
@@ -170,7 +187,7 @@ export function VADashboard() {
                     >
                         🔄 Refresh
                     </button>
-                    <button onClick={() => setAuthenticated(false)} style={{ backgroundColor: 'transparent', color: '#9ca3af', border: '1px solid #2d313a', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}>Lock</button>
+                    <button onClick={() => { setAuthenticated(false); setAuthorizedModels([]); setSelectedModelId(''); setPinInput(''); }} style={{ backgroundColor: 'transparent', color: '#9ca3af', border: '1px solid #2d313a', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}>Lock</button>
                 </div>
             </header>
 

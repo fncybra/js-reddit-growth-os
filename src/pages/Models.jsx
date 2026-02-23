@@ -5,9 +5,9 @@ import { useLiveQuery } from 'dexie-react-hooks';
 export function Models() {
     const models = useLiveQuery(() => db.models.toArray());
     const [formData, setFormData] = useState({
-        name: '', primaryNiche: '', weeklyViewTarget: 50000, weeklyPostTarget: 50, driveFolderId: '', usedFolderId: '', redgifsProfile: '', proxyInfo: ''
+        name: '', primaryNiche: '', weeklyViewTarget: 50000, weeklyPostTarget: 50, driveFolderId: '', usedFolderId: '', redgifsProfile: '', proxyInfo: '', vaPin: ''
     });
-    const [editingModel, setEditingModel] = useState(null); // { id, name, primaryNiche, driveFolderId, usedFolderId, redgifsProfile, proxyInfo }
+    const [editingModel, setEditingModel] = useState(null); // { id, name, primaryNiche, driveFolderId, usedFolderId, redgifsProfile, proxyInfo, vaPin }
 
     async function handleSubmit(e) {
         e.preventDefault();
@@ -21,7 +21,7 @@ export function Models() {
             status: isFirst ? 'active' : 'paused'
         });
 
-        setFormData({ name: '', primaryNiche: '', weeklyViewTarget: 50000, weeklyPostTarget: 50, driveFolderId: '', usedFolderId: '', redgifsProfile: '', proxyInfo: '' });
+        setFormData({ name: '', primaryNiche: '', weeklyViewTarget: 50000, weeklyPostTarget: 50, driveFolderId: '', usedFolderId: '', redgifsProfile: '', proxyInfo: '', vaPin: '' });
     }
 
     async function toggleStatus(id, currentStatus) {
@@ -40,10 +40,10 @@ export function Models() {
             name: model.name || '',
             primaryNiche: model.primaryNiche || '',
             driveFolderId: model.driveFolderId || '',
-            driveFolderId: model.driveFolderId || '',
             usedFolderId: model.usedFolderId || '',
             redgifsProfile: model.redgifsProfile || '',
-            proxyInfo: model.proxyInfo || ''
+            proxyInfo: model.proxyInfo || '',
+            vaPin: model.vaPin || ''
         });
     }
 
@@ -55,7 +55,8 @@ export function Models() {
             driveFolderId: editingModel.driveFolderId,
             usedFolderId: editingModel.usedFolderId,
             redgifsProfile: editingModel.redgifsProfile,
-            proxyInfo: editingModel.proxyInfo
+            proxyInfo: editingModel.proxyInfo,
+            vaPin: editingModel.vaPin
         });
         setEditingModel(null);
     }
@@ -113,8 +114,12 @@ export function Models() {
                             </div>
 
                             <div style={{ borderTop: '1px solid var(--border-color)', margin: '16px 0', paddingTop: '16px' }}>
-                                <h3 style={{ fontSize: '0.9rem', marginBottom: '12px', color: 'var(--text-secondary)' }}>Scaling Infrastructure (RedGifs & Proxy)</h3>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                <h3 style={{ fontSize: '0.9rem', marginBottom: '12px', color: 'var(--text-secondary)' }}>Scaling Optimization & Access</h3>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                                    <div className="input-group">
+                                        <label className="input-label">Dedicated VA Login PIN</label>
+                                        <input className="input-field" value={formData.vaPin} onChange={e => setFormData({ ...formData, vaPin: e.target.value })} placeholder="e.g. 5555" />
+                                    </div>
                                     <div className="input-group">
                                         <label className="input-label">RedGifs Profile URL</label>
                                         <input className="input-field" value={formData.redgifsProfile} onChange={e => setFormData({ ...formData, redgifsProfile: e.target.value })} placeholder="https://www.redgifs.com/users/your_name" />
@@ -194,7 +199,11 @@ export function Models() {
                                                                 <input className="input-field" value={editingModel.usedFolderId} onChange={e => setEditingModel({ ...editingModel, usedFolderId: e.target.value })} placeholder="Paste folder ID from Google Drive URL" />
                                                             </div>
                                                         </div>
-                                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                                                            <div className="input-group">
+                                                                <label className="input-label" style={{ fontSize: '0.8rem' }}>🔐 VA Login PIN</label>
+                                                                <input className="input-field" value={editingModel.vaPin} onChange={e => setEditingModel({ ...editingModel, vaPin: e.target.value })} placeholder="e.g 5555" />
+                                                            </div>
                                                             <div className="input-group">
                                                                 <label className="input-label" style={{ fontSize: '0.8rem' }}>📼 RedGifs Profile URL</label>
                                                                 <input className="input-field" value={editingModel.redgifsProfile} onChange={e => setEditingModel({ ...editingModel, redgifsProfile: e.target.value })} />
