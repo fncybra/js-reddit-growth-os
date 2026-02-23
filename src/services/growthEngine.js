@@ -99,7 +99,7 @@ Output ONLY the single generated title as plain text. Do not use quotes around t
 `;
 
                     const response = await anthropic.messages.create({
-                        model: "claude-3-5-haiku-20241022",
+                        model: "claude-haiku-4-5",
                         max_tokens: 150,
                         messages: [
                             { role: "user", content: prompt }
