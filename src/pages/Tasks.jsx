@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../db/db';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { DailyPlanGenerator, SubredditLifecycleService } from '../services/growthEngine';
+import { DailyPlanGenerator, SubredditLifecycleService, CloudSyncService } from '../services/growthEngine';
 import { startOfDay } from 'date-fns';
 
 export function Tasks() {
@@ -36,6 +36,35 @@ export function Tasks() {
         }
     }
 
+    async function handleClearPending() {
+        if (!activeModelId || !tasks) return;
+        const pendingTasks = tasks.filter(t => t.status !== 'closed');
+        if (pendingTasks.length === 0) {
+            alert("No pending tasks to clear.");
+            return;
+        }
+
+        if (window.confirm(`Are you sure you want to permanently delete ${pendingTasks.length} pending tasks?`)) {
+            try {
+                const ids = pendingTasks.map(t => t.id);
+                await db.tasks.bulkDelete(ids);
+
+                // Track down any related performances to delete from cloud
+                const perfs = await db.performances.where('taskId').anyOf(ids).toArray();
+                if (perfs.length > 0) {
+                    const perfIds = perfs.map(p => p.id);
+                    await db.performances.bulkDelete(perfIds);
+                    await CloudSyncService.deleteMultipleFromCloud('performances', perfIds);
+                }
+
+                await CloudSyncService.deleteMultipleFromCloud('tasks', ids);
+            } catch (err) {
+                console.error("Failed to clear tasks:", err);
+                alert("Failed to clear tasks: " + err.message);
+            }
+        }
+    }
+
     if (!models || models.length === 0) {
         return <div className="page-content"><div className="card">Please create a Model first.</div></div>;
     }
@@ -61,6 +90,14 @@ export function Tasks() {
                     </div>
                 </div>
                 <div style={{ display: 'flex', gap: '12px' }}>
+                    <button
+                        className="btn btn-outline"
+                        style={{ color: 'var(--status-danger)', borderColor: 'var(--status-danger)' }}
+                        onClick={handleClearPending}
+                        disabled={generating || !tasks || tasks.length === 0}
+                    >
+                        Clear Pending
+                    </button>
                     <button
                         className="btn btn-primary"
                         onClick={handleGenerate}
@@ -146,8 +183,11 @@ function TaskRow({ task, activeModelId }) {
 
         try {
             await db.tasks.delete(task.id);
+            await CloudSyncService.deleteFromCloud('tasks', task.id);
+
             if (performance) {
                 await db.performances.delete(performance.id);
+                await CloudSyncService.deleteFromCloud('performances', performance.id);
             }
         } catch (err) {
             console.error("Failed to delete task:", err);
