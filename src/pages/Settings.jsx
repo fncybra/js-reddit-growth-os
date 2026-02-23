@@ -13,8 +13,8 @@ export function Settings() {
             let modified = false;
             const updates = {};
 
-            if (!data.geminiApiKey) {
-                updates.geminiApiKey = '';
+            if (!data.anthropicApiKey) {
+                updates.anthropicApiKey = '';
                 modified = true;
             }
             if (!data.proxyUrl || data.proxyUrl === 'http://localhost:3001') {
@@ -57,7 +57,7 @@ export function Settings() {
         for (const [key, value] of Object.entries(settings)) {
             // Handle mixing types: vaPin stays string, others are numbers, api key is string
             let finalValue = value;
-            const textKeys = ['vaPin', 'geminiApiKey', 'supabaseUrl', 'supabaseAnonKey', 'proxyUrl'];
+            const textKeys = ['vaPin', 'anthropicApiKey', 'supabaseUrl', 'supabaseAnonKey', 'proxyUrl'];
             if (!textKeys.includes(key) && value !== '') {
                 finalValue = Number(value);
             }
@@ -118,15 +118,15 @@ export function Settings() {
                     <div className="card">
                         <h2 style={{ fontSize: '1.2rem', marginBottom: '20px' }}>AI Brain Integration</h2>
                         <div className="input-group">
-                            <label className="input-label">Gemini API Key</label>
+                            <label className="input-label">Anthropic API Key (Claude)</label>
                             <input
                                 type="password"
                                 className="input-field"
-                                placeholder="AIza..."
-                                value={settings.geminiApiKey || ''}
-                                onChange={e => setSettings({ ...settings, geminiApiKey: e.target.value })}
+                                placeholder="sk-ant-..."
+                                value={settings.anthropicApiKey || ''}
+                                onChange={e => setSettings({ ...settings, anthropicApiKey: e.target.value })}
                             />
-                            <small style={{ color: 'var(--text-secondary)' }}>Used for the AI Viral Title Engine. Supports standard Google Gemini API keys.</small>
+                            <small style={{ color: 'var(--text-secondary)' }}>Used for the AI Viral Title Engine. Claude is highly recommended for organic text generation.</small>
                         </div>
                         <button onClick={handleSave} className="btn btn-outline" style={{ width: '100%', marginTop: '16px' }}>Save AI Key</button>
                     </div>
@@ -190,21 +190,6 @@ export function Settings() {
                             </div>
                         </div>
 
-                        <div className="card">
-                            <h2 style={{ fontSize: '1.2rem', marginBottom: '20px' }}>AI Integrations</h2>
-                            <div className="input-group">
-                                <label className="input-label">OpenAI API Key (Optional)</label>
-                                <input
-                                    type="password"
-                                    className="input-field"
-                                    placeholder="sk-..."
-                                    value={settings.openaiApiKey || ''}
-                                    onChange={e => setSettings({ ...settings, openaiApiKey: e.target.value })}
-                                />
-                                <small style={{ color: 'var(--text-secondary)' }}>Required for LLM-powered Title Generation based on viral subreddit posts.</small>
-                            </div>
-                            <button onClick={handleSave} className="btn btn-outline" style={{ width: '100%', marginBottom: '12px' }}>Save API Key</button>
-                        </div>
 
                         <div className="card">
                             <h2 style={{ fontSize: '1.2rem', marginBottom: '20px' }}>Cloud Engine (Backend)</h2>
