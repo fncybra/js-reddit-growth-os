@@ -228,27 +228,33 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
                 // If it's an HEIC/HEIF file from iPhone, convert it before downloading
                 const isHeic = asset.fileName && (asset.fileName.toLowerCase().endsWith('.heic') || asset.fileName.toLowerCase().endsWith('.heif'));
 
-                if (isHeic) {
-                    alert("Converting iPhone HEIC photo to JPEG via secure cloud tunnel... please wait. This can take up to 5-10 seconds.");
+                if (!asset.driveFileId) {
+                    // Fallback for non-drive external URLs
+                    performDownload(asset.originalUrl, asset.fileName || 'media');
+                } else {
+                    if (isHeic) {
+                        alert("Converting iPhone HEIC photo to JPEG via secure cloud tunnel... please wait. This can take up to 5-10 seconds.");
+                    }
 
-                    // Route through Vercel serverless function with ?convert=true flag
-                    const fetchUrl = asset.driveFileId ? `/api/drive/download/${asset.driveFileId}?convert=true` : asset.originalUrl;
+                    // Force ALL Google Drive downloads through our Vercel Serverless Function.
+                    // This prevents Android phones from intercepting the Google Drive URL and forcing the VA to login to a Google Account.
+                    const fetchUrl = `/api/drive/download/${asset.driveFileId}${isHeic ? '?convert=true' : ''}`;
 
                     const response = await fetch(fetchUrl);
-                    if (!response.ok) throw new Error("Network request failed");
+                    if (!response.ok) throw new Error("Network request failed. " + response.statusText);
                     const blob = await response.blob();
 
-                    const newFileName = (asset.fileName || 'converted').replace(/\.hei[cf]$/i, '.jpg');
+                    let downloadName = asset.fileName || 'media';
+                    if (isHeic && response.headers.get('content-type') === 'image/jpeg') {
+                        downloadName = downloadName.replace(/\.hei[cf]$/i, '.jpg');
+                    }
 
                     const a = document.createElement('a');
                     a.href = URL.createObjectURL(blob);
-                    a.download = response.headers.get('content-type') === 'image/jpeg' ? newFileName : asset.fileName || 'media_raw.heic';
+                    a.download = downloadName;
                     document.body.appendChild(a);
                     a.click();
                     document.body.removeChild(a);
-                } else {
-                    // Standard Download (JPEG, PNG, MP4, etc)
-                    performDownload(asset.originalUrl, 'media');
                 }
             } else {
                 alert('No media available to download.');
