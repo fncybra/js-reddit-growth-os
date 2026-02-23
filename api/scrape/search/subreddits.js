@@ -5,8 +5,8 @@ export default async function handler(req, res) {
     if (!q) return res.status(400).json({ error: 'Query parameter q is required' });
 
     try {
-        const response = await axios.get(`https://www.reddit.com/subreddits/search.json?q=${encodeURIComponent(q)}&limit=25`, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
+        const response = await axios.get(`https://old.reddit.com/subreddits/search.json?q=${encodeURIComponent(q)}&limit=25`, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.120.120.120 Safari/537.36' }
         });
         const subs = response.data.data.children.map(s => ({
             name: s.data.display_name,

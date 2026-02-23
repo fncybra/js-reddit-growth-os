@@ -3,19 +3,20 @@ import axios from 'axios';
 export default async function handler(req, res) {
     const { name } = req.query;
     try {
-        const response = await axios.get(`https://www.reddit.com/r/${name}/about.json`, {
+        const response = await axios.get(`https://old.reddit.com/r/${name}/about.json`, {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'application/json'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.120.120.120 Safari/537.36',
+                'Accept': 'application/json',
+                'Accept-Language': 'en-US,en;q=0.9'
             }
         });
         const data = response.data.data;
 
         let rules = [];
         try {
-            const rulesRes = await axios.get(`https://www.reddit.com/r/${name}/about/rules.json`, {
+            const rulesRes = await axios.get(`https://old.reddit.com/r/${name}/about/rules.json`, {
                 headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.120.120.120 Safari/537.36',
                     'Accept': 'application/json'
                 }
             });
@@ -28,9 +29,9 @@ export default async function handler(req, res) {
         let flairRequired = false;
         let flairOptions = [];
         try {
-            const flairRes = await axios.get(`https://www.reddit.com/r/${name}/api/link_flair_v2.json`, {
+            const flairRes = await axios.get(`https://old.reddit.com/r/${name}/api/link_flair_v2.json`, {
                 headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.120.120.120 Safari/537.36',
                     'Accept': 'application/json'
                 }
             });
