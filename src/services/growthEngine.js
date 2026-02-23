@@ -300,16 +300,16 @@ export const DailyPlanGenerator = {
 
             for (const sub of selectedSubsForAccount) {
                 let selectedAsset = null;
+                const subNameLower = sub.name.toLowerCase();
 
-                // 1. First Pass: Try to find an asset that perfectly matches the Subreddit's niche tag
+                // 1. First Pass: Exact Niche Match (Highest priority)
                 for (const asset of activeAssets) {
-                    if (sub.nicheTag && sub.nicheTag.toLowerCase() !== asset.angleTag.toLowerCase()) continue;
+                    if (!sub.nicheTag || sub.nicheTag.toLowerCase() === 'general' || sub.nicheTag.toLowerCase() === 'scraped') continue;
+                    if (sub.nicheTag.toLowerCase() !== asset.angleTag.toLowerCase()) continue;
 
                     const timesUsedToday = usedAssetsInSession.get(asset.id) || 0;
-                    if (timesUsedToday >= 5) continue; // Reuse up to 5 times per day
+                    if (timesUsedToday >= 5) continue;
 
-                    // Track global asset usage across any subreddit 
-                    // ONLY verify cooldown if we haven't already decided to use it today
                     if (timesUsedToday === 0) {
                         const pastUsages = await db.tasks.where('assetId').equals(asset.id).toArray();
                         const recentlyUsed = pastUsages.some(t => isAfter(new Date(t.date), cooldownDate));
@@ -320,7 +320,35 @@ export const DailyPlanGenerator = {
                     break;
                 }
 
-                // 2. Second Pass (Fallback): If no tagged photo found, just grab ANY available photo to prevent empty tasks
+                // 2. Second Pass: Intelligence Match (Fuzzy)
+                // If sub name contains "preg" and asset tag is "preg", or sub is "fitness" and asset is "gym"
+                if (!selectedAsset) {
+                    for (const asset of activeAssets) {
+                        const assetTag = asset.angleTag.toLowerCase();
+                        if (assetTag === 'general' || assetTag === 'untagged') continue;
+
+                        // Check if the subreddit name contains the asset's tag
+                        const isMatch = subNameLower.includes(assetTag) ||
+                            (assetTag === 'preg' && subNameLower.includes('pregnant')) ||
+                            (assetTag === 'pregnant' && subNameLower.includes('preg'));
+
+                        if (!isMatch) continue;
+
+                        const timesUsedToday = usedAssetsInSession.get(asset.id) || 0;
+                        if (timesUsedToday >= 5) continue;
+
+                        if (timesUsedToday === 0) {
+                            const pastUsages = await db.tasks.where('assetId').equals(asset.id).toArray();
+                            const recentlyUsed = pastUsages.some(t => isAfter(new Date(t.date), cooldownDate));
+                            if (recentlyUsed) continue;
+                        }
+
+                        selectedAsset = asset;
+                        break;
+                    }
+                }
+
+                // 3. Third Pass (Fallback): Grab ANY available photo to prevent empty tasks
                 if (!selectedAsset) {
                     for (const asset of activeAssets) {
                         const timesUsedToday = usedAssetsInSession.get(asset.id) || 0;

@@ -178,11 +178,27 @@ app.get('/api/drive/list/:folderId', async (req, res) => {
 
     try {
         const { folderId } = req.params;
+
+        // 1. Get the folder metadata to find its name (this becomes our Niche Tag)
+        const folderMeta = await drive.files.get({
+            fileId: folderId,
+            fields: 'name'
+        });
+        const folderName = folderMeta.data.name;
+
+        // 2. List the files
         const response = await drive.files.list({
             q: `'${folderId}' in parents and trashed = false and (mimeType contains 'image/' or mimeType contains 'video/')`,
             fields: 'files(id, name, mimeType, webContentLink, thumbnailLink)',
         });
-        res.json(response.data.files);
+
+        // 3. Map the folder name to each file so the frontend can auto-tag them
+        const filesWithTags = response.data.files.map(f => ({
+            ...f,
+            mappedTag: folderName.toLowerCase()
+        }));
+
+        res.json(filesWithTags);
     } catch (error) {
         console.error("Drive List Error:", error.message);
         res.status(500).json({ error: "Failed to list Drive files" });
