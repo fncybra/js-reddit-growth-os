@@ -648,9 +648,11 @@ export const CloudSyncService = {
                 continue;
             }
 
-            if (data && data.length > 0) {
+            if (data) {
                 await db[table].clear();
-                await db[table].bulkPut(data);
+                if (data.length > 0) {
+                    await db[table].bulkPut(data);
+                }
             }
         }
     },
@@ -661,8 +663,27 @@ export const CloudSyncService = {
             console.log("CloudSync: Auto-pushing updates...");
             this.pushLocalToCloud().catch(null);
         }
+    },
+
+    async deleteFromCloud(table, id) {
+        if (!await this.isEnabled()) return;
+        const { getSupabaseClient } = await import('../db/supabase.js');
+        const supabase = await getSupabaseClient();
+        if (supabase) {
+            await supabase.from(table).delete().eq('id', id);
+        }
+    },
+
+    async deleteMultipleFromCloud(table, ids) {
+        if (!await this.isEnabled() || ids.length === 0) return;
+        const { getSupabaseClient } = await import('../db/supabase.js');
+        const supabase = await getSupabaseClient();
+        if (supabase) {
+            await supabase.from(table).delete().in('id', ids);
+        }
     }
 };
+
 
 export const AccountSyncService = {
     async syncAccountHealth(accountId) {
