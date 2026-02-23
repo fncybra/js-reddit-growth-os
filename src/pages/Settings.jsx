@@ -9,13 +9,6 @@ export function Settings() {
         async function load() {
             const data = await SettingsService.getSettings();
 
-            // Auto-inject the API key the user provided
-            if (!data.openaiApiKey) {
-                const newKey = "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";
-                await SettingsService.updateSetting('openaiApiKey', newKey);
-                data.openaiApiKey = newKey;
-            }
-
             setSettings(data);
         }
         load();
