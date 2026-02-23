@@ -4,7 +4,10 @@ export default async function handler(req, res) {
     const { id } = req.query;
     try {
         const response = await axios.get(`https://www.reddit.com/comments/${id}.json`, {
-            headers: { 'User-Agent': 'GrowthOS/1.0' }
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'application/json'
+            }
         });
         const post = response.data[0].data.children[0].data;
         res.status(200).json({

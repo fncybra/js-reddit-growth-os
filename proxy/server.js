@@ -103,8 +103,18 @@ app.get('/api/scrape/subreddit/:name', async (req, res) => {
         const { name } = req.params;
         // Fetch about.json and rules.json
         const [aboutRes, rulesRes] = await Promise.all([
-            axios.get(`https://www.reddit.com/r/${name}/about.json`, { headers: { 'User-Agent': 'GrowthOS/1.0' } }),
-            axios.get(`https://www.reddit.com/r/${name}/about/rules.json`, { headers: { 'User-Agent': 'GrowthOS/1.0' } })
+            axios.get(`https://www.reddit.com/r/${name}/about.json`, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'application/json'
+                }
+            }),
+            axios.get(`https://www.reddit.com/r/${name}/about/rules.json`, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'application/json'
+                }
+            })
         ]);
 
         const about = aboutRes.data.data;
@@ -158,7 +168,10 @@ app.get('/api/scrape/subreddit/top/:name', async (req, res) => {
     try {
         const { name } = req.params;
         const response = await axios.get(`https://www.reddit.com/r/${name}/top.json?t=month&limit=50`, {
-            headers: { 'User-Agent': 'GrowthOS/1.0 (Internal Analytics Tool)' }
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'application/json'
+            }
         });
 
         // Map out just the titles to send to the AI
