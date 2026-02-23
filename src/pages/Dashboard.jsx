@@ -105,13 +105,15 @@ export function Dashboard() {
                 <div style={{ minWidth: '250px', textAlign: 'right' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '0.85rem' }}>
                         <span style={{ fontWeight: '600' }}>Today's Execution</span>
-                        <span style={{ color: 'var(--text-secondary)' }}>{metrics.executionToday.completed} / {metrics.executionToday.total} posts</span>
+                        <span style={{ color: 'var(--text-secondary)' }}>
+                            {metrics.executionToday?.completed || 0} / {metrics.executionToday?.total || 0} posts
+                        </span>
                     </div>
                     <div style={{ width: '100%', height: '8px', backgroundColor: 'var(--surface-color)', borderRadius: '4px', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
                         <div style={{
-                            width: `${metrics.executionToday.percent}%`,
+                            width: `${metrics.executionToday?.percent || 0}%`,
                             height: '100%',
-                            backgroundColor: metrics.executionToday.percent === 100 ? 'var(--status-success)' : 'var(--primary-color)',
+                            backgroundColor: metrics.executionToday?.percent === 100 ? 'var(--status-success)' : 'var(--primary-color)',
                             transition: 'width 0.5s ease'
                         }} />
                     </div>

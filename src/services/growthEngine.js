@@ -570,6 +570,11 @@ export const AnalyticsEngine = {
         const agencyAvgViews = agencyTasksCompleted > 0 ? (agencyTotalViews / agencyTasksCompleted).toFixed(0) : 0;
         const agencyRemovalRate = agencyTasksCompleted > 0 ? ((agencyRemovedCount / agencyTasksCompleted) * 100).toFixed(1) : 0;
 
+        // Today's Global Progress
+        const todayStr = new Date().toISOString().split('T')[0];
+        const tasksToday = await db.tasks.where('date').equals(todayStr).toArray();
+        const completedToday = tasksToday.filter(t => t.status === 'closed').length;
+
         // Sort leaderboard by total views
         modelLeaderboard.sort((a, b) => b.metrics.totalViews - a.metrics.totalViews);
 
@@ -580,7 +585,12 @@ export const AnalyticsEngine = {
             agencyTotalViews,
             agencyAvgViews: Number(agencyAvgViews),
             agencyRemovalRate: Number(agencyRemovalRate),
-            leaderboard: modelLeaderboard
+            leaderboard: modelLeaderboard,
+            executionToday: {
+                completed: completedToday,
+                total: tasksToday.length,
+                percent: tasksToday.length > 0 ? Math.round((completedToday / tasksToday.length) * 100) : 0
+            }
         };
     }
 };
