@@ -246,6 +246,7 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
                     document.body.appendChild(a);
                     a.click();
                     document.body.removeChild(a);
+                } else {
                     // Standard Download (JPEG, PNG, MP4, etc)
                     performDownload(asset.originalUrl, 'media');
                 }
