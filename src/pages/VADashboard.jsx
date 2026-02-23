@@ -249,7 +249,14 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
     const [redditUrl, setRedditUrl] = useState('');
 
     const isDone = task.status === 'closed' || performance;
-    const objectUrl = asset?.fileBlob ? URL.createObjectURL(asset.fileBlob) : (asset?.originalUrl || asset?.thumbnailUrl);
+
+    const isHeic = asset?.fileName && (asset.fileName.toLowerCase().endsWith('.heic') || asset.fileName.toLowerCase().endsWith('.heif'));
+    let objectUrl = asset?.thumbnailUrl || asset?.originalUrl;
+    if (asset?.fileBlob) {
+        objectUrl = URL.createObjectURL(asset.fileBlob);
+    } else if (asset?.driveFileId) {
+        objectUrl = `/api/drive/download/${asset.driveFileId}${isHeic ? '?convert=true' : ''}`;
+    }
 
     async function handleDownloadMedia() {
         if (!asset) return;

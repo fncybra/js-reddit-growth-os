@@ -284,7 +284,14 @@ export function Library() {
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '16px' }}>
                             {displayedAssets.map(asset => {
                                 const model = models.find(m => m.id === asset.modelId);
-                                const objectUrl = asset.fileBlob ? URL.createObjectURL(asset.fileBlob) : (asset.thumbnailUrl || asset.originalUrl);
+                                const isHeic = asset.fileName && (asset.fileName.toLowerCase().endsWith('.heic') || asset.fileName.toLowerCase().endsWith('.heif'));
+
+                                let objectUrl = asset.thumbnailUrl || asset.originalUrl;
+                                if (asset.fileBlob) {
+                                    objectUrl = URL.createObjectURL(asset.fileBlob);
+                                } else if (asset.driveFileId) {
+                                    objectUrl = `/api/drive/download/${asset.driveFileId}${isHeic ? '?convert=true' : ''}`;
+                                }
 
                                 return (
                                     <div key={asset.id} style={{
