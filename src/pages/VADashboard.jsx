@@ -9,8 +9,28 @@ export function VADashboard() {
     const [pinInput, setPinInput] = useState('');
     const [error, setError] = useState('');
     const [syncing, setSyncing] = useState(false);
+    const [cooldownUntil, setCooldownUntil] = useState(0);
+    const [timeLeft, setTimeLeft] = useState(0);
 
     const models = useLiveQuery(() => db.models.toArray());
+    const postInterval = useLiveQuery(async () => {
+        const s = await db.settings.where({ key: 'postInterval' }).first();
+        return s ? Number(s.value) : 3; // Default 3 minutes
+    }, []);
+
+    // Timer logic
+    useEffect(() => {
+        if (cooldownUntil > Date.now()) {
+            const timer = setInterval(() => {
+                const remaining = Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000));
+                setTimeLeft(remaining);
+                if (remaining === 0) clearInterval(timer);
+            }, 1000);
+            return () => clearInterval(timer);
+        } else {
+            setTimeLeft(0);
+        }
+    }, [cooldownUntil]);
 
     const vaPin = useLiveQuery(async () => {
         const s = await db.settings.where({ key: 'vaPin' }).first();
@@ -46,11 +66,11 @@ export function VADashboard() {
     }, [models, selectedModelId]);
 
     const activeModelId = selectedModelId ? Number(selectedModelId) : null;
-    const todayStr = startOfDay(new Date()).toISOString();
 
+    // Fetch all pending tasks to avoid Timezone strict-equality blocking overseas VAs
     const tasks = useLiveQuery(
-        () => activeModelId ? db.tasks.where('modelId').equals(activeModelId).filter(t => t.date === todayStr).toArray() : [],
-        [activeModelId, todayStr]
+        () => activeModelId ? db.tasks.where('modelId').equals(activeModelId).filter(t => t.status !== 'closed' && t.status !== 'failed').toArray() : [],
+        [activeModelId]
     );
 
     function handleAuth() {
@@ -124,10 +144,15 @@ export function VADashboard() {
                         ))}
                     </select>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
                     <div style={{ fontSize: '0.9rem', color: '#9ca3af' }}>
                         {new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                     </div>
+                    {timeLeft > 0 && (
+                        <div style={{ padding: '4px 12px', backgroundColor: '#ef444422', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold', animation: 'pulse 1s infinite' }}>
+                            ⏳ BREAK: {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
+                        </div>
+                    )}
                     <div style={{ padding: '4px 12px', backgroundColor: '#10b98122', color: '#10b981', border: '1px solid #10b98144', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold' }}>
                         {tasks?.filter(t => t.status === 'closed').length} / {tasks?.length} COMPLETED
                     </div>
@@ -162,7 +187,7 @@ export function VADashboard() {
                 ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                         {tasks?.map((task, index) => (
-                            <VATaskCard key={task.id} task={task} index={index + 1} />
+                            <VATaskCard key={task.id} task={task} index={index + 1} onPosted={() => setCooldownUntil(Date.now() + (postInterval * 60000))} cooldownActive={timeLeft > 0} />
                         ))}
                     </div>
                 )}
@@ -171,7 +196,7 @@ export function VADashboard() {
     );
 }
 
-function VATaskCard({ task, index }) {
+function VATaskCard({ task, index, onPosted, cooldownActive }) {
     const asset = useLiveQuery(() => db.assets.get(task.assetId), [task.assetId]);
     const subreddit = useLiveQuery(() => db.subreddits.get(task.subredditId), [task.subredditId]);
     const account = useLiveQuery(() => db.accounts.get(task.accountId), [task.accountId]);
@@ -320,6 +345,7 @@ function VATaskCard({ task, index }) {
                 }
             }
         }
+        onPosted(); // Trigger cooldown
     }
 
     async function handleMarkError() {
@@ -366,9 +392,9 @@ function VATaskCard({ task, index }) {
     }
 
     return (
-        <div style={{ backgroundColor: '#1a1d24', border: '1px solid #2d313a', borderRadius: '8px', overflow: 'hidden', display: 'flex' }}>
+        <div style={{ backgroundColor: '#1a1d24', border: '1px solid #2d313a', borderRadius: '8px', overflow: 'hidden', display: 'flex', flexWrap: 'wrap' }}>
             {/* Media Area */}
-            <div style={{ width: '280px', backgroundColor: '#000', display: 'flex', flexDirection: 'column', flexShrink: 0, position: 'relative' }}>
+            <div style={{ width: '100%', maxWidth: '280px', backgroundColor: '#000', display: 'flex', flexDirection: 'column', flexShrink: 0, position: 'relative', margin: '0 auto' }}>
                 <div style={{ height: '280px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     {asset ? (
                         asset.assetType === 'image' && objectUrl ? (
@@ -441,97 +467,99 @@ function VATaskCard({ task, index }) {
             </div>
 
             {/* Details & Actions Area */}
-            <div style={{ padding: '24px', flex: 1, display: 'flex', flexDirection: 'column' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', flex: 1 }}>
+            <div style={{ padding: '24px', flex: 1, minWidth: '300px', display: 'flex', flexDirection: 'column' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', flex: 1 }}>
                     {/* Posting Instructions */}
-                    <div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: '8px', marginBottom: '16px' }}>
-                            <div style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Account:</div>
-                            <div style={{ fontWeight: 'bold', fontSize: '1.2rem', color: '#6366f1' }}>u/{account?.handle}</div>
-
-                            <div style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Subreddit:</div>
-                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                <a href={`https://reddit.com/r/${subreddit?.name.replace(/^(r\/|\/r\/)/i, '')}/submit`} target="_blank" rel="noreferrer" style={{ fontWeight: 'bold', fontSize: '1.2rem', color: '#fff', textDecoration: 'underline' }}>
-                                    r/{subreddit?.name} ↗
-                                </a>
-                                <button onClick={() => copyToClipboard(subreddit?.name, 'Subreddit Name')} style={{ backgroundColor: '#2d313a', color: '#ccc', border: 'none', padding: '2px 6px', borderRadius: '4px', fontSize: '0.65rem', cursor: 'pointer' }}>Copy</button>
-                                <span style={{ fontSize: '0.7rem', backgroundColor: '#3b82f644', color: '#3b82f6', padding: '2px 6px', borderRadius: '4px' }}>
-                                    {subreddit?.status?.toUpperCase()}
-                                </span>
-                            </div>
-
-                            <div style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Proxy Info:</div>
-                            <div style={{ color: '#fbbf24', fontSize: '0.9rem', fontFamily: 'monospace', wordBreak: 'break-all' }}>
-                                {account?.proxyInfo || model?.proxyInfo || 'USE DEFAULT PROXY'}
-                            </div>
-
-                            <div style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Title:</div>
-                            <div style={{ position: 'relative' }}>
-                                <div style={{ color: '#e5e7eb', backgroundColor: '#0f1115', padding: '12px', borderRadius: '4px', border: '1px solid #2d313a', fontSize: '0.95rem' }}>
-                                    {task.title}
-                                </div>
-                                <button onClick={() => copyToClipboard(task.title, 'Title')} style={{ position: 'absolute', top: '8px', right: '8px', backgroundColor: '#2d313a', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', fontSize: '0.7rem', cursor: 'pointer' }}>Copy</button>
-                            </div>
-                        </div>
-
-                        <div style={{ marginTop: '20px' }}>
-                            <div style={{ color: '#9ca3af', fontSize: '0.85rem', marginBottom: '4px' }}>Submission URL:</div>
-                            <input
-                                type="text"
-                                className="input-field"
-                                placeholder="Paste the live Reddit link here after posting..."
-                                style={{ backgroundColor: '#0f1115', border: '1px solid #6366f1', color: '#fff' }}
-                                value={redditUrl}
-                                onChange={e => setRedditUrl(e.target.value)}
-                            />
-                        </div>
-                    </div>
-
-                    {/* Rules & Compliance */}
-                    <div style={{ borderLeft: '1px solid #2d313a', paddingLeft: '24px' }}>
-                        <div style={{ marginBottom: '16px' }}>
-                            <div style={{ color: '#9ca3af', fontSize: '0.85rem', marginBottom: '8px' }}>REQUIRED FLAIR:</div>
-                            <div style={{ display: 'flex', gap: '8px' }}>
-                                {subreddit?.flairRequired ? (
-                                    <span style={{ backgroundColor: '#fbbf2422', color: '#fbbf24', padding: '4px 12px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 'bold', border: '1px solid #fbbf24' }}>
-                                        {subreddit.requiredFlair || 'FLAIR REQUIRED'}
-                                    </span>
-                                ) : (
-                                    <span style={{ color: '#9ca3af', fontSize: '0.85rem' }}>None specified</span>
-                                )}
-                            </div>
-                        </div>
-
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '24px' }}>
                         <div>
-                            <div style={{ color: '#9ca3af', fontSize: '0.85rem', marginBottom: '8px' }}>SUBREDDIT RULES HIGHLIGHTS:</div>
-                            <div style={{ backgroundColor: '#0f1115', padding: '12px', borderRadius: '4px', fontSize: '0.8rem', color: '#d1d5db', maxHeight: '180px', overflowY: 'auto', border: '1px solid #2d313a' }}>
-                                {subreddit?.rulesSummary ? (
-                                    <div style={{ whiteSpace: 'pre-wrap' }}>{subreddit.rulesSummary}</div>
-                                ) : (
-                                    <div style={{ textAlign: 'center', padding: '20px', color: '#6b7280' }}>
-                                        No rules summary stored. Check the subreddit sidebar before posting!
+                            <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: '8px', marginBottom: '16px' }}>
+                                <div style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Account:</div>
+                                <div style={{ fontWeight: 'bold', fontSize: '1.2rem', color: '#6366f1' }}>u/{account?.handle}</div>
+
+                                <div style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Subreddit:</div>
+                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                    <a href={`https://reddit.com/r/${subreddit?.name.replace(/^(r\/|\/r\/)/i, '')}/submit`} target="_blank" rel="noreferrer" style={{ fontWeight: 'bold', fontSize: '1.2rem', color: '#fff', textDecoration: 'underline' }}>
+                                        r/{subreddit?.name} ↗
+                                    </a>
+                                    <button onClick={() => copyToClipboard(subreddit?.name, 'Subreddit Name')} style={{ backgroundColor: '#2d313a', color: '#ccc', border: 'none', padding: '8px 12px', borderRadius: '4px', fontSize: '0.8rem', cursor: 'pointer' }}>Copy</button>
+                                    <span style={{ fontSize: '0.8rem', backgroundColor: '#3b82f644', color: '#3b82f6', padding: '4px 8px', borderRadius: '4px' }}>
+                                        {subreddit?.status?.toUpperCase()}
+                                    </span>
+                                </div>
+
+                                <div style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Proxy Info:</div>
+                                <div style={{ color: '#fbbf24', fontSize: '1rem', fontWeight: 'bold', fontFamily: 'monospace', wordBreak: 'break-all', backgroundColor: '#fbbf2411', padding: '8px', borderRadius: '4px' }}>
+                                    {account?.proxyInfo || model?.proxyInfo || 'USE DEFAULT PROXY'}
+                                </div>
+
+                                <div style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Title:</div>
+                                <div style={{ position: 'relative' }}>
+                                    <div style={{ color: '#e5e7eb', backgroundColor: '#0f1115', padding: '16px', borderRadius: '4px', border: '1px solid #2d313a', fontSize: '1rem', lineHeight: '1.4' }}>
+                                        {task.title}
                                     </div>
-                                )}
+                                    <button onClick={() => copyToClipboard(task.title, 'Title')} style={{ position: 'absolute', bottom: '8px', right: '8px', backgroundColor: '#6366f1', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', fontSize: '0.8rem', cursor: 'pointer', fontWeight: 'bold' }}>Copy Title</button>
+                                </div>
+                            </div>
+
+                            <div style={{ marginTop: '24px' }}>
+                                <div style={{ color: '#9ca3af', fontSize: '0.9rem', marginBottom: '8px', fontWeight: 'bold' }}>Post Verification URL:</div>
+                                <input
+                                    type="text"
+                                    className="input-field"
+                                    placeholder="https://www.reddit.com/r/..."
+                                    style={{ backgroundColor: '#0f1115', border: '2px solid #6366f1', color: '#fff', padding: '16px', fontSize: '1rem' }}
+                                    value={redditUrl}
+                                    onChange={e => setRedditUrl(e.target.value)}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Rules & Compliance */}
+                        <div style={{ borderLeft: '1px solid #2d313a', paddingLeft: '24px', borderTop: '1px solid #2d313a', paddingTop: '24px', borderLeftColor: 'transparent', marginLeft: '-24px', paddingLeft: '24px' }}>
+                            <div style={{ marginBottom: '16px' }}>
+                                <div style={{ color: '#9ca3af', fontSize: '0.85rem', marginBottom: '8px' }}>REQUIRED FLAIR:</div>
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    {subreddit?.flairRequired ? (
+                                        <span style={{ backgroundColor: '#fbbf2422', color: '#fbbf24', padding: '4px 12px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 'bold', border: '1px solid #fbbf24' }}>
+                                            {subreddit.requiredFlair || 'FLAIR REQUIRED'}
+                                        </span>
+                                    ) : (
+                                        <span style={{ color: '#9ca3af', fontSize: '0.85rem' }}>None specified</span>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div>
+                                <div style={{ color: '#9ca3af', fontSize: '0.85rem', marginBottom: '8px' }}>SUBREDDIT RULES HIGHLIGHTS:</div>
+                                <div style={{ backgroundColor: '#0f1115', padding: '12px', borderRadius: '4px', fontSize: '0.8rem', color: '#d1d5db', maxHeight: '180px', overflowY: 'auto', border: '1px solid #2d313a' }}>
+                                    {subreddit?.rulesSummary ? (
+                                        <div style={{ whiteSpace: 'pre-wrap' }}>{subreddit.rulesSummary}</div>
+                                    ) : (
+                                        <div style={{ textAlign: 'center', padding: '20px', color: '#6b7280' }}>
+                                            No rules summary stored. Check the subreddit sidebar before posting!
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
 
-                {/* Final Actions */}
-                <div style={{ display: 'flex', gap: '12px', marginTop: '24px', borderTop: '1px solid #2d313a', paddingTop: '24px' }}>
-                    <button
-                        onClick={handleMarkPosted}
-                        disabled={!redditUrl}
-                        style={{ flex: 2, backgroundColor: '#10b981', color: '#fff', border: 'none', padding: '16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '1.1rem', transition: 'all 0.2s', opacity: redditUrl ? 1 : 0.4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                    >
-                        <span>✓</span> I Have Posted This Live
-                    </button>
-                    <button
-                        onClick={handleMarkError}
-                        style={{ flex: 1, backgroundColor: 'transparent', color: '#ef4444', border: '1px solid #ef4444', padding: '16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '1.1rem', transition: 'all 0.2s' }}
-                    >
-                        ✕ Issue / Failed
-                    </button>
+                    {/* Final Actions */}
+                    <div style={{ display: 'flex', gap: '12px', marginTop: '24px', borderTop: '1px solid #2d313a', paddingTop: '24px' }}>
+                        <button
+                            onClick={handleMarkPosted}
+                            disabled={!redditUrl || cooldownActive}
+                            style={{ flex: 2, backgroundColor: cooldownActive ? '#374151' : '#10b981', color: '#fff', border: 'none', padding: '16px', borderRadius: '8px', fontWeight: 'bold', cursor: cooldownActive ? 'not-allowed' : 'pointer', fontSize: '1.1rem', transition: 'all 0.2s', opacity: (redditUrl && !cooldownActive) ? 1 : 0.4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                        >
+                            <span>{cooldownActive ? '⏳' : '✓'}</span> {cooldownActive ? 'Anti-Ban Breaking...' : 'I Have Posted This Live'}
+                        </button>
+                        <button
+                            onClick={handleMarkError}
+                            style={{ flex: 1, backgroundColor: 'transparent', color: '#ef4444', border: '1px solid #ef4444', padding: '16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '1.1rem', transition: 'all 0.2s' }}
+                        >
+                            ✕ Issue / Failed
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
