@@ -48,20 +48,17 @@ if (SERVICE_ACCOUNT_JSON || fs.existsSync(KEY_FILE_PATH)) {
 app.get('/api/scrape/user/:username', async (req, res) => {
     try {
         const { username } = req.params;
-
-        // Reddit requires a custom User-Agent to avoid rate limits/blocks
-        const response = await axios.get(`https://www.reddit.com/user/${username}/submitted.json?limit=100`, {
+        const response = await axios.get(`https://old.reddit.com/user/${username}/submitted.json?limit=100`, {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.120.120.120 Safari/537.36',
+                'Accept': 'application/json',
+                'Accept-Language': 'en-US,en;q=0.9'
             }
         });
-
         res.json(response.data);
     } catch (error) {
         console.error("Scraper Error:", error.message);
-
         if (error.response) {
-            // Forward Reddit's HTTP status codes (404 Not Found, 403 Forbidden, etc)
             return res.status(error.response.status).json({ error: error.response.data || "Reddit API Error" });
         }
         res.status(500).json({ error: "Failed to scrape user profile" });
@@ -72,19 +69,16 @@ app.get('/api/scrape/user/:username', async (req, res) => {
 app.get('/api/scrape/post/:postId', async (req, res) => {
     try {
         const { postId } = req.params;
-        const response = await axios.get(`https://www.reddit.com/comments/${postId}.json`, {
+        const response = await axios.get(`https://old.reddit.com/comments/${postId}.json`, {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.120.120.120 Safari/537.36',
+                'Accept': 'application/json'
             }
         });
-
-        // Reddit returns an array [post_details, comments]
-        // We want post details which is response.data[0].data.children[0].data
         const post = response.data[0].data.children[0].data;
-
         res.json({
             title: post.title,
-            views: post.ups, // In JSON, 'ups' is the upvote count which we use as proxy for performance
+            views: post.ups,
             score: post.score,
             upvoteRatio: post.upvote_ratio,
             isRemoved: post.removed_by_category !== null || post.is_robot_indexable === false,
@@ -101,25 +95,22 @@ app.get('/api/scrape/post/:postId', async (req, res) => {
 app.get('/api/scrape/subreddit/:name', async (req, res) => {
     try {
         const { name } = req.params;
-        // Fetch about.json and rules.json
         const [aboutRes, rulesRes] = await Promise.all([
-            axios.get(`https://www.reddit.com/r/${name}/about.json`, {
+            axios.get(`https://old.reddit.com/r/${name}/about.json`, {
                 headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.120.120.120 Safari/537.36',
                     'Accept': 'application/json'
                 }
             }),
-            axios.get(`https://www.reddit.com/r/${name}/about/rules.json`, {
+            axios.get(`https://old.reddit.com/r/${name}/about/rules.json`, {
                 headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.120.120.120 Safari/537.36',
                     'Accept': 'application/json'
                 }
             })
         ]);
-
         const about = aboutRes.data.data;
         const rules = rulesRes.data.rules || [];
-
         res.json({
             name: about.display_name,
             subscribers: about.subscribers,
@@ -143,11 +134,12 @@ app.get('/api/scrape/search/subreddits', async (req, res) => {
     try {
         const { q } = req.query;
         if (!q) return res.status(400).json({ error: "Query required" });
-
-        const response = await axios.get(`https://www.reddit.com/subreddits/search.json?q=${encodeURIComponent(q)}&limit=50`, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
+        const response = await axios.get(`https://old.reddit.com/subreddits/search.json?q=${encodeURIComponent(q)}&limit=50`, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.120.120.120 Safari/537.36',
+                'Accept': 'application/json'
+            }
         });
-
         const results = response.data.data.children.map(c => ({
             name: c.data.display_name,
             subscribers: c.data.subscribers,
@@ -155,7 +147,6 @@ app.get('/api/scrape/search/subreddits', async (req, res) => {
             over18: c.data.over_18,
             title: c.data.title
         }));
-
         res.json(results);
     } catch (error) {
         console.error("Subreddit Search Error:", error.message);
@@ -167,14 +158,12 @@ app.get('/api/scrape/search/subreddits', async (req, res) => {
 app.get('/api/scrape/subreddit/top/:name', async (req, res) => {
     try {
         const { name } = req.params;
-        const response = await axios.get(`https://www.reddit.com/r/${name}/top.json?t=month&limit=50`, {
+        const response = await axios.get(`https://old.reddit.com/r/${name}/top.json?t=month&limit=50`, {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.120.120.120 Safari/537.36',
                 'Accept': 'application/json'
             }
         });
-
-        // Map out just the titles to send to the AI
         const titles = response.data.data?.children?.map(c => c.data.title) || [];
         res.json(titles);
     } catch (error) {
