@@ -231,11 +231,9 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
                 if (isHeic) {
                     alert("Converting iPhone HEIC photo to JPEG for Reddit... please wait a few seconds.");
                     const heic2any = (await import('heic2any')).default;
-                    const { SettingsService } = await import('../services/growthEngine');
-                    const proxyUrl = await SettingsService.getProxyUrl();
 
-                    // Route through proxy to bypass Google Drive's strict CORS policy on direct fetch
-                    const fetchUrl = asset.driveFileId ? `${proxyUrl}/api/drive/download/${asset.driveFileId}` : asset.originalUrl;
+                    // Route through Vercel serverless function to bypass Google Drive CORS without relying on Railway proxy
+                    const fetchUrl = asset.driveFileId ? `/api/drive/download/${asset.driveFileId}` : asset.originalUrl;
 
                     const response = await fetch(fetchUrl);
                     if (!response.ok) throw new Error("Network request failed");
