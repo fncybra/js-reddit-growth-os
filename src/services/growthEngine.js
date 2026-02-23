@@ -9,11 +9,18 @@ export const SettingsService = {
             testsBeforeClassification: 3,
             removalThresholdPct: 20,
             assetReuseCooldownDays: 30,
-            dailyPostCap: 10
+            dailyPostCap: 10,
+            supabaseUrl: 'https://bwckevjsjlvsfwfbnske.supabase.co',
+            supabaseAnonKey: 'sb_publishable_zJdDCrJNoZNGU5arum893A_mxmdvoCH',
+            proxyUrl: 'https://js-reddit-proxy-production.up.railway.app'
         };
         const settingsArr = await db.settings.toArray();
         const settings = { ...defaultSettings };
-        settingsArr.forEach(s => { settings[s.key] = s.value; });
+        settingsArr.forEach(s => {
+            if (s.value !== undefined && s.value !== null && s.value !== '') {
+                settings[s.key] = s.value;
+            }
+        });
         return settings;
     },
     async updateSetting(key, value) {
