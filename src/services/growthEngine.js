@@ -37,7 +37,7 @@ export const SettingsService = {
     }
 };
 
-import { GoogleGenAI } from '@google/genai';
+import Anthropic from '@anthropic-ai/sdk';
 
 export const TitleGeneratorService = {
     // Scrapes top 50 titles from a subreddit and regenerates a high-quality title conforming to rules
@@ -66,11 +66,14 @@ export const TitleGeneratorService = {
                 ];
             }
 
-            // Call Gemini if the key is available
+            // Call Anthropic if the key is available
             const settings = await SettingsService.getSettings();
-            if (settings.geminiApiKey) {
+            if (settings.anthropicApiKey) {
                 try {
-                    const ai = new GoogleGenAI({ apiKey: settings.geminiApiKey });
+                    const anthropic = new Anthropic({
+                        apiKey: settings.anthropicApiKey,
+                        dangerouslyAllowBrowser: true // Required since we are calling from the React frontend
+                    });
 
                     const prompt = `
 You are a senior behavioral psychologist and a shadowban avoidance expert acting natively on Reddit.
@@ -92,18 +95,21 @@ SYSTEM INTELLIGENCE RULES:
 3. CONTEXT INFERENCE: The target subreddit is r/${subredditName}. Infer the core demographic from this name (e.g., if it's 'petite', imply it). If strict rules require a verification tag like [f], natively inject it.
 4. BEHAVIORAL PATTERN: Extract the hook type (e.g., curiosity, tension, confessional, humour) from the top 50 titles provided above, and use that optimal psychology driver without directly copying the wording. Avoid repeated structural patterns.
 
-Output ONLY the single generated title as plain text without quotes. Break the rules of grammar if it makes you sound more like a genuine, casual poster on a late-night phone.
+Output ONLY the single generated title as plain text. Do not use quotes around the title unless absolutely necessary. Break the rules of grammar if it makes you sound more like a genuine, casual poster on a late-night phone.
 `;
 
-                    const response = await ai.models.generateContent({
-                        model: 'gemini-2.5-flash',
-                        contents: prompt,
+                    const response = await anthropic.messages.create({
+                        model: "claude-3-5-haiku-20241022",
+                        max_tokens: 150,
+                        messages: [
+                            { role: "user", content: prompt }
+                        ],
                     });
 
-                    return response.text().trim().replace(/^"/, '').replace(/"$/, '');
+                    return response.content[0].text.trim().replace(/^"/, '').replace(/"$/, '');
 
                 } catch (err) {
-                    console.error("Gemini Generation Error:", err);
+                    console.error("Anthropic Generation Error:", err);
                     // Fallthrough to mock logic if it fails
                 }
             }

@@ -1,4 +1,5 @@
 import { GoogleAuth } from 'google-auth-library';
+import heicConvert from 'heic-convert';
 
 export default async function handler(req, res) {
     const { fileId } = req.query;
@@ -36,16 +37,35 @@ export default async function handler(req, res) {
             return res.status(response.status).json({ error: 'Failed to download file from Google Drive' });
         }
 
-        // Forward headers to browser for seamless download/conversion
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Content-Type', response.headers.get('content-type') || 'application/octet-stream');
-        res.setHeader('Content-Disposition', `attachment; filename="${fileId}"`);
-
         // ArrayBuffer to Buffer
         const arrayBuffer = await response.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
 
-        res.status(200).send(buffer);
+        let finalBuffer = buffer;
+        let finalContentType = response.headers.get('content-type') || 'application/octet-stream';
+        let finalFilename = fileId;
+
+        // Auto-convert to JPEG on the backend if requested
+        if (req.query.convert === 'true') {
+            try {
+                finalBuffer = await heicConvert({
+                    buffer: buffer,
+                    format: 'JPEG',
+                    quality: 0.9
+                });
+                finalContentType = 'image/jpeg';
+                finalFilename = finalFilename.replace(/\.hei[cf]$/i, '') + '.jpg';
+            } catch (convertErr) {
+                console.warn(`[Backend] Failed to convert HEIC file ${fileId}:`, convertErr);
+                // Fallback to sending the raw file if conversion fails
+            }
+        }
+
+        // Forward headers to browser for seamless download
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Content-Type', finalContentType);
+        res.setHeader('Content-Disposition', `attachment; filename="${finalFilename}"`);
+        res.status(200).send(finalBuffer);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

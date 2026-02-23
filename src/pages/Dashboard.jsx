@@ -95,7 +95,12 @@ export function Dashboard() {
         <>
             <header className="page-header">
                 <div>
-                    <h1 className="page-title">Global Agency Dashboard</h1>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <h1 className="page-title">Global Agency Dashboard</h1>
+                        <Link to="/va" className="btn btn-outline" style={{ fontSize: '0.75rem', padding: '4px 10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <Smartphone size={14} /> VA Terminal
+                        </Link>
+                    </div>
                     <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '4px' }}>
                         Overview of all models and operations
                     </div>
