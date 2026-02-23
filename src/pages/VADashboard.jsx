@@ -128,6 +128,9 @@ export function VADashboard() {
                     <div style={{ fontSize: '0.9rem', color: '#9ca3af' }}>
                         {new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                     </div>
+                    <div style={{ padding: '4px 12px', backgroundColor: '#10b98122', color: '#10b981', border: '1px solid #10b98144', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                        {tasks?.filter(t => t.status === 'closed').length} / {tasks?.length} COMPLETED
+                    </div>
                     <button
                         onClick={async () => {
                             setSyncing(true);
@@ -164,7 +167,7 @@ export function VADashboard() {
                     </div>
                 )}
             </main>
-        </div>
+        </div >
     );
 }
 
@@ -172,6 +175,7 @@ function VATaskCard({ task, index }) {
     const asset = useLiveQuery(() => db.assets.get(task.assetId), [task.assetId]);
     const subreddit = useLiveQuery(() => db.subreddits.get(task.subredditId), [task.subredditId]);
     const account = useLiveQuery(() => db.accounts.get(task.accountId), [task.accountId]);
+    const model = useLiveQuery(() => db.models.get(task.modelId), [task.modelId]);
     const performance = useLiveQuery(() => db.performances.where({ taskId: task.id }).first(), [task.id]);
 
     const [redditUrl, setRedditUrl] = useState('');
@@ -394,6 +398,41 @@ function VATaskCard({ task, index }) {
                         ⬇️ Download Media
                     </button>
 
+                    {asset?.assetType === 'video' && asset?.externalUrl && (
+                        <button
+                            onClick={() => copyToClipboard(asset.externalUrl, 'RedGifs Link')}
+                            style={{ marginTop: '8px', width: '100%', padding: '10px 8px', backgroundColor: '#fbbf24', color: '#000', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                        >
+                            🔗 Copy RedGifs Link
+                        </button>
+                    )}
+
+                    {asset?.assetType === 'video' && !asset?.externalUrl && (
+                        <div style={{ marginTop: '12px', padding: '8px', backgroundColor: '#ef444422', borderRadius: '4px', border: '1px solid #ef444444' }}>
+                            <div style={{ fontSize: '0.65rem', color: '#ef4444', fontWeight: 'bold', marginBottom: '4px' }}>NO REDGIFS LINK STORED</div>
+                            <a
+                                href={model?.redgifsProfile || 'https://www.redgifs.com/'}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="btn"
+                                style={{ display: 'block', textAlign: 'center', fontSize: '0.7rem', padding: '4px', backgroundColor: '#ef4444', color: '#fff', borderRadius: '2px' }}
+                            >
+                                Upload to RedGifs ↗
+                            </a>
+                            <input
+                                type="text"
+                                placeholder="Paste Link & Save..."
+                                style={{ width: '100%', marginTop: '6px', fontSize: '0.7rem', padding: '4px', backgroundColor: '#0f1115', border: '1px solid #2d313a', color: '#fff' }}
+                                onBlur={async (e) => {
+                                    if (e.target.value) {
+                                        await db.assets.update(asset.id, { externalUrl: e.target.value });
+                                        alert("Link saved to this video forever!");
+                                    }
+                                }}
+                            />
+                        </div>
+                    )}
+
                     <div style={{ marginTop: '8px', color: '#9ca3af', textAlign: 'center', fontSize: '0.75rem' }}>Used <span style={{ color: '#6366f1', fontWeight: 'bold' }}>{asset?.timesUsed || 0}</span> times</div>
                 </div>
                 <div style={{ position: 'absolute', top: '8px', left: '8px', backgroundColor: 'rgba(99, 102, 241, 0.9)', color: '#fff', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold' }}>
@@ -411,10 +450,19 @@ function VATaskCard({ task, index }) {
                             <div style={{ fontWeight: 'bold', fontSize: '1.2rem', color: '#6366f1' }}>u/{account?.handle}</div>
 
                             <div style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Subreddit:</div>
-                            <div>
-                                <a href={`https://reddit.com/r/${subreddit?.name.replace(/^(r\/|\/r\/)/i, '')}`} target="_blank" rel="noreferrer" style={{ fontWeight: 'bold', fontSize: '1.2rem', color: '#fff', textDecoration: 'underline' }}>
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                <a href={`https://reddit.com/r/${subreddit?.name.replace(/^(r\/|\/r\/)/i, '')}/submit`} target="_blank" rel="noreferrer" style={{ fontWeight: 'bold', fontSize: '1.2rem', color: '#fff', textDecoration: 'underline' }}>
                                     r/{subreddit?.name} ↗
                                 </a>
+                                <button onClick={() => copyToClipboard(subreddit?.name, 'Subreddit Name')} style={{ backgroundColor: '#2d313a', color: '#ccc', border: 'none', padding: '2px 6px', borderRadius: '4px', fontSize: '0.65rem', cursor: 'pointer' }}>Copy</button>
+                                <span style={{ fontSize: '0.7rem', backgroundColor: '#3b82f644', color: '#3b82f6', padding: '2px 6px', borderRadius: '4px' }}>
+                                    {subreddit?.status?.toUpperCase()}
+                                </span>
+                            </div>
+
+                            <div style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Proxy Info:</div>
+                            <div style={{ color: '#fbbf24', fontSize: '0.9rem', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                                {account?.proxyInfo || model?.proxyInfo || 'USE DEFAULT PROXY'}
                             </div>
 
                             <div style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Title:</div>

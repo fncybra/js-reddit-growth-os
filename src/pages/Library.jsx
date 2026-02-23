@@ -338,6 +338,23 @@ export function Library() {
                                                 />
                                                 • Used: {asset.timesUsed}
                                             </div>
+
+                                            {asset.assetType === 'video' && (
+                                                <div style={{ marginBottom: '12px' }}>
+                                                    <label style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>REDGIFS / EXTERNAL LINK</label>
+                                                    <input
+                                                        type="text"
+                                                        className="input-field"
+                                                        style={{ fontSize: '0.75rem', padding: '4px 8px', height: 'auto' }}
+                                                        placeholder="Paste RedGifs link..."
+                                                        defaultValue={asset.externalUrl}
+                                                        onBlur={async (e) => {
+                                                            await db.assets.update(asset.id, { externalUrl: e.target.value });
+                                                        }}
+                                                    />
+                                                </div>
+                                            )}
+
                                             <div style={{ display: 'flex', gap: '8px' }}>
                                                 <button
                                                     onClick={() => toggleApprove(asset.id, asset.approved)}

@@ -5,9 +5,9 @@ import { useLiveQuery } from 'dexie-react-hooks';
 export function Models() {
     const models = useLiveQuery(() => db.models.toArray());
     const [formData, setFormData] = useState({
-        name: '', primaryNiche: '', weeklyViewTarget: 50000, weeklyPostTarget: 50, driveFolderId: '', usedFolderId: ''
+        name: '', primaryNiche: '', weeklyViewTarget: 50000, weeklyPostTarget: 50, driveFolderId: '', usedFolderId: '', redgifsProfile: '', proxyInfo: ''
     });
-    const [editingModel, setEditingModel] = useState(null); // { id, name, primaryNiche, driveFolderId, usedFolderId }
+    const [editingModel, setEditingModel] = useState(null); // { id, name, primaryNiche, driveFolderId, usedFolderId, redgifsProfile, proxyInfo }
 
     async function handleSubmit(e) {
         e.preventDefault();
@@ -21,7 +21,7 @@ export function Models() {
             status: isFirst ? 'active' : 'paused'
         });
 
-        setFormData({ name: '', primaryNiche: '', weeklyViewTarget: 50000, weeklyPostTarget: 50, driveFolderId: '', usedFolderId: '' });
+        setFormData({ name: '', primaryNiche: '', weeklyViewTarget: 50000, weeklyPostTarget: 50, driveFolderId: '', usedFolderId: '', redgifsProfile: '', proxyInfo: '' });
     }
 
     async function toggleStatus(id, currentStatus) {
@@ -40,7 +40,10 @@ export function Models() {
             name: model.name || '',
             primaryNiche: model.primaryNiche || '',
             driveFolderId: model.driveFolderId || '',
-            usedFolderId: model.usedFolderId || ''
+            driveFolderId: model.driveFolderId || '',
+            usedFolderId: model.usedFolderId || '',
+            redgifsProfile: model.redgifsProfile || '',
+            proxyInfo: model.proxyInfo || ''
         });
     }
 
@@ -50,7 +53,9 @@ export function Models() {
             name: editingModel.name,
             primaryNiche: editingModel.primaryNiche,
             driveFolderId: editingModel.driveFolderId,
-            usedFolderId: editingModel.usedFolderId
+            usedFolderId: editingModel.usedFolderId,
+            redgifsProfile: editingModel.redgifsProfile,
+            proxyInfo: editingModel.proxyInfo
         });
         setEditingModel(null);
     }
@@ -103,6 +108,20 @@ export function Models() {
                                     <div className="input-group">
                                         <label className="input-label">"Used" Folder ID</label>
                                         <input className="input-field" value={formData.usedFolderId} onChange={e => setFormData({ ...formData, usedFolderId: e.target.value })} placeholder="Google Drive Folder ID" />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style={{ borderTop: '1px solid var(--border-color)', margin: '16px 0', paddingTop: '16px' }}>
+                                <h3 style={{ fontSize: '0.9rem', marginBottom: '12px', color: 'var(--text-secondary)' }}>Scaling Infrastructure (RedGifs & Proxy)</h3>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                    <div className="input-group">
+                                        <label className="input-label">RedGifs Profile URL</label>
+                                        <input className="input-field" value={formData.redgifsProfile} onChange={e => setFormData({ ...formData, redgifsProfile: e.target.value })} placeholder="https://www.redgifs.com/users/your_name" />
+                                    </div>
+                                    <div className="input-group">
+                                        <label className="input-label">Default Proxy (IP:Port:User:Pass)</label>
+                                        <input className="input-field" value={formData.proxyInfo} onChange={e => setFormData({ ...formData, proxyInfo: e.target.value })} placeholder="Optional defaults for VA" />
                                     </div>
                                 </div>
                             </div>
@@ -173,6 +192,16 @@ export function Models() {
                                                             <div className="input-group">
                                                                 <label className="input-label" style={{ fontSize: '0.8rem' }}>🗑️ USED Folder ID (Graveyard)</label>
                                                                 <input className="input-field" value={editingModel.usedFolderId} onChange={e => setEditingModel({ ...editingModel, usedFolderId: e.target.value })} placeholder="Paste folder ID from Google Drive URL" />
+                                                            </div>
+                                                        </div>
+                                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                                                            <div className="input-group">
+                                                                <label className="input-label" style={{ fontSize: '0.8rem' }}>📼 RedGifs Profile URL</label>
+                                                                <input className="input-field" value={editingModel.redgifsProfile} onChange={e => setEditingModel({ ...editingModel, redgifsProfile: e.target.value })} />
+                                                            </div>
+                                                            <div className="input-group">
+                                                                <label className="input-label" style={{ fontSize: '0.8rem' }}>🌐 Default Proxy</label>
+                                                                <input className="input-field" value={editingModel.proxyInfo} onChange={e => setEditingModel({ ...editingModel, proxyInfo: e.target.value })} />
                                                             </div>
                                                         </div>
                                                         <div style={{ display: 'flex', gap: '8px' }}>

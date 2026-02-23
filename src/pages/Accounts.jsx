@@ -19,7 +19,7 @@ export function Accounts() {
     }, [models, selectedModelId]);
 
     const [formData, setFormData] = useState({
-        handle: '', dailyCap: 10, status: 'active', cqsStatus: 'High', removalRate: 0, notes: ''
+        handle: '', dailyCap: 10, status: 'active', cqsStatus: 'High', removalRate: 0, notes: '', proxyInfo: ''
     });
 
     async function handleRefreshAll() {
@@ -46,7 +46,7 @@ export function Accounts() {
             dailyCap: Number(formData.dailyCap)
         });
 
-        setFormData({ handle: '', dailyCap: 10, status: 'active', cqsStatus: 'High', removalRate: 0, notes: '' });
+        setFormData({ handle: '', dailyCap: 10, status: 'active', cqsStatus: 'High', removalRate: 0, notes: '', proxyInfo: '' });
     }
 
     return (
@@ -117,9 +117,15 @@ export function Accounts() {
                                     </select>
                                 </div>
                             </div>
-                            <div className="input-group">
-                                <label className="input-label">Notes (Optional)</label>
-                                <input className="input-field" value={formData.notes} onChange={e => setFormData({ ...formData, notes: e.target.value })} placeholder="..." />
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                                <div className="input-group" style={{ marginBottom: 0 }}>
+                                    <label className="input-label">Proxy Info (Override)</label>
+                                    <input className="input-field" value={formData.proxyInfo} onChange={e => setFormData({ ...formData, proxyInfo: e.target.value })} placeholder="IP:Port:User:Pass" />
+                                </div>
+                                <div className="input-group" style={{ marginBottom: 0 }}>
+                                    <label className="input-label">Notes (Optional)</label>
+                                    <input className="input-field" value={formData.notes} onChange={e => setFormData({ ...formData, notes: e.target.value })} placeholder="..." />
+                                </div>
                             </div>
                             <button type="submit" className="btn btn-primary" style={{ marginTop: '8px' }}>Add Account</button>
                         </form>
@@ -141,6 +147,7 @@ export function Accounts() {
                                         <th>Account Health</th>
                                         <th>Status</th>
                                         <th>CQS</th>
+                                        <th>Proxy</th>
                                         <th>Last Sync</th>
                                     </tr>
                                 </thead>
@@ -173,6 +180,9 @@ export function Accounts() {
                                                     </span>
                                                 </td>
                                                 <td>{acc.cqsStatus}</td>
+                                                <td style={{ fontSize: '0.8rem', color: acc.proxyInfo ? 'var(--status-warning)' : 'inherit' }}>
+                                                    {acc.proxyInfo || 'Model Default'}
+                                                </td>
                                                 <td style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                                                     {acc.lastSyncDate ? new Date(acc.lastSyncDate).toLocaleDateString() : 'Never'}
                                                 </td>
