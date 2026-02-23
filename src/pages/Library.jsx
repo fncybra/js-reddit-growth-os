@@ -14,6 +14,8 @@ export function Library() {
         }
     }, [models, selectedModelId]);
 
+    const [nicheFilter, setNicheFilter] = useState('all');
+
     const [formData, setFormData] = useState({
         angleTag: '', locationTag: '', reuseCooldownSetting: 30
     });
@@ -135,7 +137,13 @@ export function Library() {
     }
 
     // Filter assets for the current UI
-    const displayedAssets = assets?.filter(a => selectedModelId === '' || a.modelId === Number(selectedModelId)) || [];
+    const displayedAssets = assets?.filter(a => {
+        const matchesModel = selectedModelId === '' || a.modelId === Number(selectedModelId);
+        const matchesNiche = nicheFilter === 'all' || a.angleTag?.toLowerCase() === nicheFilter.toLowerCase();
+        return matchesModel && matchesNiche;
+    }) || [];
+
+    const availableNiches = Array.from(new Set(assets?.map(a => a.angleTag?.toLowerCase()).filter(Boolean) || []));
 
     return (
         <>
@@ -227,8 +235,23 @@ export function Library() {
                 </div>
 
                 <div className="card">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                         <h2 style={{ fontSize: '1.1rem' }}>Asset Database ({displayedAssets.length})</h2>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Filter by Niche:</span>
+                            <select
+                                className="input-field"
+                                style={{ width: 'auto', padding: '4px 8px', fontSize: '0.85rem' }}
+                                value={nicheFilter}
+                                onChange={e => setNicheFilter(e.target.value)}
+                            >
+                                <option value="all">All Content</option>
+                                {availableNiches.map(n => (
+                                    <option key={n} value={n}>{n.toUpperCase()}</option>
+                                ))}
+                            </select>
+                        </div>
                     </div>
 
                     {displayedAssets.length === 0 ? (
@@ -268,7 +291,16 @@ export function Library() {
                                                 {asset.fileName || asset.angleTag}
                                             </div>
                                             <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                                                Tag: {asset.angleTag} • Used: {asset.timesUsed}
+                                                Niche/Angle:
+                                                <input
+                                                    type="text"
+                                                    style={{ background: 'none', border: 'none', color: 'var(--primary-color)', fontSize: '0.8rem', width: '80px', marginLeft: '4px', borderBottom: '1px dashed #6366f1' }}
+                                                    defaultValue={asset.angleTag}
+                                                    onBlur={async (e) => {
+                                                        await db.assets.update(asset.id, { angleTag: e.target.value.toLowerCase() });
+                                                    }}
+                                                />
+                                                • Used: {asset.timesUsed}
                                             </div>
                                             <div style={{ display: 'flex', gap: '8px' }}>
                                                 <button

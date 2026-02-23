@@ -7,7 +7,31 @@ export function Settings() {
 
     useEffect(() => {
         async function load() {
-            const data = await SettingsService.getSettings();
+            let data = await SettingsService.getSettings();
+
+            // Auto-fill logic for remembered keys if they are empty
+            let modified = false;
+            const updates = {};
+
+            if (!data.openaiApiKey) {
+                updates.openaiApiKey = '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';
+                modified = true;
+            }
+            if (!data.proxyUrl || data.proxyUrl === 'http://localhost:3001') {
+                updates.proxyUrl = 'https://js-reddit-proxy-production.up.railway.app';
+                modified = true;
+            }
+            if (!data.supabaseUrl) {
+                updates.supabaseUrl = 'https://bfykveokmsqcztcmpago.supabase.co';
+                modified = true;
+            }
+
+            if (modified) {
+                for (const [k, v] of Object.entries(updates)) {
+                    await SettingsService.updateSetting(k, v);
+                }
+                data = await SettingsService.getSettings();
+            }
 
             setSettings(data);
         }

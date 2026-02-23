@@ -28,6 +28,7 @@ export function Discovery() {
     const [error, setError] = useState(null);
     const [results, setResults] = useState([]);
     const [selectedSubs, setSelectedSubs] = useState(new Set());
+    const [importNiche, setImportNiche] = useState('general'); // The niche to apply to all selected subs on import
 
     if (!models || models.length === 0) {
         return <div className="page-content"><div className="card">Please create a Model first.</div></div>;
@@ -147,7 +148,7 @@ export function Discovery() {
                     modelId: targetModel.id,
                     name: subName,
                     url: `reddit.com/r/${subName}`,
-                    nicheTag: 'scraped',
+                    nicheTag: importNiche.toLowerCase(),
                     riskLevel: subData.nsfw ? 'high' : 'medium',
                     contentComplexity: 'general',
                     status: 'testing',
@@ -196,10 +197,22 @@ export function Discovery() {
                     </div>
                 </div>
                 {selectedSubs.size > 0 && (
-                    <button className="btn btn-primary" onClick={handleImport} disabled={loading}>
-                        <Download size={18} />
-                        {loading ? 'Processing...' : `Import ${selectedSubs.size} to Testing`}
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>Assign Niche Tag:</div>
+                            <input
+                                className="input-field"
+                                style={{ padding: '4px 8px', fontSize: '0.85rem', width: '140px' }}
+                                placeholder="e.g. fitness, petite"
+                                value={importNiche}
+                                onChange={e => setImportNiche(e.target.value)}
+                            />
+                        </div>
+                        <button className="btn btn-primary" onClick={handleImport} disabled={loading} style={{ height: '42px' }}>
+                            <Download size={18} />
+                            {loading ? 'Processing...' : `Import ${selectedSubs.size} to Testing`}
+                        </button>
+                    </div>
                 )}
             </header>
 

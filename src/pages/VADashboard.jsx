@@ -382,6 +382,11 @@ function VATaskCard({ task, index }) {
                     <div style={{ color: '#9ca3af' }}>Asset Name:</div>
                     <div style={{ color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={asset?.fileName || asset?.angleTag}>{asset?.fileName || asset?.angleTag}</div>
 
+                    <div style={{ marginTop: '4px', fontSize: '0.7rem' }}>
+                        <span style={{ color: '#9ca3af' }}>Niche: </span>
+                        <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>{asset?.angleTag?.toUpperCase() || 'GENERAL'}</span>
+                    </div>
+
                     <button
                         onClick={handleDownloadMedia}
                         style={{ marginTop: '12px', width: '100%', padding: '10px 8px', backgroundColor: '#6366f1', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
