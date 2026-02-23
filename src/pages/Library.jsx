@@ -38,12 +38,12 @@ export function Library() {
             }
             const driveFiles = await res.json();
 
-            const assetsToAdd = [];
+            let newCount = 0;
+            let updatedCount = 0;
             for (const file of driveFiles) {
-                // Check if already in DB
                 const exists = await db.assets.where('driveFileId').equals(file.id).first();
                 if (!exists) {
-                    assetsToAdd.push({
+                    await db.assets.add({
                         modelId: Number(selectedModelId),
                         assetType: file.mimeType.startsWith('image/') ? 'image' : 'video',
                         angleTag: file.mappedTag || 'general',
@@ -57,12 +57,18 @@ export function Library() {
                         thumbnailUrl: file.thumbnailLink,
                         originalUrl: file.webContentLink
                     });
+                    newCount++;
+                } else {
+                    // Intelligence: If you moved the file to a new folder in Drive, update the tag here!
+                    if (file.mappedTag && exists.angleTag !== file.mappedTag) {
+                        await db.assets.update(exists.id, { angleTag: file.mappedTag });
+                        updatedCount++;
+                    }
                 }
             }
 
-            if (assetsToAdd.length > 0) {
-                await db.assets.bulkAdd(assetsToAdd);
-                alert(`Synced ${assetsToAdd.length} new files from Google Drive!`);
+            if (newCount > 0 || updatedCount > 0) {
+                alert(`Sync Complete! Added ${newCount} new assets and updated ${updatedCount} niche tags based on your Drive folders.`);
             } else {
                 alert("Everything is already up-to-date.");
             }
