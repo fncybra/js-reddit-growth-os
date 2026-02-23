@@ -3,7 +3,7 @@ import { db } from '../db/db';
 import { AnalyticsEngine } from '../services/growthEngine';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Link } from 'react-router-dom';
-import { TrendingUp, Users, Smartphone, Activity, Heart, ShieldAlert } from 'lucide-react';
+import { TrendingUp, Users, Smartphone, Activity, Heart, ShieldAlert, RefreshCw, Cloud, RefreshCcw } from 'lucide-react';
 
 export function Dashboard() {
     const [metrics, setMetrics] = useState(null);
@@ -149,6 +149,77 @@ export function Dashboard() {
                         <span className="metric-value" style={{ color: leaderboard.some(m => m.metrics.accountHealth?.suspendedCount > 0) ? 'var(--status-danger)' : 'inherit' }}>
                             {leaderboard.reduce((acc, m) => acc + (m.metrics.accountHealth?.suspendedCount || 0), 0)}
                         </span>
+                    </div>
+                </div>
+
+                <div className="grid-cards mb-6" style={{ marginBottom: '24px' }}>
+                    <div className="card" style={{ gridColumn: 'span 2' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                            <h2 style={{ fontSize: '1.2rem' }}>Scaling Intelligence</h2>
+                            <button
+                                className="btn btn-primary"
+                                onClick={async () => {
+                                    const { PerformanceSyncService } = await import('../services/growthEngine');
+                                    alert("Syncing all post performance... this takes a few moments.");
+                                    await PerformanceSyncService.syncAllPendingPerformance();
+                                    alert("Sync complete!");
+                                    window.location.reload();
+                                }}
+                                style={{ padding: '6px 12px', fontSize: '0.85rem' }}
+                            >
+                                <RefreshCw size={14} style={{ marginRight: '6px' }} />
+                                Sync All Active Posts
+                            </button>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+                            <div style={{ padding: '16px', backgroundColor: 'var(--surface-color)', borderRadius: 'var(--radius-md)', border: '1px dotted var(--border-color)' }}>
+                                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Current Model Yield</div>
+                                <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{agencyAvgViews.toLocaleString()} <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>views / post</span></div>
+                                <div style={{ marginTop: '12px', fontSize: '0.9rem', color: 'var(--status-success)' }}>
+                                    🎯 Total Agency Capacity: {(activeAccounts * 10 * agencyAvgViews).toLocaleString()} views / day
+                                </div>
+                            </div>
+                            <div style={{ padding: '16px', backgroundColor: 'var(--surface-color)', borderRadius: 'var(--radius-md)', border: '1px dotted var(--border-color)' }}>
+                                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Growth Multiplier</div>
+                                <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{(agencyAvgViews * 0.8).toFixed(0)} <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>est. return / follower</span></div>
+                                <div style={{ marginTop: '12px', fontSize: '0.8rem', color: 'var(--text-warning)' }}>
+                                    💡 Scale Tip: Add 5 more <b>Proven Subreddits</b> to increase predictability by 15%.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="card">
+                        <h2 style={{ fontSize: '1.1rem', marginBottom: '12px' }}>Cloud Control Center</h2>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            <button
+                                className="btn btn-outline"
+                                onClick={async () => {
+                                    const { CloudSyncService } = await import('../services/growthEngine');
+                                    await CloudSyncService.pushLocalToCloud();
+                                    alert("Agency data backed up to Supabase 'Forever' Cloud.");
+                                }}
+                                style={{ width: '100%', justifyContent: 'center' }}
+                            >
+                                <Cloud size={16} style={{ marginRight: '8px' }} />
+                                Backup All Data to Cloud
+                            </button>
+                            <button
+                                className="btn btn-outline"
+                                onClick={async () => {
+                                    if (confirm("This will overwrite your local computer data with the Cloud data. Proceed?")) {
+                                        const { CloudSyncService } = await import('../services/growthEngine');
+                                        await CloudSyncService.pullCloudToLocal();
+                                        alert("Agency data restored from Cloud.");
+                                        window.location.reload();
+                                    }
+                                }}
+                                style={{ width: '100%', justifyContent: 'center' }}
+                            >
+                                <RefreshCcw size={16} style={{ marginRight: '8px' }} />
+                                Restore from Cloud
+                            </button>
+                        </div>
                     </div>
                 </div>
 

@@ -28,7 +28,9 @@ export function ModelDetail() {
         avgViewsPerPost = 0,
         removalRatePct = 0,
         provenSubs = 0,
-        testingSubs = 0
+        testingSubs = 0,
+        topSubreddits = [],
+        nichePerformance = []
     } = metrics || {};
 
     const viewTarget = model.weeklyViewTarget || 0;
@@ -77,6 +79,62 @@ export function ModelDetail() {
                     <div className="card metric-card">
                         <span className="metric-label">Proven Subreddits</span>
                         <span className="metric-value">{provenSubs}</span>
+                    </div>
+                </div>
+
+                <div className="grid-cards mb-6" style={{ marginBottom: '24px' }}>
+                    <div className="card" style={{ gridColumn: 'span 2' }}>
+                        <h2 style={{ fontSize: '1.1rem', marginBottom: '16px' }}>Top Performing Subreddits</h2>
+                        <div className="data-table-container">
+                            <table className="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Subreddit</th>
+                                        <th>Status</th>
+                                        <th>Avg Views</th>
+                                        <th>Removal Rate</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {topSubreddits?.map(sub => (
+                                        <tr key={sub.name}>
+                                            <td style={{ fontWeight: '500' }}>r/{sub.name}</td>
+                                            <td>
+                                                <span className={`badge ${sub.status === 'proven' ? 'badge-success' : 'badge-info'}`}>
+                                                    {sub.status}
+                                                </span>
+                                            </td>
+                                            <td style={{ fontWeight: 'bold' }}>{sub.avgViews?.toLocaleString()}</td>
+                                            <td style={{ color: sub.removalPct > 20 ? 'var(--status-danger)' : 'inherit' }}>{sub.removalPct}%</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div className="card">
+                        <h2 style={{ fontSize: '1.1rem', marginBottom: '16px' }}>Niche/Angle Win-Rates</h2>
+                        <div className="data-table-container">
+                            <table className="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Angle Tag</th>
+                                        <th>Avg Views</th>
+                                        <th>Removal</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {nichePerformance?.map(np => (
+                                        <tr key={np.tag}>
+                                            <td style={{ fontWeight: '500' }}>{np.tag}</td>
+                                            <td>{Number(np.avgViews).toLocaleString()}</td>
+                                            <td style={{ fontSize: '0.85rem' }}>{np.removalRate}%</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
 

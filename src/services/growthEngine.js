@@ -477,8 +477,49 @@ export const AnalyticsEngine = {
             testingSubs,
             tasksCompleted: performances.length,
             tasksTotal: allTasks.length,
-            accountHealth: await this.getAccountMetrics(modelId)
+            accountHealth: await this.getAccountMetrics(modelId),
+            nichePerformance: await this.getNichePerformance(modelId),
+            topSubreddits: await this.getSubredditRankings(modelId)
         };
+    },
+
+    async getNichePerformance(modelId) {
+        const assets = await db.assets.where('modelId').equals(modelId).toArray();
+        const nicheStats = {};
+
+        for (const asset of assets) {
+            const tag = asset.angleTag || 'untagged';
+            if (!nicheStats[tag]) nicheStats[tag] = { views: 0, posts: 0, removals: 0 };
+
+            const tasks = await db.tasks.where('assetId').equals(asset.id).toArray();
+            for (const t of tasks) {
+                const perf = await db.performances.where('taskId').equals(t.id).first();
+                if (perf) {
+                    nicheStats[tag].views += perf.views24h || 0;
+                    nicheStats[tag].posts += 1;
+                    if (perf.removed) nicheStats[tag].removals += 1;
+                }
+            }
+        }
+
+        return Object.entries(nicheStats).map(([tag, stat]) => ({
+            tag,
+            avgViews: stat.posts > 0 ? (stat.views / stat.posts).toFixed(0) : 0,
+            removalRate: stat.posts > 0 ? (stat.removals / stat.posts * 100).toFixed(1) : 0,
+            totalViews: stat.views
+        })).sort((a, b) => b.totalViews - a.totalViews);
+    },
+
+    async getSubredditRankings(modelId) {
+        const subreddits = await db.subreddits.where('modelId').equals(modelId).toArray();
+        const rankings = subreddits.map(s => ({
+            name: s.name,
+            avgViews: s.avg24hViews || 0,
+            removalPct: s.removalPct || 0,
+            status: s.status
+        })).sort((a, b) => b.avgViews - a.avgViews);
+
+        return rankings.slice(0, 10); // Top 10
     },
 
     async getAccountMetrics(modelId) {

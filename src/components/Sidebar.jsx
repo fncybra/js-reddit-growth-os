@@ -65,9 +65,24 @@ function CloudSyncStatus() {
   const isSynced = settings?.some(s => s.key === 'supabaseUrl' && s.value && s.value.length > 0);
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: isSynced ? 'var(--status-success)' : 'var(--text-secondary)' }}>
-      {isSynced ? <Cloud size={14} /> : <CloudOff size={14} />}
-      <span>{isSynced ? "Agency Cloud: Connected" : "Cloud Sync: Offline"}</span>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: isSynced ? 'var(--status-success)' : 'var(--text-secondary)' }}>
+        {isSynced ? <Cloud size={14} /> : <CloudOff size={14} />}
+        <span style={{ fontWeight: '500' }}>{isSynced ? "Cloud Live" : "Offline"}</span>
+      </div>
+      {isSynced && (
+        <button
+          onClick={async () => {
+            const { CloudSyncService } = await import('../services/growthEngine');
+            await CloudSyncService.pullCloudToLocal();
+            window.location.reload();
+          }}
+          className="btn btn-primary"
+          style={{ padding: '4px 8px', fontSize: '0.65rem', width: 'fit-content' }}
+        >
+          Pull Updates
+        </button>
+      )}
     </div>
   );
 }
