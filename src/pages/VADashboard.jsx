@@ -229,44 +229,23 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
                 const isHeic = asset.fileName && (asset.fileName.toLowerCase().endsWith('.heic') || asset.fileName.toLowerCase().endsWith('.heif'));
 
                 if (isHeic) {
-                    alert("Converting iPhone HEIC photo to JPEG for Reddit... please wait a few seconds.");
-                    const heic2any = (await import('heic2any')).default;
+                    alert("Converting iPhone HEIC photo to JPEG via secure cloud tunnel... please wait. This can take up to 5-10 seconds.");
 
-                    // Route through Vercel serverless function to bypass Google Drive CORS without relying on Railway proxy
-                    const fetchUrl = asset.driveFileId ? `/api/drive/download/${asset.driveFileId}` : asset.originalUrl;
+                    // Route through Vercel serverless function with ?convert=true flag
+                    const fetchUrl = asset.driveFileId ? `/api/drive/download/${asset.driveFileId}?convert=true` : asset.originalUrl;
 
                     const response = await fetch(fetchUrl);
                     if (!response.ok) throw new Error("Network request failed");
                     const blob = await response.blob();
 
-                    try {
-                        const jpegBlob = await heic2any({
-                            blob,
-                            toType: "image/jpeg",
-                            quality: 0.9
-                        });
+                    const newFileName = (asset.fileName || 'converted').replace(/\.hei[cf]$/i, '.jpg');
 
-                        const newFileName = (asset.fileName || 'converted').replace(/\.hei[cf]$/i, '.jpg');
-
-                        const a = document.createElement('a');
-                        a.href = URL.createObjectURL(jpegBlob);
-                        a.download = newFileName;
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                    } catch (conversionErr) {
-                        console.warn("Client HEIC conversion failed, falling back to raw download:", conversionErr);
-                        alert("Auto-conversion to JPEG unsupported for this file codec. Downloading the raw image instead.");
-
-                        const a = document.createElement('a');
-                        a.href = URL.createObjectURL(blob);
-                        a.download = asset.fileName || 'media_raw.heic';
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                    }
-
-                } else {
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = response.headers.get('content-type') === 'image/jpeg' ? newFileName : asset.fileName || 'media_raw.heic';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
                     // Standard Download (JPEG, PNG, MP4, etc)
                     performDownload(asset.originalUrl, 'media');
                 }
