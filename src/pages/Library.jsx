@@ -9,8 +9,9 @@ export function Library() {
     const [selectedModelId, setSelectedModelId] = useState('');
 
     React.useEffect(() => {
-        if (models && models.length > 0 && !selectedModelId) {
-            setSelectedModelId(models[0].id);
+        // Default to 'all' if no model is selected yet, allowing global view
+        if (models && models.length > 0 && selectedModelId === '') {
+            setSelectedModelId('all');
         }
     }, [models, selectedModelId]);
 
@@ -145,12 +146,17 @@ export function Library() {
 
     // Filter assets for the current UI
     const displayedAssets = assets?.filter(a => {
-        const matchesModel = selectedModelId === '' || a.modelId === Number(selectedModelId);
+        const matchesModel = selectedModelId === 'all' || a.modelId === Number(selectedModelId);
         const matchesNiche = nicheFilter === 'all' || a.angleTag?.toLowerCase() === nicheFilter.toLowerCase();
         return matchesModel && matchesNiche;
     }) || [];
 
-    const availableNiches = Array.from(new Set(assets?.map(a => a.angleTag?.toLowerCase()).filter(Boolean) || []));
+    // Show only niches relevant to the selected model(s) to keep it clean
+    const availableNiches = Array.from(new Set(
+        assets?.filter(a => selectedModelId === 'all' || a.modelId === Number(selectedModelId))
+            .map(a => a.angleTag?.toLowerCase())
+            .filter(Boolean) || []
+    ));
 
     return (
         <>
@@ -187,9 +193,12 @@ export function Library() {
                             <select
                                 className="input-field"
                                 value={selectedModelId}
-                                onChange={e => setSelectedModelId(e.target.value)}
+                                onChange={e => {
+                                    setSelectedModelId(e.target.value);
+                                    setNicheFilter('all'); // Reset niche filter when switching models
+                                }}
                             >
-                                <option value="" disabled>Select a Model</option>
+                                <option value="all">🌐 Show All Models (Agency View)</option>
                                 {models.map(m => (
                                     <option key={m.id} value={m.id}>{m.name}</option>
                                 ))}
@@ -261,6 +270,12 @@ export function Library() {
                         </div>
                     </div>
 
+                    {selectedModelId === 'all' && (
+                        <div style={{ marginBottom: '20px', padding: '10px', backgroundColor: '#6366f111', border: '1px solid #6366f133', borderRadius: '4px', fontSize: '0.85rem', color: '#818cf8' }}>
+                            💡 You are in <strong>Agency View</strong>. You can see content for all models, but you must select a specific model above to sync new content or upload files.
+                        </div>
+                    )}
+
                     {displayedAssets.length === 0 ? (
                         <div style={{ padding: '48px', textAlign: 'center', color: 'var(--text-secondary)', backgroundColor: 'var(--surface-color)', borderRadius: 'var(--radius-md)' }}>
                             No media files found for this model. Sync Drive or import a folder to begin.
@@ -281,8 +296,13 @@ export function Library() {
                                     }}>
                                         <div style={{ height: '200px', backgroundColor: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
                                             {asset.driveFileId && (
-                                                <div style={{ position: 'absolute', top: '8px', right: '8px', background: 'rgba(0,0,0,0.5)', padding: '4px', borderRadius: '4px', fontSize: '10px' }}>
+                                                <div style={{ position: 'absolute', top: '8px', right: '8px', background: 'rgba(0,0,0,0.6)', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', backdropFilter: 'blur(4px)', border: '1px solid rgba(255,255,255,0.1)' }}>
                                                     ☁️ Drive
+                                                </div>
+                                            )}
+                                            {selectedModelId === 'all' && (
+                                                <div style={{ position: 'absolute', top: '8px', left: '8px', background: 'var(--primary-color)', padding: '2px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold' }}>
+                                                    {model?.name?.toUpperCase() || 'MIA'}
                                                 </div>
                                             )}
                                             {asset.assetType === 'image' && objectUrl ? (
