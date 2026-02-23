@@ -12,6 +12,7 @@ export function VADashboard() {
     const [cooldownUntil, setCooldownUntil] = useState(0);
     const [timeLeft, setTimeLeft] = useState(0);
     const [authorizedModels, setAuthorizedModels] = useState([]);
+    const [selectedAccountId, setSelectedAccountId] = useState('ALL');
 
     const models = useLiveQuery(() => db.models.toArray());
     const postInterval = useLiveQuery(async () => {
@@ -68,10 +69,24 @@ export function VADashboard() {
 
     const activeModelId = selectedModelId ? Number(selectedModelId) : null;
 
-    // Fetch all pending tasks to avoid Timezone strict-equality blocking overseas VAs
-    const tasks = useLiveQuery(
-        () => activeModelId ? db.tasks.where('modelId').equals(activeModelId).filter(t => t.status !== 'closed' && t.status !== 'failed').toArray() : [],
+    const accounts = useLiveQuery(
+        () => activeModelId ? db.accounts.where('modelId').equals(activeModelId).toArray() : [],
         [activeModelId]
+    );
+
+    // Fetch all pending tasks to avoid Timezone strict-equality blocking overseas VAs
+    // Added filter by selected account if not ALL
+    const tasks = useLiveQuery(
+        () => {
+            if (!activeModelId) return [];
+            let query = db.tasks.where('modelId').equals(activeModelId).filter(t => t.status !== 'closed' && t.status !== 'failed');
+            if (selectedAccountId !== 'ALL') {
+                const acctId = Number(selectedAccountId);
+                query = query.filter(t => t.accountId === acctId);
+            }
+            return query.toArray();
+        },
+        [activeModelId, selectedAccountId]
     );
 
     function handleAuth() {
@@ -158,6 +173,17 @@ export function VADashboard() {
                     >
                         {authorizedModels?.map(m => (
                             <option key={m.id} value={m.id}>{m.name}</option>
+                        ))}
+                    </select>
+
+                    <select
+                        style={{ padding: '8px', backgroundColor: '#2d313a', color: '#fff', border: 'none', borderRadius: '4px', outline: 'none' }}
+                        value={selectedAccountId}
+                        onChange={e => setSelectedAccountId(e.target.value)}
+                    >
+                        <option value="ALL">All Accounts Queue</option>
+                        {accounts?.map(a => (
+                            <option key={a.id} value={a.id}>u/{a.handle}</option>
                         ))}
                     </select>
                 </div>
