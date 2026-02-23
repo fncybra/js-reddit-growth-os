@@ -2,8 +2,8 @@ import Dexie from 'dexie';
 
 export const db = new Dexie('JSRedditGrowthOS');
 
-db.version(5).stores({
-    models: '++id, name, status, driveFolderId, usedFolderId, redgifsProfile, proxyInfo',
+db.version(7).stores({
+    models: '++id, name, status, driveFolderId, usedFolderId, redgifsProfile, proxyInfo, vaPin',
     accounts: '++id, modelId, handle, status, proxyInfo',
     subreddits: '++id, modelId, name, status, lastTestedDate',
     assets: '++id, modelId, assetType, approved, lastUsedDate, driveFileId, externalUrl',
