@@ -147,7 +147,7 @@ export function VADashboard() {
 
     return (
         <div style={{ minHeight: '100vh', backgroundColor: '#0f1115', color: '#e5e7eb', fontFamily: 'sans-serif' }}>
-            <header style={{ backgroundColor: '#1a1d24', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #2d313a' }}>
+            <header className="va-header-wrap" style={{ backgroundColor: '#1a1d24', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #2d313a' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                     <div style={{ fontWeight: 'bold', fontSize: '1.2rem', color: '#6366f1' }}>VA Operations Terminal</div>
                     {syncing && <span style={{ color: '#fbbf24', fontSize: '0.8rem' }}>☁️ Syncing...</span>}
@@ -161,7 +161,7 @@ export function VADashboard() {
                         ))}
                     </select>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                <div className="va-header-stats" style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
                     <div style={{ fontSize: '0.9rem', color: '#9ca3af' }}>
                         {new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                     </div>
@@ -411,9 +411,9 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
     }
 
     return (
-        <div style={{ backgroundColor: '#1a1d24', border: '1px solid #2d313a', borderRadius: '8px', overflow: 'hidden', display: 'flex', flexWrap: 'wrap' }}>
+        <div className="va-card-container" style={{ backgroundColor: '#1a1d24', border: '1px solid #2d313a', borderRadius: '8px', overflow: 'hidden', display: 'flex', flexWrap: 'wrap' }}>
             {/* Media Area */}
-            <div style={{ width: '100%', maxWidth: '280px', backgroundColor: '#000', display: 'flex', flexDirection: 'column', flexShrink: 0, position: 'relative', margin: '0 auto' }}>
+            <div className="va-media-sidebar" style={{ width: '100%', maxWidth: '280px', backgroundColor: '#000', display: 'flex', flexDirection: 'column', flexShrink: 0, position: 'relative', margin: '0 auto', borderRight: '1px solid #2d313a' }}>
                 <div style={{ height: '280px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     {asset ? (
                         asset.assetType === 'image' && objectUrl ? (

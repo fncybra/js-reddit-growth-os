@@ -319,3 +319,15 @@ select.input-field {
   background-position: right 12px center;
   padding-right: 40px;
 }
+
+/* VA App Mobile Responsiveness */
+.va-card-container { display: flex; flex-wrap: wrap; }
+.va-media-sidebar { flex-shrink: 0; }
+.va-header-wrap { flex-wrap: wrap; }
+
+@media (max-width: 768px) {
+  .va-card-container { flex-direction: column !important; }
+  .va-media-sidebar { width: 100% !important; max-width: 100% !important; border-bottom: 1px solid #2d313a; border-right: none !important; }
+  .va-header-wrap { flex-direction: column !important; align-items: flex-start !important; gap: 12px; padding: 16px !important; }
+  .va-header-stats { width: 100%; justify-content: space-between; gap: 8px !important; flex-wrap: wrap; }
+}
