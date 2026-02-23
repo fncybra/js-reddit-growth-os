@@ -1,0 +1,222 @@
+const express = require('express');
+const cors = require('cors');
+const axios = require('axios');
+const { google } = require('googleapis');
+const path = require('path');
+const fs = require('fs');
+
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+app.use(express.json()); // Allow JSON body for POST requests
+app.use(cors());
+
+// Initialize Google Drive API
+let drive = null;
+const KEY_FILE_PATH = path.join(__dirname, 'service_account.json');
+const SERVICE_ACCOUNT_JSON = process.env.SERVICE_ACCOUNT_JSON;
+
+if (SERVICE_ACCOUNT_JSON || fs.existsSync(KEY_FILE_PATH)) {
+    try {
+        let authOptions;
+        if (SERVICE_ACCOUNT_JSON) {
+            console.log('[GrowthOS Proxy] Loading Google Drive credentials from Environment Variable');
+            authOptions = {
+                credentials: JSON.parse(SERVICE_ACCOUNT_JSON),
+                scopes: ['https://www.googleapis.com/auth/drive'],
+            };
+        } else {
+            console.log('[GrowthOS Proxy] Loading Google Drive credentials from service_account.json');
+            authOptions = {
+                keyFile: KEY_FILE_PATH,
+                scopes: ['https://www.googleapis.com/auth/drive'],
+            };
+        }
+
+        const auth = new google.auth.GoogleAuth(authOptions);
+        drive = google.drive({ version: 'v3', auth });
+        console.log('[GrowthOS Proxy] Google Drive API Initialized');
+    } catch (err) {
+        console.error('[GrowthOS Proxy] Failed to initialize Google Drive:', err.message);
+    }
+} else {
+    console.warn('[GrowthOS Proxy] No Google Drive credentials found. Use SERVICE_ACCOUNT_JSON env var or service_account.json file.');
+}
+
+
+// Proxy endpoint for Reddit User Scraping
+app.get('/api/scrape/user/:username', async (req, res) => {
+    try {
+        const { username } = req.params;
+
+        // Reddit requires a custom User-Agent to avoid rate limits/blocks
+        const response = await axios.get(`https://www.reddit.com/user/${username}/submitted.json?limit=100`, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+        });
+
+        res.json(response.data);
+    } catch (error) {
+        console.error("Scraper Error:", error.message);
+
+        if (error.response) {
+            // Forward Reddit's HTTP status codes (404 Not Found, 403 Forbidden, etc)
+            return res.status(error.response.status).json({ error: error.response.data || "Reddit API Error" });
+        }
+        res.status(500).json({ error: "Failed to scrape user profile" });
+    }
+});
+
+// Proxy endpoint for Reddit Post Performance
+app.get('/api/scrape/post/:postId', async (req, res) => {
+    try {
+        const { postId } = req.params;
+        const response = await axios.get(`https://www.reddit.com/comments/${postId}.json`, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+        });
+
+        // Reddit returns an array [post_details, comments]
+        // We want post details which is response.data[0].data.children[0].data
+        const post = response.data[0].data.children[0].data;
+
+        res.json({
+            title: post.title,
+            views: post.ups, // In JSON, 'ups' is the upvote count which we use as proxy for performance
+            score: post.score,
+            upvoteRatio: post.upvote_ratio,
+            isRemoved: post.removed_by_category !== null || post.is_robot_indexable === false,
+            subreddit: post.subreddit,
+            author: post.author
+        });
+    } catch (error) {
+        console.error("Post Sync Error:", error.message);
+        res.status(500).json({ error: "Failed to sync post performance" });
+    }
+});
+
+// Proxy endpoint for Subreddit Rules & Flairs
+app.get('/api/scrape/subreddit/:name', async (req, res) => {
+    try {
+        const { name } = req.params;
+        // Fetch about.json and rules.json
+        const [aboutRes, rulesRes] = await Promise.all([
+            axios.get(`https://www.reddit.com/r/${name}/about.json`, { headers: { 'User-Agent': 'GrowthOS/1.0' } }),
+            axios.get(`https://www.reddit.com/r/${name}/about/rules.json`, { headers: { 'User-Agent': 'GrowthOS/1.0' } })
+        ]);
+
+        const about = aboutRes.data.data;
+        const rules = rulesRes.data.rules || [];
+
+        res.json({
+            name: about.display_name,
+            subscribers: about.subscribers,
+            activeUsers: about.accounts_active,
+            over18: about.over18,
+            postFlairEnabled: about.post_flair_enabled,
+            flairRequired: about.post_flair_required,
+            rules: rules.map(r => ({
+                title: r.short_name,
+                description: r.description
+            }))
+        });
+    } catch (error) {
+        console.error("Subreddit Discovery Error:", error.message);
+        res.status(500).json({ error: "Failed to fetch subreddit data" });
+    }
+});
+
+// Proxy endpoint for Subreddit Search (By Keyword)
+app.get('/api/scrape/search/subreddits', async (req, res) => {
+    try {
+        const { q } = req.query;
+        if (!q) return res.status(400).json({ error: "Query required" });
+
+        const response = await axios.get(`https://www.reddit.com/subreddits/search.json?q=${encodeURIComponent(q)}&limit=50`, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
+        });
+
+        const results = response.data.data.children.map(c => ({
+            name: c.data.display_name,
+            subscribers: c.data.subscribers,
+            description: c.data.public_description,
+            over18: c.data.over_18,
+            title: c.data.title
+        }));
+
+        res.json(results);
+    } catch (error) {
+        console.error("Subreddit Search Error:", error.message);
+        res.status(500).json({ error: "Failed to search subreddits" });
+    }
+});
+
+// Proxy endpoint for Top Subreddit Titles
+app.get('/api/scrape/subreddit/top/:name', async (req, res) => {
+    try {
+        const { name } = req.params;
+        const response = await axios.get(`https://www.reddit.com/r/${name}/top.json?t=month&limit=50`, {
+            headers: { 'User-Agent': 'GrowthOS/1.0 (Internal Analytics Tool)' }
+        });
+
+        // Map out just the titles to send to the AI
+        const titles = response.data.data?.children?.map(c => c.data.title) || [];
+        res.json(titles);
+    } catch (error) {
+        console.error("Top Titles Scrape Error:", error.message);
+        res.status(500).json({ error: "Failed to fetch top titles" });
+    }
+});
+
+// Google Drive: List files in a folder
+app.get('/api/drive/list/:folderId', async (req, res) => {
+    if (!drive) return res.status(503).json({ error: "Google Drive not configured" });
+
+    try {
+        const { folderId } = req.params;
+        const response = await drive.files.list({
+            q: `'${folderId}' in parents and trashed = false and (mimeType contains 'image/' or mimeType contains 'video/')`,
+            fields: 'files(id, name, mimeType, webContentLink, thumbnailLink)',
+        });
+        res.json(response.data.files);
+    } catch (error) {
+        console.error("Drive List Error:", error.message);
+        res.status(500).json({ error: "Failed to list Drive files" });
+    }
+});
+
+// Google Drive: Move file to "Used" folder
+app.post('/api/drive/move', async (req, res) => {
+    if (!drive) return res.status(503).json({ error: "Google Drive not configured" });
+
+    try {
+        const { fileId, targetFolderId } = req.body;
+        if (!fileId || !targetFolderId) return res.status(400).json({ error: "Missing fileId or targetFolderId" });
+
+        // Retrieve the existing parents to remove
+        const file = await drive.files.get({
+            fileId: fileId,
+            fields: 'parents',
+        });
+        const previousParents = file.data.parents ? file.data.parents.join(',') : '';
+
+        // Move the file to the new folder
+        await drive.files.update({
+            fileId: fileId,
+            addParents: targetFolderId,
+            removeParents: previousParents,
+            fields: 'id, parents',
+        });
+
+        res.json({ success: true, message: "File moved successfully" });
+    } catch (error) {
+        console.error("Drive Move Error:", error.message);
+        res.status(500).json({ error: "Failed to move Drive file" });
+    }
+});
+
+app.listen(PORT, () => {
+    console.log(`[GrowthOS Proxy] Scraper Engine running on http://localhost:${PORT}`);
+});
