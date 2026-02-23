@@ -115,6 +115,22 @@ export function Settings() {
                         </form>
                     </div>
 
+                    <div className="card">
+                        <h2 style={{ fontSize: '1.2rem', marginBottom: '20px' }}>AI Brain Integration</h2>
+                        <div className="input-group">
+                            <label className="input-label">OpenAI / OpenRouter API Key</label>
+                            <input
+                                type="password"
+                                className="input-field"
+                                placeholder="sk-..."
+                                value={settings.openaiApiKey || ''}
+                                onChange={e => setSettings({ ...settings, openaiApiKey: e.target.value })}
+                            />
+                            <small style={{ color: 'var(--text-secondary)' }}>Used for the AI Viral Title Engine. Supports standard OpenAI keys.</small>
+                        </div>
+                        <button onClick={handleSave} className="btn btn-outline" style={{ width: '100%', marginTop: '16px' }}>Save AI Key</button>
+                    </div>
+
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
                         <div className="card">
                             <h2 style={{ fontSize: '1.2rem', marginBottom: '20px' }}>Supabase Cloud Sync (Multi-VA)</h2>
