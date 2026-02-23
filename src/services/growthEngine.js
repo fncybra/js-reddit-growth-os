@@ -298,36 +298,41 @@ export const DailyPlanGenerator = {
             // Assign assets to selected subreddits for this account
             const cooldownDate = subDays(targetDate, settings.assetReuseCooldownDays);
 
+            // SHUFFLE assets before starting to ensure we don't always pick the same one as fallback
+            const shuffledAssets = [...activeAssets].sort(() => Math.random() - 0.5);
+
             for (const sub of selectedSubsForAccount) {
                 let selectedAsset = null;
                 const subNameLower = sub.name.toLowerCase();
+                const subNiche = (sub.nicheTag || '').toLowerCase().trim();
 
                 // 1. First Pass: Exact Niche Match (Highest priority)
-                for (const asset of activeAssets) {
-                    if (!sub.nicheTag || sub.nicheTag.toLowerCase() === 'general' || sub.nicheTag.toLowerCase() === 'scraped') continue;
-                    if (sub.nicheTag.toLowerCase() !== asset.angleTag.toLowerCase()) continue;
+                if (subNiche && subNiche !== 'general' && subNiche !== 'scraped' && subNiche !== 'untagged') {
+                    for (const asset of shuffledAssets) {
+                        const assetTag = (asset.angleTag || '').toLowerCase().trim();
+                        if (subNiche === assetTag) {
+                            const timesUsedToday = usedAssetsInSession.get(asset.id) || 0;
+                            if (timesUsedToday >= 5) continue;
 
-                    const timesUsedToday = usedAssetsInSession.get(asset.id) || 0;
-                    if (timesUsedToday >= 5) continue;
-
-                    if (timesUsedToday === 0) {
-                        const pastUsages = await db.tasks.where('assetId').equals(asset.id).toArray();
-                        const recentlyUsed = pastUsages.some(t => isAfter(new Date(t.date), cooldownDate));
-                        if (recentlyUsed) continue;
+                            if (timesUsedToday === 0) {
+                                const pastUsages = await db.tasks.where('assetId').equals(asset.id).toArray();
+                                const recentlyUsed = pastUsages.some(t => isAfter(new Date(t.date), cooldownDate));
+                                if (recentlyUsed) continue;
+                            }
+                            selectedAsset = asset;
+                            break;
+                        }
                     }
-
-                    selectedAsset = asset;
-                    break;
                 }
 
                 // 2. Second Pass: Intelligence Match (Fuzzy)
-                // If sub name contains "preg" and asset tag is "preg", or sub is "fitness" and asset is "gym"
                 if (!selectedAsset) {
-                    for (const asset of activeAssets) {
-                        const assetTag = asset.angleTag.toLowerCase();
-                        if (assetTag === 'general' || assetTag === 'untagged') continue;
+                    for (const asset of shuffledAssets) {
+                        const assetTag = (asset.angleTag || '').toLowerCase().trim();
+                        // Ignore assets that are too generic for fuzzy matching
+                        if (!assetTag || assetTag === 'general' || assetTag === 'untagged' || assetTag.length < 3) continue;
 
-                        // Check if the subreddit name contains the asset's tag
+                        // Check if the subreddit name contains the asset's tag (e.g. sub 'fitnessgirls' includes tag 'fitness')
                         const isMatch = subNameLower.includes(assetTag) ||
                             (assetTag === 'preg' && subNameLower.includes('pregnant')) ||
                             (assetTag === 'pregnant' && subNameLower.includes('preg'));
@@ -348,9 +353,18 @@ export const DailyPlanGenerator = {
                     }
                 }
 
-                // 3. Third Pass (Fallback): Grab ANY available photo to prevent empty tasks
+                // 3. Third Pass (Fallback): Take ANY available but prioritize General/Untagged first
+                // If a sub is SPECIFICALLY tagged, we try hard to NOT give it a mismatched fallback if possible,
+                // but we'll allow it if nothing else exists.
                 if (!selectedAsset) {
-                    for (const asset of activeAssets) {
+                    // Sort shuffled assets to put 'general' ones first in the fallback queue
+                    const fallbackOrder = [...shuffledAssets].sort((a, b) => {
+                        const aGen = (a.angleTag || 'general') === 'general';
+                        const bGen = (b.angleTag || 'general') === 'general';
+                        return (bGen ? 1 : 0) - (aGen ? 1 : 0);
+                    });
+
+                    for (const asset of fallbackOrder) {
                         const timesUsedToday = usedAssetsInSession.get(asset.id) || 0;
                         if (timesUsedToday >= 5) continue;
 

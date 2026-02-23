@@ -292,9 +292,18 @@ export function Library() {
                                         borderRadius: 'var(--radius-md)',
                                         overflow: 'hidden',
                                         backgroundColor: 'var(--surface-color)',
-                                        opacity: asset.approved ? 1 : 0.6
+                                        opacity: asset.approved ? 1 : 0.7,
+                                        position: 'relative',
+                                        transition: 'all 0.2s'
                                     }}>
                                         <div style={{ height: '200px', backgroundColor: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                                            {!asset.approved && (
+                                                <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(239, 68, 68, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}>
+                                                    <span style={{ backgroundColor: 'var(--status-danger)', color: '#fff', padding: '4px 12px', borderRadius: '20px', fontSize: '0.7rem', fontWeight: 'bold', boxShadow: '0 4px 6px rgba(0,0,0,0.3)' }}>
+                                                        REJECTED / DISABLED
+                                                    </span>
+                                                </div>
+                                            )}
                                             {asset.driveFileId && (
                                                 <div style={{ position: 'absolute', top: '8px', right: '8px', background: 'rgba(0,0,0,0.6)', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', backdropFilter: 'blur(4px)', border: '1px solid rgba(255,255,255,0.1)' }}>
                                                     ☁️ Drive
