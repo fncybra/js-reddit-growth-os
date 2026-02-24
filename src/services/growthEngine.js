@@ -768,7 +768,8 @@ export const CloudSyncService = {
         const { getSupabaseClient } = await import('../db/supabase.js');
         const supabase = await getSupabaseClient();
         if (supabase) {
-            await supabase.from(table).delete().eq('id', id);
+            const { error } = await supabase.from(table).delete().eq('id', id);
+            if (error) console.error(`[CloudSync] Error deleting ${id} from ${table}:`, error.message);
         }
     },
 
@@ -777,7 +778,8 @@ export const CloudSyncService = {
         const { getSupabaseClient } = await import('../db/supabase.js');
         const supabase = await getSupabaseClient();
         if (supabase) {
-            await supabase.from(table).delete().in('id', ids);
+            const { error } = await supabase.from(table).delete().in('id', ids);
+            if (error) console.error(`[CloudSync] Error bulk deleting from ${table}:`, error.message);
         }
     }
 };
