@@ -633,7 +633,9 @@ export const AnalyticsEngine = {
             tasksTotal: allTasks.length,
             accountHealth: await this.getAccountMetrics(modelId),
             nichePerformance: await this.getNichePerformance(modelId),
-            topSubreddits: await this.getSubredditRankings(modelId)
+            topSubreddits: await this.getSubredditRankings(modelId),
+            worstSubreddits: await this.getWorstSubreddits(modelId),
+            accountRankings: await this.getAccountRankings(modelId)
         };
     },
 
@@ -670,10 +672,38 @@ export const AnalyticsEngine = {
             name: s.name,
             avgViews: s.avg24hViews || 0,
             removalPct: s.removalPct || 0,
-            status: s.status
+            status: s.status,
+            totalTests: s.totalTests || 0
         })).sort((a, b) => b.avgViews - a.avgViews);
 
-        return rankings.slice(0, 10); // Top 10
+        return rankings.slice(0, 5); // Top 5
+    },
+
+    async getWorstSubreddits(modelId) {
+        const subreddits = await db.subreddits.where('modelId').equals(modelId).toArray();
+        const badSubs = subreddits.filter(s => s.totalTests > 0 && (s.removalPct > 40 || s.avg24hViews < 50))
+            .map(s => ({
+                name: s.name,
+                avgViews: s.avg24hViews || 0,
+                removalPct: s.removalPct || 0,
+                status: s.status,
+                totalTests: s.totalTests || 0,
+                action: s.removalPct > 40 ? "Stop - High Removals" : "Stop - Low Views"
+            }))
+            .sort((a, b) => b.removalPct - a.removalPct); // Sort by highest removal first
+
+        return badSubs.slice(0, 10);
+    },
+
+    async getAccountRankings(modelId) {
+        const accounts = await db.accounts.where('modelId').equals(modelId).toArray();
+        return accounts.map(a => ({
+            handle: a.handle,
+            karma: a.totalKarma || 0,
+            cqs: a.cqsStatus || 'Unknown',
+            status: a.status,
+            isSuspended: a.isSuspended
+        })).sort((a, b) => b.karma - a.karma);
     },
 
     async getAccountMetrics(modelId) {
