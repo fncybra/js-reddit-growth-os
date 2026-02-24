@@ -266,43 +266,54 @@ export const SubredditLifecycleService = {
     // Evaluates all testing subreddits against criteria to promote or demote them
     async evaluateSubreddits(modelId) {
         const settings = await SettingsService.getSettings();
-        const testingSubreddits = await db.subreddits.where('modelId').equals(modelId).filter(s => s.status === 'testing').toArray();
+        const allSubs = await db.subreddits.where('modelId').equals(modelId).toArray();
 
-        for (const sub of testingSubreddits) {
-            // Re-calculate based on tasks/performances
-            const tasks = await db.tasks.where({ subredditId: sub.id }).toArray();
-            const taskIds = tasks.map(t => t.id);
-            const performances = await db.performances.where('taskId').anyOf(taskIds).toArray();
+        for (const sub of allSubs) {
+            // Match tasks by subredditId OR by subreddit name in the reddit URL
+            const allModelTasks = await db.tasks.where('modelId').equals(modelId).toArray();
+            const matchedTasks = allModelTasks.filter(t => {
+                if (t.subredditId === sub.id) return true;
+                // Fallback: match by subreddit name in the reddit URL
+                if (t.redditUrl) {
+                    const urlMatch = t.redditUrl.match(/\/r\/([^\/]+)/i);
+                    if (urlMatch && urlMatch[1].toLowerCase() === sub.name.toLowerCase()) return true;
+                }
+                return false;
+            });
+
+            const taskIds = matchedTasks.map(t => t.id);
+            const performances = taskIds.length > 0
+                ? await db.performances.where('taskId').anyOf(taskIds).toArray()
+                : [];
 
             const totalTests = performances.length;
+            if (totalTests === 0) continue;
+
+            let totalViews = 0;
+            let removedCount = 0;
+            performances.forEach(p => {
+                totalViews += p.views24h || 0;
+                if (p.removed) removedCount++;
+            });
+
+            const avgViews = totalViews / totalTests;
+            const removalPct = (removedCount / totalTests) * 100;
+
+            // Always update stats
+            const updateObj = { totalTests, avg24hViews: avgViews, removalPct };
+
+            // Only change status if enough tests
             if (totalTests >= settings.testsBeforeClassification) {
-                let totalViews = 0;
-                let removedCount = 0;
-
-                performances.forEach(p => {
-                    totalViews += p.views24h || 0;
-                    if (p.removed) removedCount++;
-                });
-
-                const avgViews = totalViews / totalTests;
-                const removalPct = (removedCount / totalTests) * 100;
-
-                let newStatus = 'testing';
                 if (removalPct > settings.removalThresholdPct) {
-                    newStatus = 'rejected';
+                    updateObj.status = 'rejected';
                 } else if (avgViews >= settings.minViewThreshold) {
-                    newStatus = 'proven';
+                    updateObj.status = 'proven';
                 } else {
-                    newStatus = 'low_yield';
+                    updateObj.status = 'low_yield';
                 }
-
-                await db.subreddits.update(sub.id, {
-                    status: newStatus,
-                    totalTests,
-                    avg24hViews: avgViews,
-                    removalPct
-                });
             }
+
+            await db.subreddits.update(sub.id, updateObj);
         }
     }
 };
