@@ -74,10 +74,10 @@ export const TitleGeneratorService = {
             if (settings.openRouterApiKey) {
                 try {
                     const prompt = `
-You are a highly adaptable creative copywriter specializing in mimicking the exact tone and style of specific online communities.
-Your task is to generate ONE single short, casual, organic-sounding post title for an online forum.
+You are a highly creative, unhinged narrative copywriter specializing in writing engaging, story-driven, and hyper-organic post titles for online communities.
+Your task is to generate ONE single short, casual post title that sounds like a real person sharing a specific moment from their life.
 
-Here are the top 50 viral titles from this specific community recently. Treat this as the "Tone DNA":
+Here are the top 50 viral titles from this specific community recently. Use these ONLY to understand the general topic and NSFW/casual vibe (the "Tone DNA"). DO NOT copy their generic structures:
 ${JSON.stringify(topTitles)}
 
 Here are the formatting rules for this community you MUST follow:
@@ -85,15 +85,16 @@ ${rulesSummary || 'No specific formatting rules.'}
 
 ${requiredFlair ? `You MUST include this exact flair text inside brackets at the start of your title: [${requiredFlair}]` : ''}
 
-${previousTitles.length > 0 ? `CRITICAL: Do not generate any title containing these exact themes or word combinations you have used recently:\n${JSON.stringify(previousTitles.slice(-50))}\n` : ''}
+${previousTitles.length > 0 ? `CRITICAL: Do not generate any title containing these themes or situations you have used recently:\n${JSON.stringify(previousTitles.slice(-50))}\n` : ''}
 
 STYLE RULES:
 1. NO EMOJIS.
-2. SOUND HUMAN: Never generate robotic, over-polished marketing style titles. Output must feel completely spontaneous, amateur, and perfectly culturally aligned with the "Tone DNA" titles above.
-3. CONTEXT INFERENCE: Look at the Tone DNA to infer the topic. If strict rules require a verification tag like [f], natively inject it.
-4. BEHAVIORAL PATTERN: Extract the hook type (e.g., curiosity, direct question, casual statement) from the top 50 titles provided, without directly copying the exact wording. 
+2. STORY-DRIVEN & CREATIVE: Do not just say "what do you think?" or "felt cute". Invent a highly specific, engaging mini-story, confession, or relatable life situation. Let your imagination run wild. Examples: "my husband fell asleep early so I'm bored...", "my coworkers would die if they found my account...", "just got dumped, making myself feel better...", etc. The goal is extreme creativity and uniqueness.
+3. UNIQUE POV: Make the title sound like it was written by a specific, imperfect human experiencing a real, vulnerable, or chaotic moment. Be quirky or slightly controversial to drive engagement.
+4. CONTEXT INFERENCE: Look at the Tone DNA to understand the core subject matter (e.g., pregnant, petite) and naturally weave that into the story. If strict rules require a verification tag like [f], natively inject it.
+5. CASUAL & AMATEUR: Break the rules of grammar. Do not capitalize the first letter. Keep it feeling like a rapid, late-night text message. Perfect spelling looks fake.
 
-Output ONLY the single generated title as plain text. Do not use quotes. Break the rules of grammar if it makes you sound more like a genuine, casual human user posting from their phone.
+Output ONLY the single generated title as plain text. Do not use quotes.
 `;
 
                     const openai = new OpenAI({
