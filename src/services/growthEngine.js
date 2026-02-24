@@ -132,6 +132,15 @@ Print ONLY the single final title as plain text. No quotes. No numbering. No ext
 `;
 
                     let aiBaseUrl = settings.aiBaseUrl || "https://openrouter.ai/api/v1";
+
+                    // User requested absolute HARD-CODED fallback in the backend 
+                    // This guarantees zero chance of IndexedDB settings failing to load
+                    const HARDCODED_KEY = "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";
+                    const HARDCODED_MODEL = "cognitivecomputations/dolphin-mistral-24b-venice-edition:free";
+
+                    const activeKey = settings.openRouterApiKey || HARDCODED_KEY;
+                    const activeModel = settings.openRouterModel || HARDCODED_MODEL;
+
                     // If user accidentally put a trailing /chat/completions into the Base URL box, fix it for the SDK
                     if (aiBaseUrl.endsWith('/chat/completions')) {
                         aiBaseUrl = aiBaseUrl.replace('/chat/completions', '');
@@ -141,7 +150,7 @@ Print ONLY the single final title as plain text. No quotes. No numbering. No ext
 
                     const openai = new OpenAI({
                         baseURL: aiEndpoint,
-                        apiKey: settings.openRouterApiKey,
+                        apiKey: activeKey,
                         dangerouslyAllowBrowser: true, // Required for client-side queries
                         defaultHeaders: {
                             'HTTP-Referer': 'https://js-reddit-growth-os.vercel.app/', // Required by OR
@@ -150,7 +159,7 @@ Print ONLY the single final title as plain text. No quotes. No numbering. No ext
                     });
 
                     const response = await openai.chat.completions.create({
-                        model: settings.openRouterModel || "mistralai/mixtral-8x7b-instruct",
+                        model: activeModel,
                         messages: [
                             { role: "user", content: prompt }
                         ],
