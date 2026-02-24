@@ -53,7 +53,7 @@ app.get('/api/scrape/user/stats/:username', async (req, res) => {
 
         const response = await axios.get(url, {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.120.120.120 Safari/537.36',
+                'User-Agent': 'GrowthOS/1.0 (Internal Analytics Tool)',
                 'Accept': 'application/json'
             }
         });
@@ -79,7 +79,7 @@ app.get('/api/scrape/user/:username', async (req, res) => {
         const { username } = req.params;
         const response = await axios.get(`https://old.reddit.com/user/${username}/submitted.json?limit=100`, {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.120.120.120 Safari/537.36',
+                'User-Agent': 'GrowthOS/1.0 (Internal Analytics Tool)',
                 'Accept': 'application/json',
                 'Accept-Language': 'en-US,en;q=0.9'
             }
@@ -94,31 +94,7 @@ app.get('/api/scrape/user/:username', async (req, res) => {
     }
 });
 
-// Proxy endpoint for Reddit Post Performance
-app.get('/api/scrape/post/:postId', async (req, res) => {
-    try {
-        const { postId } = req.params;
-        const response = await axios.get(`https://old.reddit.com/comments/${postId}.json`, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.120.120.120 Safari/537.36',
-                'Accept': 'application/json'
-            }
-        });
-        const post = response.data[0].data.children[0].data;
-        res.json({
-            title: post.title,
-            views: post.ups,
-            score: post.score,
-            upvoteRatio: post.upvote_ratio,
-            isRemoved: post.removed_by_category !== null || post.is_robot_indexable === false,
-            subreddit: post.subreddit,
-            author: post.author
-        });
-    } catch (error) {
-        console.error("Post Sync Error:", error.message);
-        res.status(500).json({ error: "Failed to sync post performance" });
-    }
-});
+
 
 // Proxy endpoint for Subreddit Rules & Flairs
 app.get('/api/scrape/subreddit/:name', async (req, res) => {
@@ -127,13 +103,13 @@ app.get('/api/scrape/subreddit/:name', async (req, res) => {
         const [aboutRes, rulesRes] = await Promise.all([
             axios.get(`https://old.reddit.com/r/${name}/about.json`, {
                 headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.120.120.120 Safari/537.36',
+                    'User-Agent': 'GrowthOS/1.0 (Internal Analytics Tool)',
                     'Accept': 'application/json'
                 }
             }),
             axios.get(`https://old.reddit.com/r/${name}/about/rules.json`, {
                 headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.120.120.120 Safari/537.36',
+                    'User-Agent': 'GrowthOS/1.0 (Internal Analytics Tool)',
                     'Accept': 'application/json'
                 }
             })
@@ -165,7 +141,7 @@ app.get('/api/scrape/search/subreddits', async (req, res) => {
         if (!q) return res.status(400).json({ error: "Query required" });
         const response = await axios.get(`https://old.reddit.com/subreddits/search.json?q=${encodeURIComponent(q)}&limit=50`, {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.120.120.120 Safari/537.36',
+                'User-Agent': 'GrowthOS/1.0 (Internal Analytics Tool)',
                 'Accept': 'application/json'
             }
         });
@@ -189,7 +165,7 @@ app.get('/api/scrape/subreddit/top/:name', async (req, res) => {
         const { name } = req.params;
         const response = await axios.get(`https://old.reddit.com/r/${name}/top.json?t=month&limit=50`, {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.120.120.120 Safari/537.36',
+                'User-Agent': 'GrowthOS/1.0 (Internal Analytics Tool)',
                 'Accept': 'application/json'
             }
         });
@@ -207,7 +183,7 @@ app.get('/api/scrape/post/:postId', async (req, res) => {
         const { postId } = req.params;
         const response = await axios.get(`https://old.reddit.com/by_id/t3_${postId}.json`, {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.120.120.120 Safari/537.36',
+                'User-Agent': 'GrowthOS/1.0 (Internal Analytics Tool)',
                 'Accept': 'application/json'
             }
         });
@@ -217,8 +193,8 @@ app.get('/api/scrape/post/:postId', async (req, res) => {
 
         res.json({
             ups: postData.ups,
-            removed: postData.removed_by_category !== null || postData.banned_by !== null,
-            removed_category: postData.removed_by_category // Could be 'moderator', 'reddit', 'author', 'deleted'
+            removed: postData.removed_by_category !== null || postData.banned_by !== null || postData.is_robot_indexable === false,
+            removed_category: postData.removed_by_category || (!postData.is_robot_indexable ? 'shadowban/spam_filter' : null)
         });
     } catch (error) {
         console.error("Live Post Scrape Error:", error.message);
