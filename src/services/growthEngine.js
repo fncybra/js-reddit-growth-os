@@ -58,12 +58,14 @@ export const TitleGeneratorService = {
 
             // Fallback list if network/CORS blocks the direct fetch
             if (topTitles.length === 0) {
+                // We must provide high-quality, casual, non-marketing Tone DNA as a fallback
+                // so the AI does not inherit corporate/spammy phrasing if the API fails
                 topTitles = [
-                    "Felt amazing today",
-                    "Just a quick snap",
-                    "What do you think of this look?",
-                    "Morning vibes",
-                    "Loving this aesthetic today"
+                    "finally taking a quick pic of this",
+                    "first time posting and honestly a little nervous",
+                    "can't really hide this much longer",
+                    "just dropping this here before i delete it",
+                    "sneaking a quick picture while everyone is distracted"
                 ];
             }
 
@@ -143,9 +145,23 @@ Print ONLY the single final title as plain text. No quotes. No numbering. No ext
                     finalTitle = finalTitle.split(/\(Note:/i)[0];
                     finalTitle = finalTitle.split(/Note:/i)[0];
                     finalTitle = finalTitle.split(/This title follows/i)[0];
-                    finalTitle = finalTitle.split(/\<3/)[0]; // strip the heart since we want no emojis/emoticons usually, but this is optional
 
                     finalTitle = finalTitle.trim();
+
+                    // AGGRESSIVE POST-PROCESSING: Absolute guaranteed stripping of unauthorized content
+
+                    // 1. Force remove all emojis using Unicode Property Escapes 
+                    // (Matches everything from smileys to symbols)
+                    finalTitle = finalTitle.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, '');
+
+                    // 2. Force remove unauthorized [f] or (f) tags natively in Javascript
+                    // We only strip this if the user hasn't explicitly required 'f' as a flair rule
+                    if (!requiredFlair || requiredFlair.toLowerCase() !== 'f') {
+                        finalTitle = finalTitle.replace(/\[\s*[fF]\s*\]|\(\s*[fF]\s*\)/g, '');
+                    }
+
+                    // 3. Fix double spaces and clean up
+                    finalTitle = finalTitle.replace(/\s{2,}/g, ' ').trim();
 
                     return finalTitle;
 
