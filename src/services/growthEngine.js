@@ -362,7 +362,7 @@ export const DailyPlanGenerator = {
         }).length;
         let testsRemaining = Math.max(0, settings.dailyTestingLimit - testsDoneToday);
 
-        let newTasks = [];
+        let taskGenerationPromises = [];
         const usedAssetsInSession = new Map(); // Track counts to reuse a photo multiple times a day
 
         // 2. Iterate through accounts and fill their individual quotas
@@ -493,51 +493,58 @@ export const DailyPlanGenerator = {
                     const pastTasks = await db.tasks.where('modelId').equals(modelId).toArray();
                     const previousTitles = pastTasks.map(t => t.title).filter(Boolean);
 
-                    // Check if the subreddit is missing rules/flair data (happens if added prior to update)
-                    let currentRules = sub.rulesSummary;
+                    // Create async closure to process this task in parallel
+                    const generateTaskPromise = (async () => {
+                        let currentRules = sub.rulesSummary;
 
-                    if (!currentRules) {
-                        const proxyUrl = await SettingsService.getProxyUrl();
-                        console.log(`On - the - fly scraping rules for r / ${sub.name}...`);
-                        try {
-                            const cleanName = sub.name.replace(/^(r\/|\/r\/)/i, '');
-                            const res = await fetch(`${proxyUrl}/api/scrape / subreddit / ${cleanName} `);
-                            if (res.ok) {
-                                const deepData = await res.json();
-                                currentRules = deepData.rules?.map(r => `• ${r.title}: ${r.description} `).join('\n\n') || '';
+                        if (!currentRules) {
+                            const proxyUrl = await SettingsService.getProxyUrl();
+                            console.log(`On-the-fly scraping rules for r/${sub.name}...`);
+                            try {
+                                const cleanName = sub.name.replace(/^(r\/|\/r\/)/i, '');
+                                const res = await fetch(`${proxyUrl}/api/scrape/subreddit/${cleanName}`);
+                                if (res.ok) {
+                                    const deepData = await res.json();
+                                    currentRules = deepData.rules?.map(r => `• ${r.title}: ${r.description}`).join('\n\n') || '';
 
-                                // Cleanly update the DB so the VA dashboard instantly repopulates
-                                await db.subreddits.update(sub.id, {
-                                    rulesSummary: currentRules,
-                                    flairRequired: deepData.flairRequired ? 1 : 0
-                                });
+                                    // Cleanly update the DB so the VA dashboard instantly repopulates
+                                    await db.subreddits.update(sub.id, {
+                                        rulesSummary: currentRules,
+                                        flairRequired: deepData.flairRequired ? 1 : 0
+                                    });
+                                }
+                            } catch (err) {
+                                console.error("Failed to fetch on-the-fly deep metadata for", sub.name);
                             }
-                        } catch (err) {
-                            console.error("Failed to fetch on-the-fly deep metadata for", sub.name);
                         }
-                    }
 
-                    // Generate AI title based on top 50 scraped posts for THIS specific subreddit
-                    const aiTitle = await TitleGeneratorService.generateTitle(
-                        sub.name,
-                        currentRules,
-                        sub.requiredFlair,
-                        previousTitles
-                    );
+                        // Generate AI title based on top 50 scraped posts for THIS specific subreddit
+                        const aiTitle = await TitleGeneratorService.generateTitle(
+                            sub.name,
+                            currentRules,
+                            sub.requiredFlair,
+                            previousTitles
+                        );
 
-                    newTasks.push({
-                        date: todayStr,
-                        modelId,
-                        accountId: account.id,
-                        subredditId: sub.id,
-                        assetId: selectedAsset.id,
-                        title: aiTitle,
-                        postingWindow: 'Morning', // Could be randomized later
-                        status: 'generated'
-                    });
+                        return {
+                            date: todayStr,
+                            modelId,
+                            accountId: account.id,
+                            subredditId: sub.id,
+                            assetId: selectedAsset.id,
+                            title: aiTitle,
+                            postingWindow: 'Morning', // Could be randomized later
+                            status: 'generated'
+                        };
+                    })();
+
+                    taskGenerationPromises.push(generateTaskPromise);
                 }
             }
         }
+
+        // Wait for all AI generation and scraping to finish concurrently
+        const newTasks = await Promise.all(taskGenerationPromises);
 
         if (newTasks.length > 0) { // Finalize
             await db.tasks.bulkAdd(newTasks);
