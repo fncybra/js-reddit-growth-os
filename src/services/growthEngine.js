@@ -2,6 +2,19 @@ import { db } from '../db/db.js';
 import OpenAI from "openai";
 import { subDays, isAfter, startOfDay } from 'date-fns';
 
+const fetchWithTimeout = async (url, options = {}, timeoutMs = 5000) => {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const response = await fetch(url, { ...options, signal: controller.signal });
+        clearTimeout(id);
+        return response;
+    } catch (err) {
+        clearTimeout(id);
+        throw err; // Will be caught by outer try-catch
+    }
+};
+
 export const SettingsService = {
     async getSettings() {
         const defaultSettings = {
@@ -48,12 +61,12 @@ export const TitleGeneratorService = {
             let topTitles = [];
             // Try fetching from Reddit directly via JSON API (Top of the month)
             try {
-                const res = await fetch(`${proxyUrl}/api/scrape/subreddit/top/${subredditName}`);
+                const res = await fetchWithTimeout(`${proxyUrl}/api/scrape/subreddit/top/${subredditName}`, {}, 4000);
                 if (res.ok) {
                     topTitles = await res.json();
                 }
             } catch (e) {
-                console.warn(`Could not fetch top titles directly for r/${subredditName}`, e);
+                console.warn(`Could not fetch top titles directly for r/${subredditName} - falling back to explicit DNA list.`);
             }
 
             // Fallback list if network/CORS blocks the direct fetch
@@ -494,7 +507,7 @@ export const DailyPlanGenerator = {
                     const previousTitles = pastTasks.map(t => t.title).filter(Boolean);
 
                     // Create async closure to process this task in parallel
-                    const generateTaskPromise = (async () => {
+                    const generateTaskPromise = async () => {
                         let currentRules = sub.rulesSummary;
 
                         if (!currentRules) {
@@ -502,7 +515,7 @@ export const DailyPlanGenerator = {
                             console.log(`On-the-fly scraping rules for r/${sub.name}...`);
                             try {
                                 const cleanName = sub.name.replace(/^(r\/|\/r\/)/i, '');
-                                const res = await fetch(`${proxyUrl}/api/scrape/subreddit/${cleanName}`);
+                                const res = await fetchWithTimeout(`${proxyUrl}/api/scrape/subreddit/${cleanName}`, {}, 4000);
                                 if (res.ok) {
                                     const deepData = await res.json();
                                     currentRules = deepData.rules?.map(r => `• ${r.title}: ${r.description}`).join('\n\n') || '';
@@ -514,7 +527,7 @@ export const DailyPlanGenerator = {
                                     });
                                 }
                             } catch (err) {
-                                console.error("Failed to fetch on-the-fly deep metadata for", sub.name);
+                                console.warn("Failed to fetch on-the-fly deep metadata for", sub.name);
                             }
                         }
 
@@ -536,19 +549,29 @@ export const DailyPlanGenerator = {
                             postingWindow: 'Morning', // Could be randomized later
                             status: 'generated'
                         };
-                    })();
+                    };
 
                     taskGenerationPromises.push(generateTaskPromise);
                 }
             }
         }
 
-        // Wait for all AI generation and scraping to finish concurrently
-        const newTasks = await Promise.all(taskGenerationPromises);
+        // Process in chunks of 3 to avoid hammering the AI API and Proxy Server too hard at once!
+        const chunkSize = 3;
+        let finalNewTasks = [];
 
-        if (newTasks.length > 0) { // Finalize
-            await db.tasks.bulkAdd(newTasks);
-            console.log(`DailyPlanGenerator: Generated ${newTasks.length} tasks for model ${modelId}`);
+        for (let i = 0; i < taskGenerationPromises.length; i += chunkSize) {
+            const chunk = taskGenerationPromises.slice(i, i + chunkSize);
+            console.log(`Processing queue chunk ${i / chunkSize + 1} of ${Math.ceil(taskGenerationPromises.length / chunkSize)}...`);
+
+            // Wait for this specific chunk to finish
+            const chunkResults = await Promise.all(chunk.map(fn => fn()));
+            finalNewTasks.push(...chunkResults);
+        }
+
+        if (finalNewTasks.length > 0) { // Finalize
+            await db.tasks.bulkAdd(finalNewTasks);
+            console.log(`DailyPlanGenerator: Generated ${finalNewTasks.length} tasks for model ${modelId}`);
 
             // Auto-push to cloud so others (VAs) see the new plan immediately
             await CloudSyncService.autoPush();
