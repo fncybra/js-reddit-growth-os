@@ -121,7 +121,9 @@ Output ONLY the single generated title as plain text. Do not use quotes. Break t
                         "not able to create",
                         "conflicts with my values",
                         "adult content",
-                        "sexual content"
+                        "sexual content",
+                        "that community",
+                        "explicit contexts"
                     ];
 
                     const isRefusal = refusalPhrases.some(phrase => lowerResponse.includes(phrase)) || finalTitle.length > 250;
