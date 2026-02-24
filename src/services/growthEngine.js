@@ -126,17 +126,19 @@ Final output
 Print ONLY the single final title as plain text. No quotes. No numbering. No extra text. No analysis.
 `;
 
-                    const proxyUrl = await SettingsService.getProxyUrl();
-                    const aiEndpoint = `${proxyUrl}/api/ai/generate`;
+                    let aiEndpoint = settings.aiBaseUrl || "https://openrouter.ai/api/v1";
+                    // Ensure ends with /chat/completions
+                    if (!aiEndpoint.endsWith('/chat/completions')) {
+                        aiEndpoint = `${aiEndpoint.replace(/\/$/, '')}/chat/completions`;
+                    }
 
                     const response = await fetch(aiEndpoint, {
                         method: 'POST',
                         headers: {
-                            'Content-Type': 'application/json'
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${settings.openRouterApiKey}`
                         },
                         body: JSON.stringify({
-                            aiBaseUrl: settings.aiBaseUrl || "", // Leave blank to let proxy fallback
-                            apiKey: settings.openRouterApiKey,
                             model: settings.openRouterModel || "mistralai/mixtral-8x7b-instruct",
                             messages: [
                                 { role: "user", content: prompt }
@@ -145,8 +147,9 @@ Print ONLY the single final title as plain text. No quotes. No numbering. No ext
                     });
 
                     if (!response.ok) {
-                        const errData = await response.json();
-                        throw new Error(errData.details?.error?.message || errData.error || response.statusText);
+                        const errText = await response.text();
+                        console.error("Direct AI Node Error:", errText);
+                        throw new Error(`Status ${response.status}: ${errText}`);
                     }
 
                     const data = await response.json();
