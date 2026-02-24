@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { SettingsService, PerformanceSyncService } from '../services/growthEngine';
+import { SettingsService, PerformanceSyncService, AccountSyncService } from '../services/growthEngine';
 
 export function Settings() {
     const [settings, setSettings] = useState(null);
@@ -53,8 +53,9 @@ export function Settings() {
     async function handleForceSync() {
         setSyncing(true);
         try {
+            await AccountSyncService.syncAllAccounts();
             const count = await PerformanceSyncService.syncAllPendingPerformance();
-            alert(`Successfully synced metrics for ${count} live posts.`);
+            alert(`Successfully synced metrics for ${count} live posts and all account stats.`);
         } finally {
             setSyncing(false);
         }
