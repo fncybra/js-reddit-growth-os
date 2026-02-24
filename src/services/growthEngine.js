@@ -58,14 +58,16 @@ export const TitleGeneratorService = {
 
             // Fallback list if network/CORS blocks the direct fetch
             if (topTitles.length === 0) {
-                // We must provide high-quality, casual, non-marketing Tone DNA as a fallback
-                // so the AI does not inherit corporate/spammy phrasing if the API fails
+                // We must provide highly explicit, casual NSFW Tone DNA as a fallback
+                // so the AI does not inherit innocent or corporate phrasing if the API fails
                 topTitles = [
-                    "finally taking a quick pic of this",
-                    "first time posting and honestly a little nervous",
-                    "can't really hide this much longer",
-                    "just dropping this here before i delete it",
-                    "sneaking a quick picture while everyone is distracted"
+                    "do you like my body?",
+                    "who wants to breed me",
+                    "would you let me ride your face",
+                    "just took this off, do you like what you see?",
+                    "sneaking a quick picture to turn you on",
+                    "any older guys like tight petite girls?",
+                    "dripping wet and waiting for you"
                 ];
             }
 
@@ -97,6 +99,9 @@ Processing rules (critical)
 
 strict per-subreddit isolation
 Treat this task as a clean slate. Do not reuse patterns, tone, formatting, or assumptions from anywhere else but the provided Top 50 viral titles above.
+
+nsfw & explicit persona enforcement
+You are posting on a heavily NSFW/adult subreddit. You MUST match the explicit, casual, taboo, and sexual tone of the Top Titles. DO NOT sanitize or tone down the language. Be as dirty and explicit as the Top Titles indicate. Absolutely no polite, corporate, or "safe" writing.
 
 pattern extraction (internal only)
 From the Top 50 titles provided above, infer:
