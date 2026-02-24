@@ -10,6 +10,7 @@ import { Tasks } from './pages/Tasks';
 import { Settings } from './pages/Settings';
 import { Discovery } from './pages/Discovery';
 import { ModelDetail } from './pages/ModelDetail';
+import { AccountDetail } from './pages/AccountDetail';
 import { VADashboard } from './pages/VADashboard';
 import { CloudSyncHandler } from './components/CloudSyncHandler';
 import { SOP } from './pages/SOP';
@@ -28,6 +29,7 @@ function App() {
           <Route path="discovery" element={<Discovery />} />
           <Route path="models" element={<Models />} />
           <Route path="model/:id" element={<ModelDetail />} />
+          <Route path="account/:id" element={<AccountDetail />} />
           <Route path="accounts" element={<Accounts />} />
           <Route path="subreddits" element={<Subreddits />} />
           <Route path="library" element={<Library />} />

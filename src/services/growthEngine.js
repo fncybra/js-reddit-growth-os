@@ -731,6 +731,7 @@ export const AnalyticsEngine = {
             }
 
             results.push({
+                id: acc.id,
                 handle: acc.handle,
                 karma: acc.totalKarma || 0,
                 cqs: acc.cqsStatus || 'Unknown',
