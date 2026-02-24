@@ -12,6 +12,7 @@ import { Discovery } from './pages/Discovery';
 import { ModelDetail } from './pages/ModelDetail';
 import { VADashboard } from './pages/VADashboard';
 import { CloudSyncHandler } from './components/CloudSyncHandler';
+import { SOP } from './pages/SOP';
 
 function App() {
   return (
@@ -32,6 +33,7 @@ function App() {
           <Route path="library" element={<Library />} />
           <Route path="tasks" element={<Tasks />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="sop" element={<SOP />} />
         </Route>
       </Routes>
     </BrowserRouter>

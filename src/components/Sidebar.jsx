@@ -11,7 +11,8 @@ import {
   Activity,
   Telescope,
   Cloud,
-  CloudOff
+  CloudOff,
+  BookOpen
 } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
@@ -25,6 +26,7 @@ const navItems = [
   { path: '/subreddits', label: 'Subreddits', icon: Globe },
   { path: '/library', label: 'Content Library', icon: ImageIcon },
   { path: '/tasks', label: 'Post Tasks', icon: CheckSquare },
+  { path: '/sop', label: 'Training SOP', icon: BookOpen },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 
