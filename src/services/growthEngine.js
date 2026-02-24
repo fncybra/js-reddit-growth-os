@@ -85,11 +85,23 @@ export const TitleGeneratorService = {
             }
 
             // Call OpenRouter if the key is available
-
-            // ... Inside TitleGeneratorService string
             const settings = await SettingsService.getSettings();
             if (settings.openRouterApiKey) {
                 try {
+                    // Randomizer DNA - prevents the LLM from using the same sentence structures repeatedly
+                    const structuralAngles = [
+                        "Keep the title incredibly short, maximum 4 words, punchy.",
+                        "Write it as a very vulnerable, shy confession.",
+                        "Write it as a cocky, highly confident demand.",
+                        "Write it casually, like it's just a text you're sending to a guy.",
+                        "Write it like you are telling a dirty little secret.",
+                        "Write it as an innocent-sounding question that is actually extremely dirty.",
+                        "Start the title with 'honest opinion:' or 'question for the guys:'.",
+                        "Be brutally direct and wildly explicit. No beating around the bush.",
+                        "Write a slightly longer, highly descriptive scenario title (10-15 words)."
+                    ];
+                    const randomAngle = structuralAngles[Math.floor(Math.random() * structuralAngles.length)];
+
                     const prompt = `
 Reddit Title Controller (Anti-Gravity Backend)
 
@@ -136,6 +148,9 @@ Generate exactly one title that:
 - avoids emojis unless they are genuinely common in that subreddit's top titles
 - MUST NOT include unauthorized verification tags like [F], [f], (f) UNLESS explicitly commanded to inside the Community Rules or Required Flair.
 
+STRUCTURAL RANDOMIZER FOR THIS ENTIRE TASK:
+You MUST adopt this specific style for this exact title: "${randomAngle}"
+
 FINAL COMPLIANCE CHECK BEFORE OUTPUTTING:
 - If there are rules above stipulating a required tag or word, is it in your title? If not, rewrite it so it is.
 - Did you add an [f] or (f) tag without being told to? Remove it.
@@ -174,6 +189,8 @@ Print ONLY the single final title as plain text. No quotes. No numbering. No ext
                         messages: [
                             { role: "user", content: prompt }
                         ],
+                        temperature: 0.9,     // High variance so words aren't repeated globally
+                        presence_penalty: 0.4 // Penalizes the AI for re-using the exact same vocabulary tokens
                     });
 
                     let finalTitle = response.choices && response.choices[0] && response.choices[0].message
