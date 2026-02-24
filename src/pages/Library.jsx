@@ -139,8 +139,31 @@ export function Library() {
     }
 
     async function deleteAsset(id) {
-        if (window.confirm("Delete this asset?")) {
+        if (window.confirm("Delete this asset? This will also permanently delete any generated Tasks that rely on it across the cloud.")) {
+            // Find related tasks
+            const relatedTasks = await db.tasks.where('assetId').equals(id).toArray();
+
+            // Delete associated tasks and their performances
+            if (relatedTasks.length > 0) {
+                const taskIds = relatedTasks.map(t => t.id);
+                // Also clean up any performances tied to these tasks
+                const perfs = await db.performances.where('taskId').anyOf(taskIds).toArray();
+                if (perfs.length > 0) {
+                    const perfIds = perfs.map(p => p.id);
+                    await db.performances.bulkDelete(perfIds);
+                    const { CloudSyncService } = await import('../services/growthEngine');
+                    await CloudSyncService.deleteMultipleFromCloud('performances', perfIds);
+                }
+
+                await db.tasks.bulkDelete(taskIds);
+                const { CloudSyncService } = await import('../services/growthEngine');
+                await CloudSyncService.deleteMultipleFromCloud('tasks', taskIds);
+            }
+
+            // Finally, delete the asset itself from local and cloud
             await db.assets.delete(id);
+            const { CloudSyncService } = await import('../services/growthEngine');
+            await CloudSyncService.deleteFromCloud('assets', id);
         }
     }
 
