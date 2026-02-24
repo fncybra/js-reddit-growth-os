@@ -183,17 +183,8 @@ Print ONLY the single final title as plain text. No quotes. No numbering. No ext
 
 
             // Fallback if no API key is set
-            const baseTitle = topTitles[Math.floor(Math.random() * topTitles.length)];
-
-            // Just use a top title directly as a fallback if the AI is not configured
-            let generatedTitle = baseTitle || "Generated Post";
-
-            // Ensure flair is respected if we generated it
-            if (requiredFlair && !generatedTitle.includes(requiredFlair)) {
-                generatedTitle = `[${requiredFlair}]` + generatedTitle;
-            }
-
-            return generatedTitle;
+            console.error("No API Key detected in Settings. Returning explicit error title.");
+            return `[NO API KEY DETECTED] Please add your API key in Settings and Save.`;
         } catch (err) {
             console.error("Title Generation Overall Error:", err);
             return `[SYSTEM ERROR] Generated Post for r/${subredditName}`;
