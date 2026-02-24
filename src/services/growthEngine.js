@@ -86,9 +86,10 @@ RULES YOU MUST FOLLOW:
 2. MATCH THE NSFW PATTERN: Use the same type of explicit, sexual, or slang words that you see in the Top 50 titles. Do not hold back or sanitize the language. If they are sexual, you be sexual.
 3. SOUND LIKE A REAL GIRL: Use casual grammar. Don't capitalize everything perfectly. It should look like a quick, authentic message typed on a phone.
 4. DO NOT COPY EXACTLY: Write a new title that heavily borrows the exact style, tone, and explicit level of the top 50, but uses different phrasing.
-${rulesSummary ? `5. COMMUNITY RULES: ${rulesSummary}` : ''}
-${requiredFlair ? `6. FLAIR REQUIREMENT: You MUST include [${requiredFlair}] at the start or inside your title.` : ''}
-${previousTitles.length > 0 ? `7. AVOID REPETITION. Do not use these recently used themes: ${JSON.stringify(previousTitles.slice(-20))}` : ''}
+5. NO UNAUTHORIZED TAGS: Never invent or inject verification tags like [F], [f], (f), or similar UNLESS explicitly commanded to inside the Community Rules or Flair Requirements below. If not commanded below, DO NOT ADD THEM.
+${rulesSummary ? `6. COMMUNITY RULES: ${rulesSummary}` : ''}
+${requiredFlair ? `7. FLAIR REQUIREMENT: You MUST include [${requiredFlair}] at the start or inside your title.` : ''}
+${previousTitles.length > 0 ? `8. AVOID REPETITION. Do not use these recently used themes: ${JSON.stringify(previousTitles.slice(-20))}` : ''}
 
 CRITICAL: Output ONLY the raw generated title. No quotes, no intro, NO EXPLANATIONS, NO NOTES, and NO EMOJIS. Just the plain text title.
 `;

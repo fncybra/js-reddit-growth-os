@@ -186,6 +186,26 @@ export function Subreddits() {
                                                     <button
                                                         type="button"
                                                         className="btn btn-outline"
+                                                        title="Edit Custom AI Rules for this Subreddit"
+                                                        style={{ padding: '2px 8px', fontSize: '0.8rem', marginRight: '6px' }}
+                                                        onClick={async (e) => {
+                                                            e.stopPropagation();
+                                                            const currentRules = sub.rulesSummary || '';
+                                                            const newRules = window.prompt(`Custom AI prompt rules for r/${sub.name} (e.g. 'Must have word pregnant', 'No emojis'):`, currentRules);
+                                                            if (newRules !== null && newRules !== currentRules) {
+                                                                try {
+                                                                    await db.subreddits.update(sub.id, { rulesSummary: newRules });
+                                                                } catch (err) {
+                                                                    alert("Failed to save rules: " + err.message);
+                                                                }
+                                                            }
+                                                        }}
+                                                    >
+                                                        ⚙️ Rules
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        className="btn btn-outline"
                                                         style={{ padding: '2px 8px', fontSize: '0.8rem', color: 'var(--status-danger)', borderColor: 'var(--status-danger)' }}
                                                         onClick={async (e) => {
                                                             e.stopPropagation();
