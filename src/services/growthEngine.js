@@ -74,29 +74,54 @@ export const TitleGeneratorService = {
             if (settings.openRouterApiKey) {
                 try {
                     const prompt = `
-You are a normal, everyday girl posting on a heavily NSFW/explicit Reddit community. You are not an AI or a professional copywriter.
-Your task is to generate ONE single short, casual post title that fits perfectly into this specific community. Do NOT be afraid of being highly explicit or sexual—in fact, you MUST match the exact explicit level of the provided examples.
+Reddit Title Controller (Anti-Gravity Backend)
 
-Here are the top 50 viral titles from this exact subreddit. 
-Study their patterns, vocabulary, explicit nature, and sentence structure (this is your "Tone DNA"):
+Purpose
+Generate 1 subreddit-native title for this specific posting task. The title must comply with subreddit rules and match that subreddit's native tone and high-performing patterns.
+
+Inputs for this task:
+- Subreddit: r/${subredditName}
+- Subreddit Rules & Formatting Requirements: 
+${rulesSummary || 'No specific formatting rules found.'}
+${requiredFlair ? `- Required Flair/Tag: You MUST include [${requiredFlair}] at the start or inside your title.` : ''}
+
+- Top 50 Viral Titles from this exact subreddit (Your Tone DNA):
 ${JSON.stringify(topTitles)}
 
-RULES YOU MUST FOLLOW:
-1. NO EMOJIS under any circumstances.
-2. MATCH THE NSFW PATTERN: Use the same type of explicit, sexual, or slang words that you see in the Top 50 titles. Do not hold back or sanitize the language. If they are sexual, you be sexual.
-3. SOUND LIKE A REAL GIRL: Use casual grammar. Don't capitalize everything perfectly. It should look like a quick, authentic message typed on a phone.
-4. DO NOT COPY EXACTLY: Write a new title that heavily borrows the exact style, tone, and explicit level of the top 50, but uses different phrasing.
-5. NO UNAUTHORIZED TAGS: Never invent or inject verification tags like [F], [f], (f), or similar UNLESS explicitly commanded to inside the Community Rules or Flair Requirements below. If not commanded below, DO NOT ADD THEM.
-${rulesSummary ? `6. VERY IMPORTANT COMMUNITY RULES: Read these carefully. If these rules say you MUST include a specific word (like 'pregnant' or 'milf'), or MUST NOT use a specific word, you MUST obey this perfectly. Rules: ${rulesSummary}` : ''}
-${requiredFlair ? `7. FLAIR REQUIREMENT: You MUST include [${requiredFlair}] at the start or inside your title.` : ''}
-${previousTitles.length > 0 ? `8. AVOID REPETITION. Do not use these recently used themes: ${JSON.stringify(previousTitles.slice(-20))}` : ''}
+- Previously used titles (Do not reuse these themes):
+${previousTitles.length > 0 ? JSON.stringify(previousTitles.slice(-20)) : 'None'}
+
+Processing rules (critical)
+
+strict per-subreddit isolation
+Treat this task as a clean slate. Do not reuse patterns, tone, formatting, or assumptions from anywhere else but the provided Top 50 viral titles above.
+
+pattern extraction (internal only)
+From the Top 50 titles provided above, infer:
+- typical title length range
+- casing style (all lowercase vs sentence case)
+- common structures (question, confession, "does anyone else...", "i did x...", etc.)
+- acceptable directness level and taboo tolerance
+- humor vs vulnerability balance
+- common wording style (slang, abbreviations, punctuation)
+Do not output the analysis.
+
+title creation
+Generate exactly one title that:
+- fits the subreddit's native tone and typical length
+- follows any extracted formatting rules and explicitly commanded rules above.
+- uses natural phrasing consistent with that subreddit (including casual grammar if common there)
+- avoids marketing language and spammy phrasing
+- does not reuse exact phrases from scraped titles (no copy, no close paraphrase)
+- avoids emojis unless they are genuinely common in that subreddit's top titles
+- MUST NOT include unauthorized verification tags like [F], [f], (f) UNLESS explicitly commanded to inside the Community Rules or Required Flair.
 
 FINAL COMPLIANCE CHECK BEFORE OUTPUTTING:
-- Did you use an Emoji? Stop, remove it.
 - If there are rules above stipulating a required tag or word, is it in your title? If not, rewrite it so it is.
 - Did you add an [f] or (f) tag without being told to? Remove it.
 
-CRITICAL: Output ONLY the raw generated title. No quotes, no intro, NO EXPLANATIONS, NO NOTES, and NO EMOJIS. Just the plain text title.
+Final output
+Print ONLY the single final title as plain text. No quotes. No numbering. No extra text. No analysis.
 `;
 
                     const openai = new OpenAI({
@@ -108,10 +133,6 @@ CRITICAL: Output ONLY the raw generated title. No quotes, no intro, NO EXPLANATI
                     const response = await openai.chat.completions.create({
                         model: "mistralai/mixtral-8x7b-instruct",
                         messages: [
-                            {
-                                role: "system",
-                                content: "You are an authentic, casual human user of Reddit. You always output raw text only. You never explain yourself, you never use emojis, and you freely use highly explicit/NSFW language when appropriate."
-                            },
                             { role: "user", content: prompt }
                         ],
                     });
