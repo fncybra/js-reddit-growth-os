@@ -133,7 +133,7 @@ Print ONLY the single final title as plain text. No quotes. No numbering. No ext
                     });
 
                     const response = await openai.chat.completions.create({
-                        model: "mistralai/mixtral-8x7b-instruct",
+                        model: settings.openRouterModel || "mistralai/mixtral-8x7b-instruct",
                         messages: [
                             { role: "user", content: prompt }
                         ],
