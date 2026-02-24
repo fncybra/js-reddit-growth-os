@@ -320,8 +320,20 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
             return alert("Please paste the actual Reddit Post URL first so stats can be tracked.");
         }
 
-        const idMatch = redditUrl.match(/\/comments\/([a-z0-9]+)\//i);
-        const redditPostId = idMatch ? idMatch[1] : '';
+        let redditPostId = '';
+        const standardMatch = redditUrl.match(/\/comments\/([a-z0-9]+)/i);
+        const shareMatch = redditUrl.match(/\/s\/([a-zA-Z0-9]+)/i);
+
+        if (standardMatch) {
+            redditPostId = standardMatch[1];
+        } else if (shareMatch) {
+            // Mobile share links don't have the standard ID, but we try to grab what we can, though proxy might fail to parse 's' links.
+            redditPostId = shareMatch[1];
+        }
+
+        if (!redditPostId) {
+            console.warn("Could not extract a valid Reddit Post ID from URL: " + redditUrl);
+        }
 
         // 1. Update Task
         await db.tasks.update(task.id, {
