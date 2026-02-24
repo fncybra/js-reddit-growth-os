@@ -182,8 +182,9 @@ export function Dashboard() {
                             <button
                                 className="btn btn-primary"
                                 onClick={async () => {
-                                    const { PerformanceSyncService } = await import('../services/growthEngine');
-                                    alert("Syncing all post performance... this takes a few moments.");
+                                    const { PerformanceSyncService, AccountSyncService } = await import('../services/growthEngine');
+                                    alert("Syncing all post performance and account stats... this takes a few moments.");
+                                    await AccountSyncService.syncAllAccounts();
                                     await PerformanceSyncService.syncAllPendingPerformance();
                                     alert("Sync complete!");
                                     window.location.reload();
@@ -191,7 +192,7 @@ export function Dashboard() {
                                 style={{ padding: '6px 12px', fontSize: '0.85rem' }}
                             >
                                 <RefreshCw size={14} style={{ marginRight: '6px' }} />
-                                Sync All Active Posts
+                                Sync Live Stats & Accounts
                             </button>
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
