@@ -192,10 +192,55 @@ app.get('/api/scrape/subreddit/top/:name', async (req, res) => {
     }
 });
 
+// Resolve Reddit mobile share links (/s/XXXXX) to real post IDs
+async function resolveShareLink(shareId, subreddit) {
+    try {
+        // Follow the redirect from the share URL to get the real URL
+        const shareUrl = subreddit
+            ? `https://www.reddit.com/r/${subreddit}/s/${shareId}`
+            : `https://www.reddit.com/s/${shareId}`;
+
+        const response = await axios.get(shareUrl, {
+            headers: { 'User-Agent': 'GrowthOS/1.0 (Internal Analytics Tool)' },
+            httpsAgent: getNextProxyAgent(),
+            maxRedirects: 5,
+            timeout: 10000
+        });
+
+        // The final URL after redirects should contain /comments/REAL_ID/
+        const finalUrl = response.request?.res?.responseUrl || response.config?.url || '';
+        const match = finalUrl.match(/\/comments\/([a-z0-9]+)/i);
+        if (match) {
+            console.log(`[ShareResolver] Resolved ${shareId} => ${match[1]}`);
+            return match[1];
+        }
+        console.warn(`[ShareResolver] Could not extract post ID from redirected URL: ${finalUrl}`);
+        return null;
+    } catch (err) {
+        console.error(`[ShareResolver] Failed to resolve share link ${shareId}:`, err.message);
+        return null;
+    }
+}
+
 // Proxy endpoint for Live Reddit Post Stats (Upvotes, Status)
+// Accepts both standard post IDs (1rd8jg1) and share IDs (aOgafAtLw2)
 app.get('/api/scrape/post/:postId', async (req, res) => {
     try {
-        const { postId } = req.params;
+        let { postId } = req.params;
+        const subreddit = req.query.subreddit || '';
+
+        // Detect share link IDs (they are longer and contain uppercase)
+        const isShareId = /[A-Z]/.test(postId) || postId.length > 8;
+
+        if (isShareId) {
+            console.log(`[PostScrape] Detected share ID: ${postId}, resolving...`);
+            const realId = await resolveShareLink(postId, subreddit);
+            if (!realId) {
+                return res.status(404).json({ error: "Could not resolve share link to real post ID" });
+            }
+            postId = realId;
+        }
+
         const response = await axiosWithRetry(`https://old.reddit.com/by_id/t3_${postId}.json`);
 
         const postData = response.data.data?.children[0]?.data;
@@ -204,7 +249,8 @@ app.get('/api/scrape/post/:postId', async (req, res) => {
         res.json({
             ups: postData.ups,
             removed: postData.removed_by_category !== null || postData.banned_by !== null || postData.is_robot_indexable === false,
-            removed_category: postData.removed_by_category || (!postData.is_robot_indexable ? 'shadowban/spam_filter' : null)
+            removed_category: postData.removed_by_category || (!postData.is_robot_indexable ? 'shadowban/spam_filter' : null),
+            realPostId: postId  // Return the resolved real ID so frontend can update
         });
     } catch (error) {
         console.error("Live Post Scrape Error:", error.message);

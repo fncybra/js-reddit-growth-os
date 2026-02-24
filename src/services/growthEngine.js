@@ -901,15 +901,30 @@ export const PerformanceSyncService = {
 
         try {
             const proxyUrl = await SettingsService.getProxyUrl();
-            const response = await fetch(`${proxyUrl}/api/scrape/post/${task.redditPostId}`);
+
+            // Extract subreddit name from URL for share link resolution
+            let subredditHint = '';
+            if (task.redditUrl) {
+                const subMatch = task.redditUrl.match(/\/r\/([^\/]+)/i);
+                if (subMatch) subredditHint = subMatch[1];
+            }
+
+            const url = `${proxyUrl}/api/scrape/post/${task.redditPostId}${subredditHint ? '?subreddit=' + subredditHint : ''}`;
+            const response = await fetch(url);
             if (!response.ok) throw new Error("Sync failed");
 
             const data = await response.json();
 
+            // If proxy resolved a share link to a real ID, save it back
+            if (data.realPostId && data.realPostId !== task.redditPostId) {
+                console.log(`[PerfSync] Resolved share ID ${task.redditPostId} => ${data.realPostId}`);
+                await db.tasks.update(taskId, { redditPostId: data.realPostId });
+            }
+
             // Find or create performance record
             const performance = await db.performances.where('taskId').equals(taskId).first();
             const updateObj = {
-                views24h: data.ups || 0, // Fallback mapping proxy's 'ups' to views24h since upvotes tracks Reddit health nicely
+                views24h: data.ups || 0,
                 removed: data.removed ? 1 : 0,
                 notes: `Last synced: ${new Date().toLocaleString()} (Status: ${data.removed_category || 'Active'})`
             };
@@ -923,9 +938,7 @@ export const PerformanceSyncService = {
                 });
             }
 
-            // After syncing one post, we should re-evaluate the subreddit it belongs to
             await SubredditLifecycleService.evaluateSubreddits(task.modelId);
-
             await CloudSyncService.autoPush();
 
             return data;
