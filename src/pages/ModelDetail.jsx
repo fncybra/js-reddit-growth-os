@@ -79,12 +79,19 @@ export function ModelDetail() {
                     ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                             {accountRankings.map(acc => (
-                                <div key={acc.handle} style={{
+                                <Link to={`/account/${acc.id}`} key={acc.handle} style={{
                                     padding: '16px 20px',
                                     backgroundColor: 'var(--surface-color)',
                                     borderRadius: 'var(--radius-md)',
                                     border: `1px solid ${acc.isSuspended ? 'var(--status-danger)' : 'var(--border-color)'}`,
-                                }}>
+                                    textDecoration: 'none',
+                                    color: 'inherit',
+                                    cursor: 'pointer',
+                                    transition: 'border-color 0.2s ease',
+                                }}
+                                    onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--primary-color)'}
+                                    onMouseLeave={e => e.currentTarget.style.borderColor = acc.isSuspended ? 'var(--status-danger)' : 'var(--border-color)'}
+                                >
                                     {/* Account Header Row */}
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -133,7 +140,7 @@ export function ModelDetail() {
                                             </div>
                                         </div>
                                     </div>
-                                </div>
+                                </Link>
                             ))}
                         </div>
                     )}
