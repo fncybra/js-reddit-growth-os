@@ -697,13 +697,43 @@ export const AnalyticsEngine = {
 
     async getAccountRankings(modelId) {
         const accounts = await db.accounts.where('modelId').equals(modelId).toArray();
-        return accounts.map(a => ({
-            handle: a.handle,
-            karma: a.totalKarma || 0,
-            cqs: a.cqsStatus || 'Unknown',
-            status: a.status,
-            isSuspended: a.isSuspended
-        })).sort((a, b) => b.karma - a.karma);
+        const results = [];
+
+        for (const acc of accounts) {
+            // Find tasks posted by this account
+            const accountTasks = await db.tasks
+                .where('modelId').equals(modelId)
+                .filter(t => t.accountId === acc.id && t.status === 'closed')
+                .toArray();
+
+            let totalUps = 0;
+            let removedCount = 0;
+            let syncedPosts = 0;
+
+            for (const task of accountTasks) {
+                const perf = await db.performances.where('taskId').equals(task.id).first();
+                if (perf) {
+                    totalUps += perf.views24h || 0;
+                    if (perf.removed) removedCount++;
+                    syncedPosts++;
+                }
+            }
+
+            results.push({
+                handle: acc.handle,
+                karma: acc.totalKarma || 0,
+                cqs: acc.cqsStatus || 'Unknown',
+                status: acc.status,
+                isSuspended: acc.isSuspended,
+                totalPosts: accountTasks.length,
+                totalUps,
+                avgUpsPerPost: syncedPosts > 0 ? Math.round(totalUps / syncedPosts) : 0,
+                removalRate: syncedPosts > 0 ? Number(((removedCount / syncedPosts) * 100).toFixed(1)) : 0,
+                removedCount
+            });
+        }
+
+        return results.sort((a, b) => b.totalUps - a.totalUps);
     },
 
     async getAccountMetrics(modelId) {

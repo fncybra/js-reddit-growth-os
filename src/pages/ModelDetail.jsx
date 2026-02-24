@@ -3,11 +3,11 @@ import { db } from '../db/db';
 import { AnalyticsEngine } from '../services/growthEngine';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useParams, Link } from 'react-router-dom';
+import { ArrowLeft, ArrowUp, Shield, AlertTriangle, CheckCircle, XCircle, User } from 'lucide-react';
 
 export function ModelDetail() {
     const { id } = useParams();
     const modelId = Number(id);
-
     const [metrics, setMetrics] = useState(null);
     const model = useLiveQuery(() => db.models.get(modelId), [modelId]);
 
@@ -21,7 +21,7 @@ export function ModelDetail() {
         fetchMetrics();
     }, [modelId]);
 
-    if (!model) return <div className="page-content">Loading model...</div>;
+    if (!model) return <div className="page-content" style={{ padding: '48px', textAlign: 'center', color: 'var(--text-secondary)' }}>Loading model...</div>;
 
     const {
         totalViews = 0,
@@ -32,72 +32,133 @@ export function ModelDetail() {
         topSubreddits = [],
         worstSubreddits = [],
         accountRankings = [],
-        nichePerformance = []
     } = metrics || {};
-
-    const viewTarget = model.weeklyViewTarget || 0;
-    const isBelowTarget = totalViews < viewTarget && viewTarget > 0;
-    const isHighRemoval = removalRatePct > 20;
 
     return (
         <>
-            <header className="page-header" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                <Link to="/" className="btn" style={{ padding: '6px 12px', backgroundColor: 'var(--surface-color)', color: 'var(--text-secondary)' }}>
-                    ← Back to Agency
-                </Link>
-                <div>
-                    <h1 className="page-title">{model.name} Drill-Down</h1>
-                    <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '4px' }}>
-                        Growth Pressure Dashboard
+            <header className="page-header">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                    <Link to="/" className="btn btn-outline" style={{ padding: '6px 12px' }}>
+                        <ArrowLeft size={14} style={{ marginRight: '4px' }} /> Back
+                    </Link>
+                    <div>
+                        <h1 className="page-title">{model.name}</h1>
                     </div>
                 </div>
             </header>
+
             <div className="page-content">
-                <div className="grid-cards mb-6" style={{ marginBottom: '24px' }}>
-                    <div className={`card metric-card ${isBelowTarget ? 'danger-border' : ''}`} style={isBelowTarget ? { borderColor: 'var(--status-danger)' } : {}}>
-                        <span className="metric-label">Total Views (All Time)</span>
-                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                            <span className="metric-value" style={isBelowTarget ? { color: 'var(--status-danger)' } : {}}>
-                                {totalViews.toLocaleString()}
-                            </span>
-                            <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-                                / {viewTarget.toLocaleString()} weekly target
-                            </span>
-                        </div>
-                    </div>
 
-                    <div className="card metric-card">
-                        <span className="metric-label">Avg Views per Post</span>
-                        <span className="metric-value">{avgViewsPerPost}</span>
+                {/* Model Summary - 4 cards */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '24px' }}>
+                    <div className="card" style={{ padding: '16px' }}>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>Total Upvotes</div>
+                        <div style={{ fontSize: '1.8rem', fontWeight: '700', color: 'var(--primary-color)' }}>{totalViews.toLocaleString()}</div>
                     </div>
-
-                    <div className={`card metric-card`} style={isHighRemoval ? { borderColor: 'var(--status-danger)' } : {}}>
-                        <span className="metric-label">Removal Rate</span>
-                        <span className="metric-value" style={isHighRemoval ? { color: 'var(--status-danger)' } : {}}>
-                            {removalRatePct}%
-                        </span>
+                    <div className="card" style={{ padding: '16px' }}>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>Avg / Post</div>
+                        <div style={{ fontSize: '1.8rem', fontWeight: '700' }}>{avgViewsPerPost}</div>
                     </div>
-
-                    <div className="card metric-card">
-                        <span className="metric-label">Proven Subreddits</span>
-                        <span className="metric-value">{provenSubs}</span>
+                    <div className="card" style={{ padding: '16px' }}>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>Removal Rate</div>
+                        <div style={{ fontSize: '1.8rem', fontWeight: '700', color: removalRatePct > 20 ? 'var(--status-danger)' : 'var(--status-success)' }}>{removalRatePct}%</div>
+                    </div>
+                    <div className="card" style={{ padding: '16px' }}>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>Subreddits</div>
+                        <div style={{ fontSize: '1.8rem', fontWeight: '700' }}>{provenSubs}<span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: '400' }}> proven</span></div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{testingSubs} testing</div>
                     </div>
                 </div>
 
-                <div className="grid-cards mb-6" style={{ marginBottom: '24px' }}>
-                    <div className="card" style={{ gridColumn: 'span 2' }}>
-                        <h2 style={{ fontSize: '1.1rem', marginBottom: '16px' }}>Top Performing Subreddits</h2>
+                {/* Accounts Section - THE KEY SECTION */}
+                <div className="card" style={{ marginBottom: '24px' }}>
+                    <h2 style={{ fontSize: '1.1rem', marginBottom: '16px', fontWeight: '600' }}>Reddit Accounts</h2>
+
+                    {accountRankings.length === 0 ? (
+                        <div style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '24px' }}>No accounts linked to this model yet.</div>
+                    ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            {accountRankings.map(acc => (
+                                <div key={acc.handle} style={{
+                                    padding: '16px 20px',
+                                    backgroundColor: 'var(--surface-color)',
+                                    borderRadius: 'var(--radius-md)',
+                                    border: `1px solid ${acc.isSuspended ? 'var(--status-danger)' : 'var(--border-color)'}`,
+                                }}>
+                                    {/* Account Header Row */}
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                            <User size={16} style={{ color: 'var(--text-secondary)' }} />
+                                            <span style={{ fontWeight: '600', fontSize: '1rem' }}>u/{acc.handle.replace(/^u\//i, '')}</span>
+                                            {acc.isSuspended ? (
+                                                <span className="badge badge-danger" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                                    <XCircle size={10} /> Suspended
+                                                </span>
+                                            ) : (
+                                                <span className="badge badge-success" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                                    <CheckCircle size={10} /> Active
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                            CQS: <span style={{ fontWeight: '500', color: 'var(--text-primary)' }}>{acc.cqs}</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Account Stats Row */}
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '16px' }}>
+                                        <div>
+                                            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '2px' }}>Karma</div>
+                                            <div style={{ fontSize: '1.2rem', fontWeight: '600' }}>{acc.karma.toLocaleString()}</div>
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '2px' }}>Upvotes</div>
+                                            <div style={{ fontSize: '1.2rem', fontWeight: '600', color: 'var(--primary-color)' }}>{acc.totalUps.toLocaleString()}</div>
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '2px' }}>Posts</div>
+                                            <div style={{ fontSize: '1.2rem', fontWeight: '600' }}>{acc.totalPosts}</div>
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '2px' }}>Avg / Post</div>
+                                            <div style={{ fontSize: '1.2rem', fontWeight: '600' }}>{acc.avgUpsPerPost}</div>
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '2px' }}>Removals</div>
+                                            <div style={{
+                                                fontSize: '1.2rem', fontWeight: '600',
+                                                color: acc.removalRate > 20 ? 'var(--status-danger)' : acc.removalRate > 10 ? 'var(--status-warning)' : 'var(--status-success)'
+                                            }}>
+                                                {acc.removalRate}%
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                {/* Two columns: Top Subs + DO NOT POST */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+
+                    {/* Top Subreddits */}
+                    <div className="card">
+                        <h2 style={{ fontSize: '1rem', marginBottom: '12px', fontWeight: '600' }}>Top Subreddits</h2>
                         <div className="data-table-container">
                             <table className="data-table">
                                 <thead>
                                     <tr>
                                         <th>Subreddit</th>
                                         <th>Status</th>
-                                        <th>Avg Views</th>
-                                        <th>Removal Rate</th>
+                                        <th>Avg Ups</th>
+                                        <th>Removal</th>
                                     </tr>
                                 </thead>
                                 <tbody>
+                                    {topSubreddits?.length === 0 && (
+                                        <tr><td colSpan="4" style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>No data yet</td></tr>
+                                    )}
                                     {topSubreddits?.map(sub => (
                                         <tr key={sub.name}>
                                             <td style={{ fontWeight: '500' }}>r/{sub.name}</td>
@@ -106,7 +167,7 @@ export function ModelDetail() {
                                                     {sub.status}
                                                 </span>
                                             </td>
-                                            <td style={{ fontWeight: 'bold' }}>{sub.avgViews?.toLocaleString()}</td>
+                                            <td style={{ fontWeight: '600' }}>{sub.avgViews?.toLocaleString()}</td>
                                             <td style={{ color: sub.removalPct > 20 ? 'var(--status-danger)' : 'inherit' }}>{sub.removalPct}%</td>
                                         </tr>
                                     ))}
@@ -115,86 +176,29 @@ export function ModelDetail() {
                         </div>
                     </div>
 
-                    <div className="card">
-                        <h2 style={{ fontSize: '1.1rem', marginBottom: '16px' }}>Niche/Angle Win-Rates</h2>
-                        <div className="data-table-container">
-                            <table className="data-table">
-                                <thead>
-                                    <tr>
-                                        <th>Angle Tag</th>
-                                        <th>Avg Views</th>
-                                        <th>Removal</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {nichePerformance?.map(np => (
-                                        <tr key={np.tag}>
-                                            <td style={{ fontWeight: '500' }}>{np.tag}</td>
-                                            <td>{Number(np.avgViews).toLocaleString()}</td>
-                                            <td style={{ fontSize: '0.85rem' }}>{np.removalRate}%</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="grid-cards mb-6" style={{ marginBottom: '24px' }}>
-                    <div className="card" style={{ gridColumn: 'span 2', borderColor: 'var(--status-danger)' }}>
-                        <h2 style={{ fontSize: '1.1rem', marginBottom: '16px', color: 'var(--status-danger)' }}>DO NOT POST (High Removal / Low Views)</h2>
+                    {/* DO NOT POST */}
+                    <div className="card" style={{ borderColor: worstSubreddits?.length > 0 ? 'var(--status-danger)' : undefined }}>
+                        <h2 style={{ fontSize: '1rem', marginBottom: '12px', fontWeight: '600', color: worstSubreddits?.length > 0 ? 'var(--status-danger)' : 'inherit' }}>
+                            ⛔ Do Not Post
+                        </h2>
                         <div className="data-table-container">
                             <table className="data-table">
                                 <thead>
                                     <tr>
                                         <th>Subreddit</th>
-                                        <th>Action Recommended</th>
-                                        <th>Removals</th>
-                                        <th>Avg Views</th>
+                                        <th>Issue</th>
+                                        <th>Removal</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {worstSubreddits?.length === 0 && (
-                                        <tr><td colSpan="4" style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>No poor-performing subreddits detected yet.</td></tr>
+                                        <tr><td colSpan="3" style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>None detected — looking clean</td></tr>
                                     )}
                                     {worstSubreddits?.map(sub => (
                                         <tr key={sub.name}>
                                             <td style={{ fontWeight: '500' }}>r/{sub.name}</td>
-                                            <td>
-                                                <span className="badge badge-danger">
-                                                    {sub.action}
-                                                </span>
-                                            </td>
-                                            <td style={{ color: sub.removalPct > 40 ? 'var(--status-danger)' : 'inherit', fontWeight: 'bold' }}>{sub.removalPct}%</td>
-                                            <td>{sub.avgViews?.toLocaleString()}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    <div className="card" style={{ gridColumn: 'span 1' }}>
-                        <h2 style={{ fontSize: '1.1rem', marginBottom: '16px' }}>Account Health Rankings</h2>
-                        <div className="data-table-container">
-                            <table className="data-table">
-                                <thead>
-                                    <tr>
-                                        <th>Account</th>
-                                        <th>Status</th>
-                                        <th>Karma</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {accountRankings?.map(acc => (
-                                        <tr key={acc.handle}>
-                                            <td style={{ fontWeight: '500' }}>u/{acc.handle}</td>
-                                            <td>
-                                                <span className={`badge ${acc.isSuspended ? 'badge-danger' : (acc.status === 'active' ? 'badge-success' : 'badge-warning')}`}>
-                                                    {acc.isSuspended ? 'Suspended' : acc.status}
-                                                </span>
-                                            </td>
-                                            <td>{acc.karma?.toLocaleString() || 0}</td>
+                                            <td><span className="badge badge-danger">{sub.action}</span></td>
+                                            <td style={{ fontWeight: '600', color: 'var(--status-danger)' }}>{sub.removalPct}%</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -203,42 +207,28 @@ export function ModelDetail() {
                     </div>
                 </div>
 
-                <div className="grid-cards">
-                    <div className="card" style={{ gridColumn: 'span 2' }}>
-                        <h2 style={{ fontSize: '1.1rem', marginBottom: '16px' }}>Pressure Indicators</h2>
-                        <ul style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                            <PressureItem
-                                active={isBelowTarget}
-                                title="Below Weekly View Target"
-                                description="Increase daily post cap or find new proven subreddits to hit the target."
-                            />
-                            <PressureItem
-                                active={isHighRemoval}
-                                title="High Removal Rate Detected"
-                                description="Your recent posts are being removed frequently. Check subreddit rules or asset risk."
-                            />
-                            <PressureItem
-                                active={testingSubs === 0}
-                                title="Testing Pipeline Empty"
-                                description="Add more subreddits to the testing pool to find new proven growth vectors."
-                            />
-                        </ul>
+                {/* Alerts */}
+                {(removalRatePct > 20 || testingSubs === 0) && (
+                    <div className="card" style={{ borderColor: 'var(--status-danger)' }}>
+                        <h2 style={{ fontSize: '1rem', marginBottom: '12px', fontWeight: '600' }}>⚠️ Alerts</h2>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {removalRatePct > 20 && (
+                                <div style={{ display: 'flex', gap: '8px', padding: '10px', backgroundColor: 'rgba(239,68,68,0.1)', borderRadius: '6px', fontSize: '0.9rem' }}>
+                                    <AlertTriangle size={16} style={{ color: 'var(--status-danger)', flexShrink: 0, marginTop: '2px' }} />
+                                    <span>High removal rate ({removalRatePct}%) — review subreddit rules and posting style.</span>
+                                </div>
+                            )}
+                            {testingSubs === 0 && (
+                                <div style={{ display: 'flex', gap: '8px', padding: '10px', backgroundColor: 'rgba(245,158,11,0.1)', borderRadius: '6px', fontSize: '0.9rem' }}>
+                                    <AlertTriangle size={16} style={{ color: 'var(--status-warning)', flexShrink: 0, marginTop: '2px' }} />
+                                    <span>No subreddits in testing pipeline — add new subs to keep growth discovery alive.</span>
+                                </div>
+                            )}
+                        </div>
                     </div>
-                </div>
+                )}
+
             </div>
         </>
-    );
-}
-
-function PressureItem({ active, title, description }) {
-    if (!active) return null;
-    return (
-        <li style={{ display: 'flex', gap: '12px', padding: '12px', backgroundColor: 'var(--status-danger-bg)', borderRadius: 'var(--radius-md)', border: '1px solid var(--status-danger)' }}>
-            <div style={{ color: 'var(--status-danger)', marginTop: '2px' }}>⚠️</div>
-            <div>
-                <div style={{ fontWeight: '600', color: 'var(--text-primary)', marginBottom: '4px' }}>{title}</div>
-                <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{description}</div>
-            </div>
-        </li>
     );
 }
