@@ -74,27 +74,23 @@ export const TitleGeneratorService = {
             if (settings.openRouterApiKey) {
                 try {
                     const prompt = `
-You are a highly creative, unhinged narrative copywriter specializing in writing engaging, story-driven, and hyper-organic post titles for online communities.
-Your task is to generate ONE single short, casual post title that sounds like a real person sharing a specific moment from their life.
+You are a normal, everyday girl posting on a heavily NSFW/explicit Reddit community. You are not an AI or a professional copywriter.
+Your task is to generate ONE single short, casual post title that fits perfectly into this specific community. Do NOT be afraid of being highly explicit or sexual—in fact, you MUST match the exact explicit level of the provided examples.
 
-Here are the top 50 viral titles from this specific community recently. Use these ONLY to understand the general topic and NSFW/casual vibe (the "Tone DNA"). DO NOT copy their generic structures:
+Here are the top 50 viral titles from this exact subreddit. 
+Study their patterns, vocabulary, explicit nature, and sentence structure (this is your "Tone DNA"):
 ${JSON.stringify(topTitles)}
 
-Here are the formatting rules for this community you MUST follow:
-${rulesSummary || 'No specific formatting rules.'}
+RULES YOU MUST FOLLOW:
+1. absolutely NO EMOJIS under any circumstances.
+2. MATCH THE NSFW PATTERN: Use the same type of explicit, sexual, or slang words that you see in the Top 50 titles. Do not hold back or sanitize the language. If they are sexual, you be sexual.
+3. SOUND LIKE A REAL GIRL: Use casual grammar. Don't capitalize everything perfectly. It should look like a quick, authentic message typed on a phone.
+4. DO NOT COPY EXACTLY: Write a new title that heavily borrows the exact style, tone, and explicit level of the top 50, but uses different phrasing.
+${rulesSummary ? `5. COMMUNITY RULES: ${rulesSummary}` : ''}
+${requiredFlair ? `6. FLAIR REQUIREMENT: You MUST include [${requiredFlair}] at the start or inside your title.` : ''}
+${previousTitles.length > 0 ? `7. AVOID REPETITION. Do not use these recently used themes: ${JSON.stringify(previousTitles.slice(-20))}` : ''}
 
-${requiredFlair ? `You MUST include this exact flair text inside brackets at the start of your title: [${requiredFlair}]` : ''}
-
-${previousTitles.length > 0 ? `CRITICAL: Do not generate any title containing these themes or situations you have used recently:\n${JSON.stringify(previousTitles.slice(-50))}\n` : ''}
-
-STYLE RULES:
-1. NO EMOJIS.
-2. STORY-DRIVEN & CREATIVE: Do not just say "what do you think?" or "felt cute". Invent a highly specific, engaging mini-story, confession, or relatable life situation. Let your imagination run wild. Examples: "my husband fell asleep early so I'm bored...", "my coworkers would die if they found my account...", "just got dumped, making myself feel better...", etc. The goal is extreme creativity and uniqueness.
-3. UNIQUE POV: Make the title sound like it was written by a specific, imperfect human experiencing a real, vulnerable, or chaotic moment. Be quirky or slightly controversial to drive engagement.
-4. CONTEXT INFERENCE: Look at the Tone DNA to understand the core subject matter (e.g., pregnant, petite) and naturally weave that into the story. If strict rules require a verification tag like [f], natively inject it.
-5. CASUAL & AMATEUR: Break the rules of grammar. Do not capitalize the first letter. Keep it feeling like a rapid, late-night text message. Perfect spelling looks fake.
-
-Output ONLY the single generated title as plain text. Do not use quotes.
+CRITICAL: Output ONLY the raw generated title. No quotes, no intro, NO EXPLANATIONS, NO NOTES, and NO EMOJIS. Just the plain text title.
 `;
 
                     const openai = new OpenAI({
@@ -106,11 +102,23 @@ Output ONLY the single generated title as plain text. Do not use quotes.
                     const response = await openai.chat.completions.create({
                         model: "mistralai/mixtral-8x7b-instruct",
                         messages: [
+                            {
+                                role: "system",
+                                content: "You are an authentic, casual human user of Reddit. You always output raw text only. You never explain yourself, you never use emojis, and you freely use highly explicit/NSFW language when appropriate."
+                            },
                             { role: "user", content: prompt }
                         ],
                     });
 
                     let finalTitle = response.choices[0].message.content.trim().replace(/^"/, '').replace(/"$/, '');
+
+                    // Aggressive cleanup for Mixtral "helpful" meta-commentary
+                    finalTitle = finalTitle.split(/\(Note:/i)[0];
+                    finalTitle = finalTitle.split(/Note:/i)[0];
+                    finalTitle = finalTitle.split(/This title follows/i)[0];
+                    finalTitle = finalTitle.split(/\<3/)[0]; // strip the heart since we want no emojis/emoticons usually, but this is optional
+
+                    finalTitle = finalTitle.trim();
 
                     return finalTitle;
 
