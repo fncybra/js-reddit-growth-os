@@ -82,14 +82,19 @@ Study their patterns, vocabulary, explicit nature, and sentence structure (this 
 ${JSON.stringify(topTitles)}
 
 RULES YOU MUST FOLLOW:
-1. absolutely NO EMOJIS under any circumstances.
+1. NO EMOJIS under any circumstances.
 2. MATCH THE NSFW PATTERN: Use the same type of explicit, sexual, or slang words that you see in the Top 50 titles. Do not hold back or sanitize the language. If they are sexual, you be sexual.
 3. SOUND LIKE A REAL GIRL: Use casual grammar. Don't capitalize everything perfectly. It should look like a quick, authentic message typed on a phone.
 4. DO NOT COPY EXACTLY: Write a new title that heavily borrows the exact style, tone, and explicit level of the top 50, but uses different phrasing.
 5. NO UNAUTHORIZED TAGS: Never invent or inject verification tags like [F], [f], (f), or similar UNLESS explicitly commanded to inside the Community Rules or Flair Requirements below. If not commanded below, DO NOT ADD THEM.
-${rulesSummary ? `6. COMMUNITY RULES: ${rulesSummary}` : ''}
+${rulesSummary ? `6. VERY IMPORTANT COMMUNITY RULES: Read these carefully. If these rules say you MUST include a specific word (like 'pregnant' or 'milf'), or MUST NOT use a specific word, you MUST obey this perfectly. Rules: ${rulesSummary}` : ''}
 ${requiredFlair ? `7. FLAIR REQUIREMENT: You MUST include [${requiredFlair}] at the start or inside your title.` : ''}
 ${previousTitles.length > 0 ? `8. AVOID REPETITION. Do not use these recently used themes: ${JSON.stringify(previousTitles.slice(-20))}` : ''}
+
+FINAL COMPLIANCE CHECK BEFORE OUTPUTTING:
+- Did you use an Emoji? Stop, remove it.
+- If there are rules above stipulating a required tag or word, is it in your title? If not, rewrite it so it is.
+- Did you add an [f] or (f) tag without being told to? Remove it.
 
 CRITICAL: Output ONLY the raw generated title. No quotes, no intro, NO EXPLANATIONS, NO NOTES, and NO EMOJIS. Just the plain text title.
 `;
