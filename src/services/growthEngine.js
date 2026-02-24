@@ -102,7 +102,7 @@ Output ONLY the single generated title as plain text. Do not use quotes. Break t
                             "Content-Type": "application/json"
                         },
                         body: JSON.stringify({
-                            "model": "cognitivecomputations/dolphin-mixtral-8x7b",
+                            "model": "mistralai/mixtral-8x7b-instruct",
                             "messages": [
                                 { "role": "user", "content": prompt }
                             ]
