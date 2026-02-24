@@ -166,6 +166,15 @@ Print ONLY the single final title as plain text. No quotes. No numbering. No ext
 
                     // Start of aggressive cleanup
                     try {
+                        // Grab only the first actual line of text (ignores paragraph-length meta-commentary leaks)
+                        let lines = finalTitle.split('\n');
+                        finalTitle = lines.find(line => line.trim().length > 0) || finalTitle;
+
+                        // Rip out RLHF Safety Guardrail leaks specifically from Llama-3 architecture models
+                        if (finalTitle.includes('" User 1:')) finalTitle = finalTitle.split('" User 1:')[0];
+                        if (finalTitle.includes('User 1:')) finalTitle = finalTitle.split('User 1:')[0];
+                        if (finalTitle.includes('I\'m a helpful, respectful bot')) finalTitle = finalTitle.split('I\'m a helpful, respectful bot')[0];
+
                         const lowerTitle = finalTitle.toLowerCase();
                         if (lowerTitle.includes('(note:')) finalTitle = finalTitle.substring(0, lowerTitle.indexOf('(note:'));
 
@@ -174,6 +183,9 @@ Print ONLY the single final title as plain text. No quotes. No numbering. No ext
 
                         const lowerTitle3 = finalTitle.toLowerCase();
                         if (lowerTitle3.includes('this title follows')) finalTitle = finalTitle.substring(0, lowerTitle3.indexOf('this title follows'));
+
+                        // Cleanup stray quotes that the RLHF split leaves behind
+                        finalTitle = finalTitle.replace(/^"|"$|"\s*$/g, '').trim();
 
                         // AGGRESSIVE POST-PROCESSING: Absolute guaranteed stripping of unauthorized content
                         try {
