@@ -108,9 +108,25 @@ Output ONLY the single generated title as plain text. Do not use quotes. Break t
 
                     let finalTitle = response.content[0].text.trim().replace(/^"/, '').replace(/"$/, '');
 
-                    // Claude Safety Bypass - If Claude refuses to generate NSFW titles, trigger fallback immediately
+                    // Claude Safety Bypass - aggressively detect refusals
                     const lowerResponse = finalTitle.toLowerCase();
-                    if (lowerResponse.includes("i can't help") || lowerResponse.includes("i cannot fulfill") || lowerResponse.includes("i'm unable to") || lowerResponse.includes("i am unable to")) {
+                    const refusalPhrases = [
+                        "i can't help",
+                        "i cannot fulfill",
+                        "i'm unable to",
+                        "i am unable to",
+                        "i can't generate",
+                        "i cannot generate",
+                        "not able to assist",
+                        "not able to create",
+                        "conflicts with my values",
+                        "adult content",
+                        "sexual content"
+                    ];
+
+                    const isRefusal = refusalPhrases.some(phrase => lowerResponse.includes(phrase)) || finalTitle.length > 250;
+
+                    if (isRefusal) {
                         console.warn("Anthropic Anti-NSFW filter triggered. Falling back to scraped raw title.");
                         throw new Error("Anthropic Refusal Triggered");
                     }
