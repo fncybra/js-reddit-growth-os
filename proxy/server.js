@@ -283,6 +283,44 @@ app.post('/api/drive/move', async (req, res) => {
     }
 });
 
+// Proxy endpoint for AI Generation (Bypasses Browser CORS / Preflight blocks)
+app.post('/api/ai/generate', async (req, res) => {
+    try {
+        const { aiBaseUrl, apiKey, model, messages } = req.body;
+
+        if (!apiKey) {
+            return res.status(400).json({ error: "No API Key provided to proxy." });
+        }
+
+        const targetUrl = aiBaseUrl || "https://openrouter.ai/api/v1";
+
+        // Always append /chat/completions if missing
+        const completetionsUrl = targetUrl.endsWith('/chat/completions')
+            ? targetUrl
+            : `${targetUrl.replace(/\/$/, '')}/chat/completions`;
+
+        const response = await axios.post(completetionsUrl, {
+            model: model || "mistralai/mixtral-8x7b-instruct",
+            messages: messages
+        }, {
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json',
+                'HTTP-Referer': 'https://js-reddit-growth-os.vercel.app/', // Required by OpenRouter
+                'X-Title': 'js-reddit-growth-os'
+            }
+        });
+
+        res.json(response.data);
+    } catch (error) {
+        console.error("AI Proxy Error:", error.message, error.response?.data);
+        res.status(500).json({
+            error: "Failed proxy AI generation connect",
+            details: error.response?.data || error.message
+        });
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`[GrowthOS Proxy] Scraper Engine running on http://localhost:${PORT}`);
 });

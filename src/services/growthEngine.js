@@ -126,20 +126,35 @@ Final output
 Print ONLY the single final title as plain text. No quotes. No numbering. No extra text. No analysis.
 `;
 
-                    const openai = new OpenAI({
-                        baseURL: settings.aiBaseUrl || "https://openrouter.ai/api/v1",
-                        apiKey: settings.openRouterApiKey,
-                        dangerouslyAllowBrowser: true, // Required to call directly from the browser natively
+                    const proxyUrl = await SettingsService.getProxyUrl();
+                    const aiEndpoint = `${proxyUrl}/api/ai/generate`;
+
+                    const response = await fetch(aiEndpoint, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            aiBaseUrl: settings.aiBaseUrl || "", // Leave blank to let proxy fallback
+                            apiKey: settings.openRouterApiKey,
+                            model: settings.openRouterModel || "mistralai/mixtral-8x7b-instruct",
+                            messages: [
+                                { role: "user", content: prompt }
+                            ]
+                        })
                     });
 
-                    const response = await openai.chat.completions.create({
-                        model: settings.openRouterModel || "mistralai/mixtral-8x7b-instruct",
-                        messages: [
-                            { role: "user", content: prompt }
-                        ],
-                    });
+                    if (!response.ok) {
+                        const errData = await response.json();
+                        throw new Error(errData.details?.error?.message || errData.error || response.statusText);
+                    }
 
-                    let finalTitle = response.choices[0].message.content.trim().replace(/^"/, '').replace(/"$/, '');
+                    const data = await response.json();
+                    let finalTitle = data.choices && data.choices[0] && data.choices[0].message
+                        ? data.choices[0].message.content.trim()
+                        : "Generated Title Failed";
+
+                    finalTitle = finalTitle.replace(/^"/, '').replace(/"$/, '');
 
                     // Start of aggressive cleanup
                     try {
