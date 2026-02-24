@@ -37,14 +37,22 @@ export function Tasks() {
     }
 
     async function handleClearPending() {
-        if (!activeModelId || !tasks) return;
-        const pendingTasks = tasks.filter(t => t.status !== 'closed');
+        if (!activeModelId) return;
+
+        // Query the database directly to find ANY unclosed tasks for this model, 
+        // regardless of whether they were generated today or a previous day
+        const pendingTasks = await db.tasks
+            .where('modelId')
+            .equals(activeModelId)
+            .filter(t => t.status !== 'closed')
+            .toArray();
+
         if (pendingTasks.length === 0) {
             alert("No pending tasks to clear.");
             return;
         }
 
-        if (window.confirm(`Are you sure you want to permanently delete ${pendingTasks.length} pending tasks?`)) {
+        if (window.confirm(`Are you sure you want to permanently delete ALL ${pendingTasks.length} pending tasks across the entire cloud?`)) {
             try {
                 const ids = pendingTasks.map(t => t.id);
                 await db.tasks.bulkDelete(ids);
