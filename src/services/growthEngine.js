@@ -37,7 +37,7 @@ export const SettingsService = {
     }
 };
 
-import Anthropic from '@anthropic-ai/sdk';
+
 
 export const TitleGeneratorService = {
     // Scrapes top 50 titles from a subreddit and regenerates a high-quality title conforming to rules
@@ -66,15 +66,10 @@ export const TitleGeneratorService = {
                 ];
             }
 
-            // Call Anthropic if the key is available
+            // Call OpenRouter if the key is available
             const settings = await SettingsService.getSettings();
-            if (settings.anthropicApiKey) {
+            if (settings.openRouterApiKey) {
                 try {
-                    const anthropic = new Anthropic({
-                        apiKey: settings.anthropicApiKey,
-                        dangerouslyAllowBrowser: true // Required since we are calling from the React frontend
-                    });
-
                     const prompt = `
 You are a highly adaptable creative copywriter specializing in mimicking the exact tone and style of specific online communities.
 Your task is to generate ONE single short, casual, organic-sounding post title for an online forum.
@@ -98,46 +93,38 @@ STYLE RULES:
 Output ONLY the single generated title as plain text. Do not use quotes. Break the rules of grammar if it makes you sound more like a genuine, casual human user posting from their phone.
 `;
 
-                    const response = await anthropic.messages.create({
-                        model: "claude-haiku-4-5",
-                        max_tokens: 150,
-                        messages: [
-                            { role: "user", content: prompt }
-                        ],
+                    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                        method: "POST",
+                        headers: {
+                            "Authorization": `Bearer ${settings.openRouterApiKey}`,
+                            "HTTP-Referer": window.location.origin,
+                            "X-Title": "Growth OS",
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            "model": "cognitivecomputations/dolphin-mixtral-8x7b",
+                            "messages": [
+                                { "role": "user", "content": prompt }
+                            ]
+                        })
                     });
 
-                    let finalTitle = response.content[0].text.trim().replace(/^"/, '').replace(/"$/, '');
-
-                    // Claude Safety Bypass - aggressively detect refusals
-                    const lowerResponse = finalTitle.toLowerCase();
-                    const refusalPhrases = [
-                        "i can't help",
-                        "i cannot fulfill",
-                        "i'm unable to",
-                        "i am unable to",
-                        "i can't generate",
-                        "i cannot generate",
-                        "not able to assist",
-                        "not able to create",
-                        "conflicts with my values",
-                        "adult content",
-                        "sexual content",
-                        "that community",
-                        "explicit contexts"
-                    ];
-
-                    const isRefusal = refusalPhrases.some(phrase => lowerResponse.includes(phrase)) || finalTitle.length > 250;
-
-                    if (isRefusal) {
-                        console.warn("Anthropic Anti-NSFW filter triggered. Falling back to scraped raw title.");
-                        throw new Error("Anthropic Refusal Triggered");
+                    if (!response.ok) {
+                        throw new Error(`OpenRouter error: ${response.status} ${response.statusText}`);
                     }
+
+                    const json = await response.json();
+                    if (!json.choices || json.choices.length === 0) {
+                        throw new Error("Invalid response from OpenRouter API");
+                    }
+
+                    let finalTitle = json.choices[0].message.content.trim().replace(/^"/, '').replace(/"$/, '');
 
                     return finalTitle;
 
                 } catch (err) {
-                    console.error("Anthropic Generation Error:", err);
-                    // Fallthrough to mock logic if it fails
+                    console.error("OpenRouter Generation Error:", err);
+                    // Fallthrough to fallback logic if it fails
                 }
             }
 
@@ -150,13 +137,13 @@ Output ONLY the single generated title as plain text. Do not use quotes. Break t
 
             // Ensure flair is respected if we generated it
             if (requiredFlair && !generatedTitle.includes(requiredFlair)) {
-                generatedTitle = `[${requiredFlair}] ` + generatedTitle;
+                generatedTitle = `[${requiredFlair}]` + generatedTitle;
             }
 
             return generatedTitle;
         } catch (err) {
             console.error("Title Generation API Error:", err);
-            return `Generated Post for r/${subredditName}`;
+            return `Generated Post for r / ${subredditName}`;
         }
     }
 };
@@ -245,7 +232,7 @@ export const DailyPlanGenerator = {
         if (model?.driveFolderId) {
             console.log('DailyPlanGenerator: Auto-syncing from Google Drive folder', model.driveFolderId);
             try {
-                const res = await fetch(`/api/drive/list/${model.driveFolderId}`);
+                const res = await fetch(`/ api / drive / list / ${model.driveFolderId}`);
                 if (res.ok) {
                     const driveFiles = await res.json();
                     const assetsToAdd = [];
@@ -270,7 +257,7 @@ export const DailyPlanGenerator = {
                     }
                     if (assetsToAdd.length > 0) {
                         await db.assets.bulkAdd(assetsToAdd);
-                        console.log(`DailyPlanGenerator: Auto-synced ${assetsToAdd.length} new files from Drive`);
+                        console.log(`DailyPlanGenerator: Auto - synced ${assetsToAdd.length} new files from Drive`);
                     }
                 }
             } catch (driveErr) {
@@ -427,13 +414,13 @@ export const DailyPlanGenerator = {
 
                     if (!currentRules) {
                         const proxyUrl = await SettingsService.getProxyUrl();
-                        console.log(`On-the-fly scraping rules for r/${sub.name}...`);
+                        console.log(`On - the - fly scraping rules for r / ${sub.name}...`);
                         try {
                             const cleanName = sub.name.replace(/^(r\/|\/r\/)/i, '');
-                            const res = await fetch(`${proxyUrl}/api/scrape/subreddit/${cleanName}`);
+                            const res = await fetch(`${proxyUrl}/api/scrape / subreddit / ${cleanName} `);
                             if (res.ok) {
                                 const deepData = await res.json();
-                                currentRules = deepData.rules?.map(r => `• ${r.title}: ${r.description}`).join('\n\n') || '';
+                                currentRules = deepData.rules?.map(r => `• ${r.title}: ${r.description} `).join('\n\n') || '';
 
                                 // Cleanly update the DB so the VA dashboard instantly repopulates
                                 await db.subreddits.update(sub.id, {
@@ -657,7 +644,7 @@ export const CloudSyncService = {
 
             if (cleanData.length === 0) continue;
             const { error } = await supabase.from(table).upsert(cleanData);
-            if (error) console.error(`Sync Error (${table}):`, error.message);
+            if (error) console.error(`Sync Error(${table}): `, error.message);
         }
     },
 
@@ -671,7 +658,7 @@ export const CloudSyncService = {
         for (const table of tables) {
             const { data, error } = await supabase.from(table).select('*');
             if (error) {
-                console.error(`Pull Error (${table}):`, error.message);
+                console.error(`Pull Error(${table}): `, error.message);
                 continue;
             }
 
@@ -719,7 +706,7 @@ export const AccountSyncService = {
 
         try {
             const proxyUrl = await SettingsService.getProxyUrl();
-            const res = await fetch(`${proxyUrl}/api/scrape/user/stats/${account.handle}`);
+            const res = await fetch(`${proxyUrl} /api/scrape / user / stats / ${account.handle} `);
             if (!res.ok) throw new Error("Stats sync failed");
             const data = await res.json();
 
@@ -733,7 +720,7 @@ export const AccountSyncService = {
             });
             return data;
         } catch (err) {
-            console.error(`Account sync fail (${account.handle}):`, err);
+            console.error(`Account sync fail(${account.handle}): `, err);
         }
     },
 
@@ -751,7 +738,7 @@ export const PerformanceSyncService = {
 
         try {
             const proxyUrl = await SettingsService.getProxyUrl();
-            const response = await fetch(`${proxyUrl}/api/scrape/post/${task.redditPostId}`);
+            const response = await fetch(`${proxyUrl} /api/scrape / post / ${task.redditPostId} `);
             if (!response.ok) throw new Error("Sync failed");
 
             const data = await response.json();
@@ -761,7 +748,7 @@ export const PerformanceSyncService = {
             const updateObj = {
                 views24h: data.views,
                 removed: data.isRemoved ? 1 : 0,
-                notes: `Last synced: ${new Date().toLocaleString()}`
+                notes: `Last synced: ${new Date().toLocaleString()} `
             };
 
             if (performance) {
