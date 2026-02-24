@@ -131,35 +131,33 @@ Final output
 Print ONLY the single final title as plain text. No quotes. No numbering. No extra text. No analysis.
 `;
 
-                    let aiEndpoint = settings.aiBaseUrl || "https://openrouter.ai/api/v1";
-                    // Ensure ends with /chat/completions
-                    if (!aiEndpoint.endsWith('/chat/completions')) {
-                        aiEndpoint = `${aiEndpoint.replace(/\/$/, '')}/chat/completions`;
+                    let aiBaseUrl = settings.aiBaseUrl || "https://openrouter.ai/api/v1";
+                    // If user accidentally put a trailing /chat/completions into the Base URL box, fix it for the SDK
+                    if (aiBaseUrl.endsWith('/chat/completions')) {
+                        aiBaseUrl = aiBaseUrl.replace('/chat/completions', '');
                     }
 
-                    const response = await fetch(aiEndpoint, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${settings.openRouterApiKey}`
-                        },
-                        body: JSON.stringify({
-                            model: settings.openRouterModel || "mistralai/mixtral-8x7b-instruct",
-                            messages: [
-                                { role: "user", content: prompt }
-                            ]
-                        })
+                    const aiEndpoint = aiBaseUrl.endsWith('/') ? aiBaseUrl.slice(0, -1) : aiBaseUrl;
+
+                    const openai = new OpenAI({
+                        baseURL: aiEndpoint,
+                        apiKey: settings.openRouterApiKey,
+                        dangerouslyAllowBrowser: true, // Required for client-side queries
+                        defaultHeaders: {
+                            'HTTP-Referer': 'https://js-reddit-growth-os.vercel.app/', // Required by OR
+                            'X-Title': 'js-reddit-growth-os'
+                        }
                     });
 
-                    if (!response.ok) {
-                        const errText = await response.text();
-                        console.error("Direct AI Node Error:", errText);
-                        throw new Error(`Status ${response.status}: ${errText}`);
-                    }
+                    const response = await openai.chat.completions.create({
+                        model: settings.openRouterModel || "mistralai/mixtral-8x7b-instruct",
+                        messages: [
+                            { role: "user", content: prompt }
+                        ],
+                    });
 
-                    const data = await response.json();
-                    let finalTitle = data.choices && data.choices[0] && data.choices[0].message
-                        ? data.choices[0].message.content.trim()
+                    let finalTitle = response.choices && response.choices[0] && response.choices[0].message
+                        ? response.choices[0].message.content.trim()
                         : "Generated Title Failed";
 
                     finalTitle = finalTitle.replace(/^"/, '').replace(/"$/, '');
