@@ -30,6 +30,8 @@ export function ModelDetail() {
         provenSubs = 0,
         testingSubs = 0,
         topSubreddits = [],
+        worstSubreddits = [],
+        accountRankings = [],
         nichePerformance = []
     } = metrics || {};
 
@@ -130,6 +132,69 @@ export function ModelDetail() {
                                             <td style={{ fontWeight: '500' }}>{np.tag}</td>
                                             <td>{Number(np.avgViews).toLocaleString()}</td>
                                             <td style={{ fontSize: '0.85rem' }}>{np.removalRate}%</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="grid-cards mb-6" style={{ marginBottom: '24px' }}>
+                    <div className="card" style={{ gridColumn: 'span 2', borderColor: 'var(--status-danger)' }}>
+                        <h2 style={{ fontSize: '1.1rem', marginBottom: '16px', color: 'var(--status-danger)' }}>DO NOT POST (High Removal / Low Views)</h2>
+                        <div className="data-table-container">
+                            <table className="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Subreddit</th>
+                                        <th>Action Recommended</th>
+                                        <th>Removals</th>
+                                        <th>Avg Views</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {worstSubreddits?.length === 0 && (
+                                        <tr><td colSpan="4" style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>No poor-performing subreddits detected yet.</td></tr>
+                                    )}
+                                    {worstSubreddits?.map(sub => (
+                                        <tr key={sub.name}>
+                                            <td style={{ fontWeight: '500' }}>r/{sub.name}</td>
+                                            <td>
+                                                <span className="badge badge-danger">
+                                                    {sub.action}
+                                                </span>
+                                            </td>
+                                            <td style={{ color: sub.removalPct > 40 ? 'var(--status-danger)' : 'inherit', fontWeight: 'bold' }}>{sub.removalPct}%</td>
+                                            <td>{sub.avgViews?.toLocaleString()}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div className="card" style={{ gridColumn: 'span 1' }}>
+                        <h2 style={{ fontSize: '1.1rem', marginBottom: '16px' }}>Account Health Rankings</h2>
+                        <div className="data-table-container">
+                            <table className="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Account</th>
+                                        <th>Status</th>
+                                        <th>Karma</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {accountRankings?.map(acc => (
+                                        <tr key={acc.handle}>
+                                            <td style={{ fontWeight: '500' }}>u/{acc.handle}</td>
+                                            <td>
+                                                <span className={`badge ${acc.isSuspended ? 'badge-danger' : (acc.status === 'active' ? 'badge-success' : 'badge-warning')}`}>
+                                                    {acc.isSuspended ? 'Suspended' : acc.status}
+                                                </span>
+                                            </td>
+                                            <td>{acc.karma?.toLocaleString() || 0}</td>
                                         </tr>
                                     ))}
                                 </tbody>
