@@ -141,29 +141,39 @@ Print ONLY the single final title as plain text. No quotes. No numbering. No ext
 
                     let finalTitle = response.choices[0].message.content.trim().replace(/^"/, '').replace(/"$/, '');
 
-                    // Aggressive cleanup for Mixtral "helpful" meta-commentary
-                    finalTitle = finalTitle.split(/\(Note:/i)[0];
-                    finalTitle = finalTitle.split(/Note:/i)[0];
-                    finalTitle = finalTitle.split(/This title follows/i)[0];
+                    // Start of aggressive cleanup
+                    try {
+                        const lowerTitle = finalTitle.toLowerCase();
+                        if (lowerTitle.includes('(note:')) finalTitle = finalTitle.substring(0, lowerTitle.indexOf('(note:'));
 
-                    finalTitle = finalTitle.trim();
+                        const lowerTitle2 = finalTitle.toLowerCase();
+                        if (lowerTitle2.includes('note:')) finalTitle = finalTitle.substring(0, lowerTitle2.indexOf('note:'));
 
-                    // AGGRESSIVE POST-PROCESSING: Absolute guaranteed stripping of unauthorized content
+                        const lowerTitle3 = finalTitle.toLowerCase();
+                        if (lowerTitle3.includes('this title follows')) finalTitle = finalTitle.substring(0, lowerTitle3.indexOf('this title follows'));
 
-                    // 1. Force remove all emojis using Unicode Property Escapes 
-                    // (Matches everything from smileys to symbols)
-                    finalTitle = finalTitle.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, '');
+                        // AGGRESSIVE POST-PROCESSING: Absolute guaranteed stripping of unauthorized content
+                        try {
+                            // 1. Force remove all emojis using Unicode Property Escapes 
+                            finalTitle = finalTitle.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, '');
+                        } catch (regexErr) {
+                            // Fallback for older browsers that crash on \p syntax
+                            finalTitle = finalTitle.replace(/[\u{1F300}-\u{1F9A0}\u{2700}-\u{27BF}\u{1F600}-\u{1F64F}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}]/gu, '');
+                        }
 
-                    // 2. Force remove unauthorized [f] or (f) tags natively in Javascript
-                    // We only strip this if the user hasn't explicitly required 'f' as a flair rule
-                    if (!requiredFlair || requiredFlair.toLowerCase() !== 'f') {
-                        finalTitle = finalTitle.replace(/\[\s*[fF]\s*\]|\(\s*[fF]\s*\)/g, '');
+                        // 2. Force remove unauthorized [f] or (f) tags natively in Javascript
+                        // We only strip this if the user hasn't explicitly required 'f' as a flair rule
+                        if (!requiredFlair || requiredFlair.toLowerCase() !== 'f') {
+                            finalTitle = finalTitle.replace(/\[\s*[fF]\s*\]|\(\s*[fF]\s*\)/g, '');
+                        }
+
+                        // 3. Fix double spaces and clean up
+                        finalTitle = finalTitle.replace(/\s{2,}/g, ' ').trim();
+                    } catch (cleanupErr) {
+                        console.error('Failed string cleanup:', cleanupErr);
                     }
 
-                    // 3. Fix double spaces and clean up
-                    finalTitle = finalTitle.replace(/\s{2,}/g, ' ').trim();
-
-                    return finalTitle;
+                    return finalTitle.trim();
 
                 } catch (err) {
                     console.error("OpenRouter Generation Error:", err);
