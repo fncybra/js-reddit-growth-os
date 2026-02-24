@@ -17,6 +17,10 @@ export function Settings() {
                 updates.openRouterApiKey = '';
                 modified = true;
             }
+            if (!data.aiBaseUrl) {
+                updates.aiBaseUrl = 'https://openrouter.ai/api/v1';
+                modified = true;
+            }
             if (!data.openRouterModel) {
                 updates.openRouterModel = 'mistralai/mixtral-8x7b-instruct';
                 modified = true;
@@ -61,7 +65,7 @@ export function Settings() {
         for (const [key, value] of Object.entries(settings)) {
             // Handle mixing types: vaPin stays string, others are numbers, api key is string
             let finalValue = value;
-            const textKeys = ['vaPin', 'openRouterApiKey', 'openRouterModel', 'supabaseUrl', 'supabaseAnonKey', 'proxyUrl'];
+            const textKeys = ['vaPin', 'openRouterApiKey', 'aiBaseUrl', 'openRouterModel', 'supabaseUrl', 'supabaseAnonKey', 'proxyUrl'];
             if (!textKeys.includes(key) && value !== '') {
                 finalValue = Number(value);
             }
@@ -122,26 +126,36 @@ export function Settings() {
                     <div className="card">
                         <h2 style={{ fontSize: '1.2rem', marginBottom: '20px' }}>AI Brain Integration</h2>
                         <div className="input-group" style={{ marginBottom: '16px' }}>
-                            <label className="input-label">OpenRouter API Key</label>
-                            <input
-                                type="password"
-                                className="input-field"
-                                placeholder="sk-or-v1-..."
-                                value={settings.openRouterApiKey || ''}
-                                onChange={e => setSettings({ ...settings, openRouterApiKey: e.target.value })}
-                            />
-                            <small style={{ color: 'var(--text-secondary)' }}>Used for the AI Viral Title Engine. An uncensored model will be used.</small>
-                        </div>
-                        <div className="input-group">
-                            <label className="input-label">OpenRouter Model String</label>
+                            <label className="input-label">AI Base URL</label>
                             <input
                                 type="text"
                                 className="input-field"
-                                placeholder="e.g. z-ai/glm-5, mistralai/mixtral-8x7b-instruct"
+                                placeholder="https://openrouter.ai/api/v1"
+                                value={settings.aiBaseUrl || ''}
+                                onChange={e => setSettings({ ...settings, aiBaseUrl: e.target.value })}
+                            />
+                            <small style={{ color: 'var(--text-secondary)' }}>E.g. OpenRouter or Venice: https://api.venice.ai/api/v1</small>
+                        </div>
+                        <div className="input-group" style={{ marginBottom: '16px' }}>
+                            <label className="input-label">API Key</label>
+                            <input
+                                type="password"
+                                className="input-field"
+                                placeholder="..."
+                                value={settings.openRouterApiKey || ''}
+                                onChange={e => setSettings({ ...settings, openRouterApiKey: e.target.value })}
+                            />
+                        </div>
+                        <div className="input-group">
+                            <label className="input-label">Model String</label>
+                            <input
+                                type="text"
+                                className="input-field"
+                                placeholder="e.g. dolphin-2.9.2-qwen2-72b or mistralai/mixtral-8x7b-instruct"
                                 value={settings.openRouterModel || ''}
                                 onChange={e => setSettings({ ...settings, openRouterModel: e.target.value })}
                             />
-                            <small style={{ color: 'var(--text-secondary)' }}>Advanced: You can change the brain here. Default: mistralai/mixtral-8x7b-instruct</small>
+                            <small style={{ color: 'var(--text-secondary)' }}>You can change the brain here.</small>
                         </div>
                         <button onClick={handleSave} className="btn btn-outline" style={{ width: '100%', marginTop: '16px' }}>Save AI Settings</button>
                     </div>
