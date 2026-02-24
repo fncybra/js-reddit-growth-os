@@ -230,7 +230,7 @@ export function VADashboard() {
                 ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                         {tasks?.map((task, index) => (
-                            <VATaskCard key={task.id} task={task} index={index + 1} onPosted={() => setCooldownUntil(Date.now() + (postInterval * 60000))} cooldownActive={timeLeft > 0} />
+                            <VATaskCard key={task.id} task={task} index={index + 1} onPosted={() => setCooldownUntil(0)} cooldownActive={false} />
                         ))}
                     </div>
                 )}
@@ -356,7 +356,7 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
                 if (asset.driveFileId && targetModel?.usedFolderId) {
                     try {
                         console.log(`Moving Drive file ${asset.driveFileId} to Used folder ${targetModel.usedFolderId}...`);
-                        const moveRes = await fetch(`/api/drive/move`, {
+                        const moveRes = await fetch(`${proxyUrl}/api/drive/move`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
@@ -372,32 +372,12 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
                     }
                 }
 
-                // Cloud Sync Push
-                const { getSupabaseClient } = await import('../db/supabase');
-                const supabase = await getSupabaseClient();
-                if (supabase) {
-                    console.log("Pushing task completion to cloud...");
-                    await supabase.from('tasks').upsert({
-                        id: task.id,
-                        status: 'closed',
-                        reddit_url: redditUrl,
-                        reddit_post_id: redditPostId
-                    });
-                    await supabase.from('assets').upsert({
-                        id: asset.id,
-                        ...assetUpdate
-                    });
-                    // Performance entry
-                    await supabase.from('performances').upsert({
-                        task_id: task.id,
-                        views_24h: 0,
-                        removed: false,
-                        notes: 'Awaiting automated sync...'
-                    });
-                }
+                // Cloud Sync Push (Native)
+                const { CloudSyncService } = await import('../services/growthEngine');
+                await CloudSyncService.autoPush();
             }
         }
-        onPosted(); // Trigger cooldown
+        onPosted(); // Move onto next task instantly
     }
 
     async function handleMarkError() {
@@ -414,18 +394,11 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
             };
             await db.performances.add(perfInsert);
 
-            // Cloud Sync Push
-            const { getSupabaseClient } = await import('../db/supabase');
-            const supabase = await getSupabaseClient();
-            if (supabase) {
-                await supabase.from('tasks').upsert({ id: task.id, ...taskUpdate });
-                await supabase.from('performances').upsert({
-                    task_id: task.id,
-                    views_24h: 0,
-                    removed: true,
-                    notes: reason
-                });
-            }
+            // Cloud Sync Push (Native)
+            try {
+                const { CloudSyncService } = await import('../services/growthEngine');
+                await CloudSyncService.autoPush();
+            } catch (err) { }
         }
     }
 

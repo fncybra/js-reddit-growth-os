@@ -201,6 +201,31 @@ app.get('/api/scrape/subreddit/top/:name', async (req, res) => {
     }
 });
 
+// Proxy endpoint for Live Reddit Post Stats (Upvotes, Status)
+app.get('/api/scrape/post/:postId', async (req, res) => {
+    try {
+        const { postId } = req.params;
+        const response = await axios.get(`https://old.reddit.com/by_id/t3_${postId}.json`, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.120.120.120 Safari/537.36',
+                'Accept': 'application/json'
+            }
+        });
+
+        const postData = response.data.data?.children[0]?.data;
+        if (!postData) return res.status(404).json({ error: "Post not found or deleted" });
+
+        res.json({
+            ups: postData.ups,
+            removed: postData.removed_by_category !== null || postData.banned_by !== null,
+            removed_category: postData.removed_by_category // Could be 'moderator', 'reddit', 'author', 'deleted'
+        });
+    } catch (error) {
+        console.error("Live Post Scrape Error:", error.message);
+        res.status(500).json({ error: "Failed to scrape post stats" });
+    }
+});
+
 // Google Drive: List files in a folder
 app.get('/api/drive/list/:folderId', async (req, res) => {
     if (!drive) return res.status(503).json({ error: "Google Drive not configured" });

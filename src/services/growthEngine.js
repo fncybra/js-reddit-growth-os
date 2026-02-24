@@ -839,7 +839,7 @@ export const AccountSyncService = {
 
         try {
             const proxyUrl = await SettingsService.getProxyUrl();
-            const res = await fetch(`${proxyUrl} /api/scrape / user / stats / ${account.handle} `);
+            const res = await fetch(`${proxyUrl}/api/scrape/user/stats/${account.handle}`);
             if (!res.ok) throw new Error("Stats sync failed");
             const data = await res.json();
 
@@ -871,7 +871,7 @@ export const PerformanceSyncService = {
 
         try {
             const proxyUrl = await SettingsService.getProxyUrl();
-            const response = await fetch(`${proxyUrl} /api/scrape / post / ${task.redditPostId} `);
+            const response = await fetch(`${proxyUrl}/api/scrape/post/${task.redditPostId}`);
             if (!response.ok) throw new Error("Sync failed");
 
             const data = await response.json();
@@ -879,9 +879,9 @@ export const PerformanceSyncService = {
             // Find or create performance record
             const performance = await db.performances.where('taskId').equals(taskId).first();
             const updateObj = {
-                views24h: data.views,
-                removed: data.isRemoved ? 1 : 0,
-                notes: `Last synced: ${new Date().toLocaleString()} `
+                views24h: data.ups || 0, // Fallback mapping proxy's 'ups' to views24h since upvotes tracks Reddit health nicely
+                removed: data.removed ? 1 : 0,
+                notes: `Last synced: ${new Date().toLocaleString()} (Status: ${data.removed_category || 'Active'})`
             };
 
             if (performance) {
