@@ -306,10 +306,9 @@ export const SubredditLifecycleService = {
             if (totalTests >= settings.testsBeforeClassification) {
                 if (removalPct > settings.removalThresholdPct) {
                     updateObj.status = 'rejected';
-                } else if (avgViews >= settings.minViewThreshold) {
-                    updateObj.status = 'proven';
                 } else {
-                    updateObj.status = 'low_yield';
+                    // If posts aren't getting removed, the sub is working
+                    updateObj.status = 'proven';
                 }
             }
 
@@ -692,16 +691,17 @@ export const AnalyticsEngine = {
 
     async getWorstSubreddits(modelId) {
         const subreddits = await db.subreddits.where('modelId').equals(modelId).toArray();
-        const badSubs = subreddits.filter(s => s.totalTests > 0 && (s.removalPct > 40 || s.avg24hViews < 50))
+        // Only flag subs with high removal rates — upvotes are too low to use as a quality signal
+        const badSubs = subreddits.filter(s => s.totalTests > 0 && s.removalPct > 30)
             .map(s => ({
                 name: s.name,
-                avgViews: s.avg24hViews || 0,
+                avgUps: s.avg24hViews || 0,
                 removalPct: s.removalPct || 0,
                 status: s.status,
                 totalTests: s.totalTests || 0,
-                action: s.removalPct > 40 ? "Stop - High Removals" : "Stop - Low Views"
+                action: s.removalPct > 60 ? "Ban Risk — Stop Immediately" : "High Removals — Review Rules"
             }))
-            .sort((a, b) => b.removalPct - a.removalPct); // Sort by highest removal first
+            .sort((a, b) => b.removalPct - a.removalPct);
 
         return badSubs.slice(0, 10);
     },
