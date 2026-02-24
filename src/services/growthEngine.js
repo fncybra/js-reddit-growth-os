@@ -935,21 +935,36 @@ export const PerformanceSyncService = {
     },
 
     async syncAllPendingPerformance() {
-        // Find tasks from the last 7 days that are closed and have a Post ID
+        // Find tasks from the last 7 days that are closed
         const weekAgo = subDays(new Date(), 7).toISOString();
         const pendingTasks = await db.tasks
             .where('status').equals('closed')
-            .filter(t => t.redditPostId && t.date >= weekAgo)
+            .filter(t => t.date >= weekAgo)
             .toArray();
 
+        let count = 0;
         for (const task of pendingTasks) {
-            await this.syncPostPerformance(task.id);
-            // Throttle slightly to be nice to proxy/reddit
-            await new Promise(r => setTimeout(r, 1000));
+            let postId = task.redditPostId;
+
+            // Retroactive Auto-Healing for bad URLs saved previously
+            if (!postId && task.redditUrl) {
+                const match = task.redditUrl.match(/\/comments\/([a-z0-9]+)/i) || task.redditUrl.match(/\/s\/([a-zA-Z0-9]+)/i);
+                if (match) {
+                    postId = match[1];
+                    await db.tasks.update(task.id, { redditPostId: postId });
+                }
+            }
+
+            if (postId) {
+                await this.syncPostPerformance(task.id);
+                count++;
+                // Throttle slightly to be nice to proxy/reddit
+                await new Promise(r => setTimeout(r, 1000));
+            }
         }
 
         await CloudSyncService.autoPush();
 
-        return pendingTasks.length;
+        return count;
     }
 };

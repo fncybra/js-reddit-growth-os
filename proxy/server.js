@@ -53,7 +53,7 @@ app.get('/api/scrape/user/stats/:username', async (req, res) => {
 
         const response = await axios.get(url, {
             headers: {
-                'User-Agent': getRandomUserAgent(),
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.120.120.120 Safari/537.36',
                 'Accept': 'application/json'
             }
         });
