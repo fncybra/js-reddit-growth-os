@@ -127,7 +127,7 @@ Print ONLY the single final title as plain text. No quotes. No numbering. No ext
 `;
 
                     const openai = new OpenAI({
-                        baseURL: "https://openrouter.ai/api/v1",
+                        baseURL: settings.aiBaseUrl || "https://openrouter.ai/api/v1",
                         apiKey: settings.openRouterApiKey,
                         dangerouslyAllowBrowser: true, // Required to call directly from the browser natively
                     });
@@ -176,16 +176,16 @@ Print ONLY the single final title as plain text. No quotes. No numbering. No ext
                     return finalTitle.trim();
 
                 } catch (err) {
-                    console.error("OpenRouter Generation Error:", err);
-                    // Fallthrough to fallback logic if it fails
+                    console.error("AI Generation Error:", err);
+                    return `[API ERROR] ${err.message || "Failed to generate AI title. Check URL / Key / Model."}`;
                 }
             }
 
 
-            // Fallback if no API key or API fails
+            // Fallback if no API key is set
             const baseTitle = topTitles[Math.floor(Math.random() * topTitles.length)];
 
-            // Just use a top title directly as a fallback if the AI fails
+            // Just use a top title directly as a fallback if the AI is not configured
             let generatedTitle = baseTitle || "Generated Post";
 
             // Ensure flair is respected if we generated it
@@ -195,8 +195,8 @@ Print ONLY the single final title as plain text. No quotes. No numbering. No ext
 
             return generatedTitle;
         } catch (err) {
-            console.error("Title Generation API Error:", err);
-            return `Generated Post for r / ${subredditName}`;
+            console.error("Title Generation Overall Error:", err);
+            return `[SYSTEM ERROR] Generated Post for r/${subredditName}`;
         }
     }
 };
