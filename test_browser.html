@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<body>
+    <script>
+        async function run() {
+            try {
+                const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer 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`,
+                        "HTTP-Referer": "http://localhost:5173",
+                        "X-Title": "Growth OS",
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        "model": "mistralai/mixtral-8x7b-instruct",
+                        "messages": [
+                            { "role": "user", "content": "Test" }
+                        ]
+                    })
+                });
+                console.log("Status:", response.status);
+            } catch (e) {
+                console.error("Fetch failed:", e);
+            }
+        }
+        run();
+    </script>
+</body>
+</html>

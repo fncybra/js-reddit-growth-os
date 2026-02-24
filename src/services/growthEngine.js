@@ -1,4 +1,5 @@
 import { db } from '../db/db.js';
+import OpenAI from "openai";
 import { subDays, isAfter, startOfDay } from 'date-fns';
 
 export const SettingsService = {
@@ -67,6 +68,8 @@ export const TitleGeneratorService = {
             }
 
             // Call OpenRouter if the key is available
+
+            // ... Inside TitleGeneratorService string
             const settings = await SettingsService.getSettings();
             if (settings.openRouterApiKey) {
                 try {
@@ -93,32 +96,20 @@ STYLE RULES:
 Output ONLY the single generated title as plain text. Do not use quotes. Break the rules of grammar if it makes you sound more like a genuine, casual human user posting from their phone.
 `;
 
-                    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-                        method: "POST",
-                        headers: {
-                            "Authorization": `Bearer ${settings.openRouterApiKey}`,
-                            "HTTP-Referer": window.location.origin,
-                            "X-Title": "Growth OS",
-                            "Content-Type": "application/json"
-                        },
-                        body: JSON.stringify({
-                            "model": "mistralai/mixtral-8x7b-instruct",
-                            "messages": [
-                                { "role": "user", "content": prompt }
-                            ]
-                        })
+                    const openai = new OpenAI({
+                        baseURL: "https://openrouter.ai/api/v1",
+                        apiKey: settings.openRouterApiKey,
+                        dangerouslyAllowBrowser: true, // Required to call directly from the browser natively
                     });
 
-                    if (!response.ok) {
-                        throw new Error(`OpenRouter error: ${response.status} ${response.statusText}`);
-                    }
+                    const response = await openai.chat.completions.create({
+                        model: "mistralai/mixtral-8x7b-instruct",
+                        messages: [
+                            { role: "user", content: prompt }
+                        ],
+                    });
 
-                    const json = await response.json();
-                    if (!json.choices || json.choices.length === 0) {
-                        throw new Error("Invalid response from OpenRouter API");
-                    }
-
-                    let finalTitle = json.choices[0].message.content.trim().replace(/^"/, '').replace(/"$/, '');
+                    let finalTitle = response.choices[0].message.content.trim().replace(/^"/, '').replace(/"$/, '');
 
                     return finalTitle;
 
