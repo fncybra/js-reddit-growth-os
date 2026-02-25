@@ -829,12 +829,13 @@ export const CloudSyncService = {
         return !!(settings.supabaseUrl && settings.supabaseAnonKey);
     },
 
-    async pushLocalToCloud() {
+    async pushLocalToCloud(onlyTables = null) {
         const { getSupabaseClient } = await import('../db/supabase.js');
         const supabase = await getSupabaseClient();
         if (!supabase) return;
 
-        const tables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances'];
+        const allTables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances'];
+        const tables = onlyTables || allTables;
 
         for (const table of tables) {
             const localData = await db[table].toArray();
@@ -847,11 +848,18 @@ export const CloudSyncService = {
             }).filter(Boolean);
 
             if (cleanData.length === 0) continue;
-            const { error } = await supabase.from(table).upsert(cleanData);
-            if (error) {
-                console.error(`Sync Error(${table}): `, error.message);
-                throw new Error(`Failed to push to ${table}: ${error.message}`);
+
+            // Batch upsert in chunks of 500 to avoid Supabase payload limits
+            const BATCH_SIZE = 500;
+            for (let i = 0; i < cleanData.length; i += BATCH_SIZE) {
+                const batch = cleanData.slice(i, i + BATCH_SIZE);
+                const { error } = await supabase.from(table).upsert(batch);
+                if (error) {
+                    console.error(`Sync Error(${table}): `, error.message);
+                    throw new Error(`Failed to push to ${table}: ${error.message}`);
+                }
             }
+            console.log(`[CloudSync] Pushed ${cleanData.length} rows for ${table}`);
         }
     },
 
@@ -862,12 +870,13 @@ export const CloudSyncService = {
 
         const tables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances'];
 
-        for (const table of tables) {
+        // Pull all tables in parallel for speed
+        const pullPromises = tables.map(async (table) => {
             try {
                 const { data, error } = await supabase.from(table).select('*');
                 if (error) {
                     console.error(`Pull Error(${table}): `, error.message);
-                    continue; // SKIP — do NOT clear local data if cloud pull errored
+                    return; // SKIP — do NOT clear local data if cloud pull errored
                 }
 
                 // Only replace local data if we actually got valid data back
@@ -881,15 +890,17 @@ export const CloudSyncService = {
             } catch (pullErr) {
                 console.error(`[CloudSync] Critical pull error for ${table} — local data preserved:`, pullErr.message);
             }
-        }
+        });
+
+        await Promise.all(pullPromises);
     },
 
-    async autoPush() {
+    async autoPush(onlyTables = null) {
         const settings = await SettingsService.getSettings();
         if (settings.supabaseUrl && settings.supabaseAnonKey) {
-            console.log("CloudSync: Auto-pushing updates...");
+            console.log(`CloudSync: Auto-pushing ${onlyTables ? onlyTables.join(', ') : 'all tables'}...`);
             try {
-                await this.pushLocalToCloud();
+                await this.pushLocalToCloud(onlyTables);
             } catch (err) {
                 console.error("CloudSync autoPush error:", err);
                 throw err;
