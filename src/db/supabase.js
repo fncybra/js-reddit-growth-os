@@ -1,10 +1,14 @@
 import { createClient } from '@supabase/supabase-js';
 import { SettingsService } from '../services/growthEngine';
 
-let supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-let supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+let supabaseClientInstance = null;
 
 export async function getSupabaseClient() {
+    if (supabaseClientInstance) return supabaseClientInstance;
+
+    let supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+    let supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+
     if (!supabaseUrl || !supabaseAnonKey) {
         const settings = await SettingsService.getSettings();
         supabaseUrl = settings.supabaseUrl;
@@ -13,6 +17,7 @@ export async function getSupabaseClient() {
 
     if (!supabaseUrl || !supabaseAnonKey) return null;
 
-    return createClient(supabaseUrl, supabaseAnonKey);
+    supabaseClientInstance = createClient(supabaseUrl, supabaseAnonKey);
+    return supabaseClientInstance;
 }
 

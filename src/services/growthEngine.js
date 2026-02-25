@@ -26,7 +26,9 @@ export const SettingsService = {
             dailyPostCap: 10,
             supabaseUrl: 'https://bwckevjsjlvsfwfbnske.supabase.co',
             supabaseAnonKey: 'sb_publishable_zJdDCrJNoZNGU5arum893A_mxmdvoCH',
-            proxyUrl: 'https://js-reddit-proxy-production.up.railway.app'
+            proxyUrl: 'https://js-reddit-proxy-production.up.railway.app',
+            openRouterApiKey: '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',
+            openRouterModel: 'z-ai/glm-5'
         };
         const settingsArr = await db.settings.toArray();
         const settings = { ...defaultSettings };
@@ -832,7 +834,7 @@ export const CloudSyncService = {
         const supabase = await getSupabaseClient();
         if (!supabase) return;
 
-        const tables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'settings'];
+        const tables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances'];
 
         for (const table of tables) {
             const localData = await db[table].toArray();
@@ -841,13 +843,15 @@ export const CloudSyncService = {
             const cleanData = localData.map(item => {
                 const { ...rest } = item;
                 if (table === 'assets' && rest.fileBlob) delete rest.fileBlob;
-                if (table === 'settings' && (rest.key === 'supabaseUrl' || rest.key === 'supabaseAnonKey')) return null;
                 return rest;
             }).filter(Boolean);
 
             if (cleanData.length === 0) continue;
             const { error } = await supabase.from(table).upsert(cleanData);
-            if (error) console.error(`Sync Error(${table}): `, error.message);
+            if (error) {
+                console.error(`Sync Error(${table}): `, error.message);
+                throw new Error(`Failed to push to ${table}: ${error.message}`);
+            }
         }
     },
 
@@ -859,17 +863,23 @@ export const CloudSyncService = {
         const tables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances'];
 
         for (const table of tables) {
-            const { data, error } = await supabase.from(table).select('*');
-            if (error) {
-                console.error(`Pull Error(${table}): `, error.message);
-                continue;
-            }
-
-            if (data) {
-                await db[table].clear();
-                if (data.length > 0) {
-                    await db[table].bulkPut(data);
+            try {
+                const { data, error } = await supabase.from(table).select('*');
+                if (error) {
+                    console.error(`Pull Error(${table}): `, error.message);
+                    continue; // SKIP — do NOT clear local data if cloud pull errored
                 }
+
+                // Only replace local data if we actually got valid data back
+                if (data && data.length > 0) {
+                    await db[table].clear();
+                    await db[table].bulkPut(data);
+                    console.log(`[CloudSync] Pulled ${data.length} rows for ${table}`);
+                } else {
+                    console.log(`[CloudSync] Cloud table '${table}' is empty — keeping local data`);
+                }
+            } catch (pullErr) {
+                console.error(`[CloudSync] Critical pull error for ${table} — local data preserved:`, pullErr.message);
             }
         }
     },
@@ -878,7 +888,12 @@ export const CloudSyncService = {
         const settings = await SettingsService.getSettings();
         if (settings.supabaseUrl && settings.supabaseAnonKey) {
             console.log("CloudSync: Auto-pushing updates...");
-            this.pushLocalToCloud().catch(null);
+            try {
+                await this.pushLocalToCloud();
+            } catch (err) {
+                console.error("CloudSync autoPush error:", err);
+                throw err;
+            }
         }
     },
 

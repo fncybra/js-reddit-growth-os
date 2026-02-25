@@ -14,7 +14,7 @@ export function Settings() {
             const updates = {};
 
             if (!data.openRouterApiKey) {
-                updates.openRouterApiKey = '';
+                updates.openRouterApiKey = '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';
                 modified = true;
             }
             if (!data.aiBaseUrl) {
@@ -22,7 +22,7 @@ export function Settings() {
                 modified = true;
             }
             if (!data.openRouterModel) {
-                updates.openRouterModel = 'mistralai/mixtral-8x7b-instruct';
+                updates.openRouterModel = 'z-ai/glm-5';
                 modified = true;
             }
             if (!data.proxyUrl || data.proxyUrl === 'http://localhost:3001') {
