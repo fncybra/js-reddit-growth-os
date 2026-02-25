@@ -83,6 +83,12 @@ export function Library() {
         }
     }
 
+    const PAGE_SIZE = 48;
+    const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+
+    // Reset pagination when filters change
+    React.useEffect(() => { setVisibleCount(PAGE_SIZE); }, [selectedModelId, nicheFilter]);
+
     // useLiveQuery returns undefined while Dexie is loading (e.g. during CloudSync pull)
     // We must NOT show the "no models" message during this loading phase
     if (models === undefined || assets === undefined) {
@@ -198,12 +204,6 @@ export function Library() {
             await CloudSyncService.deleteFromCloud('assets', id);
         }
     }
-
-    const PAGE_SIZE = 48;
-    const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
-
-    // Reset pagination when filters change
-    React.useEffect(() => { setVisibleCount(PAGE_SIZE); }, [selectedModelId, nicheFilter]);
 
     // Filter assets for the current UI
     const filteredAssets = assets?.filter(a => {
