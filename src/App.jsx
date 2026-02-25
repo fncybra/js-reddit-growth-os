@@ -15,29 +15,68 @@ import { VADashboard } from './pages/VADashboard';
 import { CloudSyncHandler } from './components/CloudSyncHandler';
 import { SOP } from './pages/SOP';
 
+// Error Boundary to catch runtime crashes and show them instead of a black screen
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null, errorInfo: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    this.setState({ errorInfo });
+    console.error('[ErrorBoundary] Caught:', error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: '48px', color: '#ef4444', backgroundColor: '#0f1115', minHeight: '100vh', fontFamily: 'monospace' }}>
+          <h2 style={{ color: '#fff', marginBottom: '16px' }}>⚠️ Something crashed</h2>
+          <pre style={{ whiteSpace: 'pre-wrap', color: '#fbbf24', marginBottom: '16px' }}>
+            {this.state.error?.toString()}
+          </pre>
+          <pre style={{ whiteSpace: 'pre-wrap', color: '#9ca3af', fontSize: '0.8rem' }}>
+            {this.state.errorInfo?.componentStack}
+          </pre>
+          <button
+            onClick={() => { this.setState({ hasError: false, error: null, errorInfo: null }); }}
+            style={{ marginTop: '16px', padding: '8px 16px', backgroundColor: '#6366f1', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+          >
+            Try Again
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function App() {
   return (
     <BrowserRouter>
       <CloudSyncHandler />
-      <Routes>
-        {/* VA Mode: No Internal sidebars, pure robot mode */}
-        <Route path="/va" element={<VADashboard />} />
+      <ErrorBoundary>
+        <Routes>
+          {/* VA Mode: No Internal sidebars, pure robot mode */}
+          <Route path="/va" element={<VADashboard />} />
 
-        {/* Admin/Agency Mode: Full dashboard */}
-        <Route element={<Layout />}>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="discovery" element={<Discovery />} />
-          <Route path="models" element={<Models />} />
-          <Route path="model/:id" element={<ModelDetail />} />
-          <Route path="account/:id" element={<AccountDetail />} />
-          <Route path="accounts" element={<Accounts />} />
-          <Route path="subreddits" element={<Subreddits />} />
-          <Route path="library" element={<Library />} />
-          <Route path="tasks" element={<Tasks />} />
-          <Route path="settings" element={<Settings />} />
-          <Route path="sop" element={<SOP />} />
-        </Route>
-      </Routes>
+          {/* Admin/Agency Mode: Full dashboard */}
+          <Route element={<Layout />}>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="discovery" element={<Discovery />} />
+            <Route path="models" element={<Models />} />
+            <Route path="model/:id" element={<ModelDetail />} />
+            <Route path="account/:id" element={<AccountDetail />} />
+            <Route path="accounts" element={<Accounts />} />
+            <Route path="subreddits" element={<Subreddits />} />
+            <Route path="library" element={<Library />} />
+            <Route path="tasks" element={<Tasks />} />
+            <Route path="settings" element={<Settings />} />
+            <Route path="sop" element={<SOP />} />
+          </Route>
+        </Routes>
+      </ErrorBoundary>
     </BrowserRouter>
   );
 }
