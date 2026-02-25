@@ -1,8 +1,13 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { CloudSyncService } from '../services/growthEngine';
 
 export function CloudSyncHandler() {
+    const hasRun = useRef(false);
+
     useEffect(() => {
+        if (hasRun.current) return;
+        hasRun.current = true;
+
         async function sync() {
             const enabled = await CloudSyncService.isEnabled();
             if (enabled) {
