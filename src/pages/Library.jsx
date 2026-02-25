@@ -70,6 +70,8 @@ export function Library() {
             }
 
             if (newCount > 0 || updatedCount > 0) {
+                const { CloudSyncService } = await import('../services/growthEngine');
+                await CloudSyncService.autoPush();
                 alert(`Sync Complete! Added ${newCount} new assets and updated ${updatedCount} niche tags based on your Drive folders.`);
             } else {
                 alert("Everything is already up-to-date.");
@@ -121,6 +123,8 @@ export function Library() {
         if (assetsToAdd.length > 0) {
             try {
                 await db.assets.bulkAdd(assetsToAdd);
+                const { CloudSyncService } = await import('../services/growthEngine');
+                await CloudSyncService.autoPush();
                 alert(`Successfully imported ${assetsToAdd.length} media files into the Asset Library!`);
             } catch (err) {
                 alert("Error saving files: " + err.message);
@@ -136,6 +140,8 @@ export function Library() {
 
     async function toggleApprove(id, current) {
         await db.assets.update(id, { approved: current ? 0 : 1 });
+        const { CloudSyncService } = await import('../services/growthEngine');
+        await CloudSyncService.autoPush();
     }
 
     async function deleteAsset(id) {
@@ -364,6 +370,8 @@ export function Library() {
                                                     defaultValue={asset.angleTag}
                                                     onBlur={async (e) => {
                                                         await db.assets.update(asset.id, { angleTag: e.target.value.toLowerCase() });
+                                                        const { CloudSyncService } = await import('../services/growthEngine');
+                                                        await CloudSyncService.autoPush();
                                                     }}
                                                 />
                                                 • Used: {asset.timesUsed}
@@ -380,6 +388,8 @@ export function Library() {
                                                         defaultValue={asset.externalUrl}
                                                         onBlur={async (e) => {
                                                             await db.assets.update(asset.id, { externalUrl: e.target.value });
+                                                            const { CloudSyncService } = await import('../services/growthEngine');
+                                                            await CloudSyncService.autoPush();
                                                         }}
                                                     />
                                                 </div>

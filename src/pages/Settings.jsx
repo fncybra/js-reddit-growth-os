@@ -14,7 +14,7 @@ export function Settings() {
             const updates = {};
 
             if (!data.openRouterApiKey) {
-                updates.openRouterApiKey = '';
+                updates.openRouterApiKey = 'REDACTED_OPENROUTER_KEY';
                 modified = true;
             }
             if (!data.aiBaseUrl) {
@@ -22,7 +22,7 @@ export function Settings() {
                 modified = true;
             }
             if (!data.openRouterModel) {
-                updates.openRouterModel = 'mistralai/mixtral-8x7b-instruct';
+                updates.openRouterModel = 'z-ai/glm-5';
                 modified = true;
             }
             if (!data.proxyUrl || data.proxyUrl === 'http://localhost:3001') {

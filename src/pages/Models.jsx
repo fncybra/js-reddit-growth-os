@@ -13,12 +13,11 @@ export function Models() {
         e.preventDefault();
         if (!formData.name) return;
 
-        const isFirst = models?.length === 0;
         await db.models.add({
             ...formData,
             weeklyViewTarget: Number(formData.weeklyViewTarget),
             weeklyPostTarget: Number(formData.weeklyPostTarget),
-            status: isFirst ? 'active' : 'paused'
+            status: 'active'
         });
 
         setFormData({ name: '', primaryNiche: '', weeklyViewTarget: 50000, weeklyPostTarget: 50, driveFolderId: '', usedFolderId: '', redgifsProfile: '', proxyInfo: '', vaPin: '' });
@@ -26,11 +25,6 @@ export function Models() {
 
     async function toggleStatus(id, currentStatus) {
         const newStatus = currentStatus === 'active' ? 'paused' : 'active';
-        if (newStatus === 'active') {
-            const all = await db.models.toArray();
-            const updates = all.map(m => db.models.update(m.id, { status: 'paused' }));
-            await Promise.all(updates);
-        }
         await db.models.update(id, { status: newStatus });
     }
 
