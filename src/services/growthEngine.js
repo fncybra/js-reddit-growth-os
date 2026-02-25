@@ -358,7 +358,8 @@ export const DailyPlanGenerator = {
         if (model?.driveFolderId) {
             console.log('DailyPlanGenerator: Auto-syncing from Google Drive folder', model.driveFolderId);
             try {
-                const res = await fetch(`/ api / drive / list / ${model.driveFolderId}`);
+                const proxyUrl = await SettingsService.getProxyUrl();
+                const res = await fetch(`${proxyUrl}/api/drive/list/${model.driveFolderId}`);
                 if (res.ok) {
                     const driveFiles = await res.json();
                     const assetsToAdd = [];
