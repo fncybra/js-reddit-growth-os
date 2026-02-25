@@ -255,7 +255,7 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
     if (asset?.fileBlob) {
         objectUrl = URL.createObjectURL(asset.fileBlob);
     } else if (asset?.driveFileId) {
-        objectUrl = `/api/drive/download/${asset.driveFileId}${isHeic ? '?convert=true' : ''}`;
+        objectUrl = `https://js-reddit-proxy-production.up.railway.app/api/drive/download/${asset.driveFileId}${isHeic ? '?convert=true' : ''}`;
     }
 
     async function handleDownloadMedia() {
@@ -288,7 +288,7 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
 
                     // Force ALL Google Drive downloads through our Vercel Serverless Function.
                     // This prevents Android phones from intercepting the Google Drive URL and forcing the VA to login to a Google Account.
-                    const fetchUrl = `/api/drive/download/${asset.driveFileId}${isHeic ? '?convert=true' : ''}`;
+                    const fetchUrl = `https://js-reddit-proxy-production.up.railway.app/api/drive/download/${asset.driveFileId}${isHeic ? '?convert=true' : ''}`;
 
                     const response = await fetch(fetchUrl);
                     if (!response.ok) throw new Error("Network request failed. " + response.statusText);
@@ -386,7 +386,7 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
 
                 // Cloud Sync Push (Native)
                 const { CloudSyncService } = await import('../services/growthEngine');
-                await CloudSyncService.autoPush();
+                await CloudSyncService.autoPush(['tasks', 'performances', 'assets']);
             }
         }
         onPosted(); // Move onto next task instantly
@@ -409,7 +409,7 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
             // Cloud Sync Push (Native)
             try {
                 const { CloudSyncService } = await import('../services/growthEngine');
-                await CloudSyncService.autoPush();
+                await CloudSyncService.autoPush(['tasks', 'performances']);
             } catch (err) { }
         }
     }

@@ -33,7 +33,7 @@ export function Library() {
         try {
             const { SettingsService } = await import('../services/growthEngine');
             const proxyUrl = await SettingsService.getProxyUrl();
-            const res = await fetch(`/api/drive/list/${targetModel.driveFolderId}`);
+            const res = await fetch(`${proxyUrl}/api/drive/list/${targetModel.driveFolderId}`);
             if (!res.ok) {
                 const errData = await res.json();
                 throw new Error(errData.error || "Failed to fetch from Drive");
@@ -330,7 +330,7 @@ export function Library() {
                                     if (asset.fileBlob) {
                                         objectUrl = URL.createObjectURL(asset.fileBlob);
                                     } else if (asset.driveFileId) {
-                                        objectUrl = `/api/drive/download/${asset.driveFileId}${isHeic ? '?convert=true' : ''}`;
+                                        objectUrl = `https://js-reddit-proxy-production.up.railway.app/api/drive/download/${asset.driveFileId}${isHeic ? '?convert=true' : ''}`;
                                     }
 
                                     return (
