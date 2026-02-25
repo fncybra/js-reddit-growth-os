@@ -83,8 +83,34 @@ export function Library() {
         }
     }
 
-    if (!models || models.length === 0) {
-        return <div className="page-content"><div className="card">Please create a Model first.</div></div>;
+    // useLiveQuery returns undefined while Dexie is loading (e.g. during CloudSync pull)
+    // We must NOT show the "no models" message during this loading phase
+    if (models === undefined || assets === undefined) {
+        return (
+            <>
+                <header className="page-header">
+                    <h1 className="page-title">Visual Content Gallery</h1>
+                </header>
+                <div className="page-content">
+                    <div className="card" style={{ textAlign: 'center', padding: '48px', color: 'var(--text-secondary)' }}>
+                        Loading library data...
+                    </div>
+                </div>
+            </>
+        );
+    }
+
+    if (models.length === 0) {
+        return (
+            <>
+                <header className="page-header">
+                    <h1 className="page-title">Visual Content Gallery</h1>
+                </header>
+                <div className="page-content">
+                    <div className="card">Please create a Model first.</div>
+                </div>
+            </>
+        );
     }
 
     // Handles bulk folder or multiple files upload

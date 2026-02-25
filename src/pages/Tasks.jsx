@@ -73,7 +73,10 @@ export function Tasks() {
         }
     }
 
-    if (!models || models.length === 0) {
+    if (models === undefined) {
+        return <div className="page-content" style={{ textAlign: 'center', padding: '48px', color: 'var(--text-secondary)' }}>Loading...</div>;
+    }
+    if (models.length === 0) {
         return <div className="page-content"><div className="card">Please create a Model first.</div></div>;
     }
 
