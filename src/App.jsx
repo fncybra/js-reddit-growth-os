@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { Dashboard } from './pages/Dashboard';
 import { Models } from './pages/Models';
@@ -54,7 +54,7 @@ class ErrorBoundary extends React.Component {
 
 function App() {
   return (
-    <BrowserRouter>
+    <HashRouter>
       <RoutePersistence />
       <CloudSyncHandler />
       <ErrorBoundary>
@@ -78,7 +78,7 @@ function App() {
           </Route>
         </Routes>
       </ErrorBoundary>
-    </BrowserRouter>
+    </HashRouter>
   );
 }
 
