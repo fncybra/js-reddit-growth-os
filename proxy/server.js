@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const { google } = require('googleapis');
+const heicConvert = require('heic-convert');
 const path = require('path');
 const fs = require('fs');
 
@@ -337,7 +338,7 @@ app.get('/api/drive/thumb/:fileId', async (req, res) => {
 
         // Download the file and create a small thumbnail
         const response = await drive.files.get(
-            { fileId: fileId, alt: 'media' },
+            { fileId: fileId, alt: 'media', supportsAllDrives: true },
             { responseType: 'arraybuffer' }
         );
 
@@ -362,6 +363,37 @@ app.get('/api/drive/thumb/:fileId', async (req, res) => {
     }
 });
 
+// Google Drive: View/stream file inline for browser preview (video/image)
+app.get('/api/drive/view/:fileId', async (req, res) => {
+    if (!drive) return res.status(503).json({ error: "Google Drive not configured" });
+
+    try {
+        const { fileId } = req.params;
+
+        const meta = await drive.files.get({
+            fileId,
+            fields: 'name,mimeType',
+            supportsAllDrives: true
+        });
+
+        const response = await drive.files.get(
+            { fileId, alt: 'media', supportsAllDrives: true },
+            { responseType: 'arraybuffer' }
+        );
+
+        const mimeType = meta?.data?.mimeType || 'application/octet-stream';
+        const safeName = (meta?.data?.name || fileId).replace(/"/g, '');
+
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Content-Type', mimeType);
+        res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
+        res.send(Buffer.from(response.data));
+    } catch (error) {
+        console.error("Drive View Error:", error.message);
+        res.status(500).json({ error: "Failed to preview Drive file" });
+    }
+});
+
 // Google Drive: Download a file (with HEIC→JPEG conversion support)
 app.get('/api/drive/download/:fileId', async (req, res) => {
     if (!drive) return res.status(503).json({ error: "Google Drive not configured" });
@@ -370,32 +402,56 @@ app.get('/api/drive/download/:fileId', async (req, res) => {
         const { fileId } = req.params;
         const shouldConvert = req.query.convert === 'true';
 
+        const meta = await drive.files.get({
+            fileId,
+            fields: 'name,mimeType',
+            supportsAllDrives: true
+        });
+        const sourceName = meta?.data?.name || fileId;
+        const sourceMime = (meta?.data?.mimeType || '').toLowerCase();
+        const looksLikeHeic = sourceMime.includes('heic') || sourceMime.includes('heif') || /\.hei[cf]$/i.test(sourceName);
+
         const response = await drive.files.get(
-            { fileId: fileId, alt: 'media' },
+            { fileId: fileId, alt: 'media', supportsAllDrives: true },
             { responseType: 'arraybuffer' }
         );
 
         res.setHeader('Access-Control-Allow-Origin', '*');
 
         if (shouldConvert) {
-            // Convert HEIC/HEIF to JPEG using sharp
+            // Convert HEIC/HEIF to JPEG for iPhone-origin files
             try {
-                const sharp = require('sharp');
-                const jpegBuffer = await sharp(Buffer.from(response.data))
-                    .jpeg({ quality: 90 })
-                    .toBuffer();
+                if (!looksLikeHeic) {
+                    res.setHeader('Content-Disposition', `attachment; filename="${sourceName.replace(/"/g, '')}"`);
+                    return res.send(Buffer.from(response.data));
+                }
+
+                let jpegBuffer;
+                try {
+                    const sharp = require('sharp');
+                    jpegBuffer = await sharp(Buffer.from(response.data))
+                        .jpeg({ quality: 90 })
+                        .toBuffer();
+                } catch (_sharpErr) {
+                    const converted = await heicConvert({
+                        buffer: Buffer.from(response.data),
+                        format: 'JPEG',
+                        quality: 0.9
+                    });
+                    jpegBuffer = Buffer.from(converted);
+                }
+
+                const jpgName = sourceName.replace(/\.hei[cf]$/i, '.jpg');
                 res.setHeader('Content-Type', 'image/jpeg');
-                res.setHeader('Content-Disposition', `attachment; filename="${fileId}.jpg"`);
+                res.setHeader('Content-Disposition', `attachment; filename="${jpgName.replace(/"/g, '')}"`);
                 res.send(jpegBuffer);
                 console.log(`[Drive] Converted HEIC ${fileId} to JPEG (${jpegBuffer.length} bytes)`);
             } catch (convErr) {
-                console.error("HEIC conversion failed, sending raw file:", convErr.message);
-                // Fallback: send the raw file if conversion fails
-                res.setHeader('Content-Disposition', `attachment; filename="${fileId}"`);
-                res.send(Buffer.from(response.data));
+                console.error("HEIC conversion failed:", convErr.message);
+                return res.status(422).json({ error: "HEIC conversion failed", detail: convErr.message });
             }
         } else {
-            res.setHeader('Content-Disposition', `attachment; filename="${fileId}"`);
+            res.setHeader('Content-Disposition', `attachment; filename="${sourceName.replace(/"/g, '')}"`);
             res.send(Buffer.from(response.data));
         }
     } catch (error) {
@@ -416,6 +472,7 @@ app.post('/api/drive/move', async (req, res) => {
         const file = await drive.files.get({
             fileId: fileId,
             fields: 'parents',
+            supportsAllDrives: true
         });
         const previousParents = file.data.parents ? file.data.parents.join(',') : '';
 
@@ -425,6 +482,7 @@ app.post('/api/drive/move', async (req, res) => {
             addParents: targetFolderId,
             removeParents: previousParents,
             fields: 'id, parents',
+            supportsAllDrives: true
         });
 
         res.json({ success: true, message: "File moved successfully" });

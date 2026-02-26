@@ -388,6 +388,7 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
     const performance = useLiveQuery(() => db.performances.where({ taskId: task.id }).first(), [task.id]);
 
     const [redditUrl, setRedditUrl] = useState('');
+    const proxyBase = 'https://js-reddit-proxy-production.up.railway.app';
 
     const isDone = task.status === 'closed' || performance;
 
@@ -396,7 +397,11 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
     if (asset?.fileBlob) {
         objectUrl = URL.createObjectURL(asset.fileBlob);
     } else if (asset?.driveFileId) {
-        objectUrl = `https://js-reddit-proxy-production.up.railway.app/api/drive/download/${asset.driveFileId}${isHeic ? '?convert=true' : ''}`;
+        if (asset.assetType === 'image') {
+            objectUrl = `${proxyBase}/api/drive/thumb/${asset.driveFileId}`;
+        } else {
+            objectUrl = `${proxyBase}/api/drive/view/${asset.driveFileId}`;
+        }
     }
 
     async function handleDownloadMedia() {
@@ -415,7 +420,7 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
             if (asset.fileBlob) {
                 // Not typical with Drive sync, but handled locally
                 performDownload(URL.createObjectURL(asset.fileBlob), 'media');
-            } else if (asset.originalUrl) {
+            } else if (asset.driveFileId || asset.originalUrl) {
                 // If it's an HEIC/HEIF file from iPhone, convert it before downloading
                 const isHeic = asset.fileName && (asset.fileName.toLowerCase().endsWith('.heic') || asset.fileName.toLowerCase().endsWith('.heif'));
 
@@ -429,14 +434,15 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
 
                     // Force ALL Google Drive downloads through our Vercel Serverless Function.
                     // This prevents Android phones from intercepting the Google Drive URL and forcing the VA to login to a Google Account.
-                    const fetchUrl = `https://js-reddit-proxy-production.up.railway.app/api/drive/download/${asset.driveFileId}${isHeic ? '?convert=true' : ''}`;
+                    const fetchUrl = `${proxyBase}/api/drive/download/${asset.driveFileId}${isHeic ? '?convert=true' : ''}`;
 
                     const response = await fetch(fetchUrl);
                     if (!response.ok) throw new Error("Network request failed. " + response.statusText);
                     const blob = await response.blob();
+                    const contentType = (response.headers.get('content-type') || '').toLowerCase();
 
                     let downloadName = asset.fileName || 'media';
-                    if (isHeic && response.headers.get('content-type') === 'image/jpeg') {
+                    if (isHeic && contentType.includes('image/jpeg')) {
                         downloadName = downloadName.replace(/\.hei[cf]$/i, '.jpg');
                     }
 
