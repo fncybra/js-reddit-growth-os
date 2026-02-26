@@ -268,7 +268,8 @@ app.get('/api/drive/list/:folderId', async (req, res) => {
         // 1. Get the root folder metadata to find its name (default Niche Tag)
         const folderMeta = await drive.files.get({
             fileId: folderId,
-            fields: 'name'
+            fields: 'name',
+            supportsAllDrives: true
         });
         const rootTag = (folderMeta.data.name || 'general').toLowerCase();
 
@@ -285,7 +286,9 @@ app.get('/api/drive/list/:folderId', async (req, res) => {
                     q: `'${current.id}' in parents and trashed = false`,
                     fields: 'nextPageToken, files(id, name, mimeType, webContentLink, thumbnailLink)',
                     pageSize: 1000,
-                    pageToken
+                    pageToken,
+                    includeItemsFromAllDrives: true,
+                    supportsAllDrives: true
                 });
 
                 const files = response.data.files || [];
