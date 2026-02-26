@@ -594,8 +594,8 @@ export const DailyPlanGenerator = {
             }
         }
 
-        // Process in chunks of 3 to avoid hammering the AI API and Proxy Server too hard at once!
-        const chunkSize = 3;
+        // Process in chunks of 5 for fast parallel AI generation
+        const chunkSize = 5;
         let finalNewTasks = [];
 
         for (let i = 0; i < taskGenerationPromises.length; i += chunkSize) {

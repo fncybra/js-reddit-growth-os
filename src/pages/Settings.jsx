@@ -22,7 +22,7 @@ export function Settings() {
                 modified = true;
             }
             if (!data.openRouterModel) {
-                updates.openRouterModel = 'z-ai/glm-5';
+                updates.openRouterModel = 'mistralai/mistral-small-3.1-24b-instruct';
                 modified = true;
             }
             if (!data.proxyUrl || data.proxyUrl === 'http://localhost:3001') {
