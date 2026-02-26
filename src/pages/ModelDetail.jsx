@@ -86,6 +86,7 @@ export function ModelDetail() {
         removalRatePct = 0,
         provenSubs = 0,
         testingSubs = 0,
+        topAssets = [],
         topSubreddits = [],
         worstSubreddits = [],
         accountRankings = [],
@@ -168,6 +169,46 @@ export function ModelDetail() {
                         <div style={{ fontSize: '1.8rem', fontWeight: '700' }}>{provenSubs}<span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: '400' }}> proven</span></div>
                         <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{testingSubs} testing</div>
                     </div>
+                </div>
+
+                {/* Top Performing Assets */}
+                <div className="card" style={{ marginBottom: '24px' }}>
+                    <h2 style={{ fontSize: '1.05rem', marginBottom: '10px', fontWeight: '600' }}>Top Performing Photos / Videos</h2>
+                    <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', marginBottom: '12px' }}>
+                        Use this to replicate winners. Ranked by average upvotes in the selected date range.
+                    </div>
+                    {topAssets.length === 0 ? (
+                        <div style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '18px' }}>No asset performance data yet.</div>
+                    ) : (
+                        <div className="data-table-container">
+                            <table className="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Asset</th>
+                                        <th>Type</th>
+                                        <th>Tag</th>
+                                        <th>Posts</th>
+                                        <th>Avg Ups</th>
+                                        <th>Total Ups</th>
+                                        <th>Removal</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {topAssets.map(asset => (
+                                        <tr key={asset.assetId}>
+                                            <td style={{ maxWidth: '280px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={asset.fileName}>{asset.fileName}</td>
+                                            <td>{asset.assetType}</td>
+                                            <td><span className="badge badge-info">{asset.angleTag}</span></td>
+                                            <td>{asset.syncedPosts} / {asset.posts}</td>
+                                            <td style={{ fontWeight: '600' }}>{asset.avgViews}</td>
+                                            <td style={{ color: 'var(--primary-color)', fontWeight: '600' }}>{asset.totalViews}</td>
+                                            <td style={{ color: asset.removalRate >= 25 ? 'var(--status-danger)' : 'var(--status-success)' }}>{asset.removalRate}%</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
                 </div>
 
                 {/* Accounts Section - THE KEY SECTION */}
