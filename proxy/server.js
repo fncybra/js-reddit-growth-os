@@ -12,8 +12,9 @@ const { HttpsProxyAgent } = require('https-proxy-agent');
 
 // Proxy priority:
 // 1) Request header: x-proxy-info
-// 2) REDDIT_PROXY_POOL env (comma/newline separated)
-// 3) hardcoded fallback pool
+// 2) SMARTPROXY/PROXY pool API URL env
+// 3) REDDIT_PROXY_POOL env (comma/newline separated)
+// 4) hardcoded fallback pool
 const fallbackProxies = [
     "198.23.239.134:6540:cdlljwsf:3xtolj60p8g7",
     "107.172.163.27:6543:cdlljwsf:3xtolj60p8g7",
@@ -25,7 +26,40 @@ const envProxyPool = envProxyPoolRaw
     .split(/[\n,]/)
     .map(s => s.trim())
     .filter(Boolean);
-const rawProxies = envProxyPool.length > 0 ? envProxyPool : fallbackProxies;
+const proxyPoolApiUrl = process.env.PROXY_POOL_API_URL || process.env.SMARTPROXY_API_URL || '';
+
+let rawProxies = envProxyPool.length > 0 ? [...envProxyPool] : [...fallbackProxies];
+let proxyPoolSource = envProxyPool.length > 0 ? 'env.REDDIT_PROXY_POOL' : 'fallback';
+let lastProxyPoolRefreshAt = null;
+
+function parseProxyPoolResponse(payload) {
+    if (!payload) return [];
+    if (Array.isArray(payload)) return payload.map(x => String(x).trim()).filter(Boolean);
+    if (typeof payload === 'string') {
+        return payload
+            .split(/[\n,]/)
+            .map(s => s.trim())
+            .filter(Boolean);
+    }
+    if (typeof payload === 'object') {
+        if (Array.isArray(payload.data)) return parseProxyPoolResponse(payload.data);
+        if (typeof payload.data === 'string') return parseProxyPoolResponse(payload.data);
+        if (Array.isArray(payload.proxies)) return parseProxyPoolResponse(payload.proxies);
+    }
+    return [];
+}
+
+async function refreshProxyPoolFromApi() {
+    if (!proxyPoolApiUrl) return { ok: false, reason: 'missing_proxy_pool_api_url' };
+    const res = await axios.get(proxyPoolApiUrl, { timeout: 15000 });
+    const parsed = parseProxyPoolResponse(res.data);
+    if (!parsed.length) return { ok: false, reason: 'empty_proxy_pool_response' };
+
+    rawProxies = parsed;
+    proxyPoolSource = 'env.PROXY_POOL_API_URL';
+    lastProxyPoolRefreshAt = new Date().toISOString();
+    return { ok: true, count: rawProxies.length };
+}
 
 let proxyIndex = 0;
 
@@ -49,6 +83,7 @@ function normalizeProxyInfo(raw = '') {
 }
 
 function getNextProxyInfo() {
+    if (!rawProxies.length) return '';
     const raw = rawProxies[proxyIndex % rawProxies.length];
     proxyIndex++;
     return raw;
@@ -90,11 +125,12 @@ function rotateProxySession(raw) {
 // Resilient axios wrapper: tries up to 3 different proxies before giving up
 async function axiosWithRetry(url, extraHeaders = {}, options = {}) {
     const directProxyInfo = options.proxyInfo ? String(options.proxyInfo).trim() : '';
-    const maxRetries = directProxyInfo ? 1 : rawProxies.length;
+    const maxRetries = directProxyInfo ? 1 : Math.max(rawProxies.length, 1);
     let lastError;
     for (let i = 0; i < maxRetries; i++) {
         try {
             const selectedProxy = directProxyInfo || getNextProxyInfo();
+            if (!selectedProxy) throw new Error('No proxy configured for Reddit scraping');
             const response = await axios.get(url, {
                 headers: {
                     'User-Agent': 'GrowthOS/1.0 (Internal Analytics Tool)',
@@ -134,16 +170,54 @@ app.post('/api/proxy/rotate', (req, res) => {
     res.json(rotated);
 });
 
+app.post('/api/proxy/reload', async (req, res) => {
+    try {
+        const result = await refreshProxyPoolFromApi();
+        if (!result.ok) return res.status(400).json(result);
+        return res.json({ ok: true, source: proxyPoolSource, count: rawProxies.length, lastProxyPoolRefreshAt });
+    } catch (err) {
+        return res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
+app.get('/api/proxy/status', async (req, res) => {
+    try {
+        const selectedProxy = getRequestProxyInfo(req) || getNextProxyInfo();
+        const ipRes = await axios.get('https://api.ipify.org?format=json', {
+            httpsAgent: selectedProxy ? getProxyAgentFromRaw(selectedProxy) : null,
+            timeout: 10000,
+        });
+
+        res.json({
+            ok: true,
+            connected: !!selectedProxy,
+            currentIp: ipRes?.data?.ip || '',
+            poolCount: rawProxies.length,
+            source: proxyPoolSource,
+            lastProxyPoolRefreshAt,
+        });
+    } catch (err) {
+        res.status(500).json({
+            ok: false,
+            connected: false,
+            poolCount: rawProxies.length,
+            source: proxyPoolSource,
+            lastProxyPoolRefreshAt,
+            error: err.message,
+        });
+    }
+});
+
 app.get('/api/proxy/check', async (req, res) => {
     try {
-        const proxyInfo = getRequestProxyInfo(req);
+        const proxyInfo = getRequestProxyInfo(req) || getNextProxyInfo();
         const response = await axios.get('https://api.ipify.org?format=json', {
             httpsAgent: proxyInfo ? getProxyAgentFromRaw(proxyInfo) : null,
             timeout: 10000,
         });
-        res.json({ ok: true, ip: response.data.ip, viaProxy: !!proxyInfo });
+        res.json({ ok: true, ip: response.data.ip, viaProxy: !!proxyInfo, poolCount: rawProxies.length, source: proxyPoolSource });
     } catch (err) {
-        res.status(500).json({ ok: false, error: err.message });
+        res.status(500).json({ ok: false, error: err.message, poolCount: rawProxies.length, source: proxyPoolSource });
     }
 });
 
@@ -631,4 +705,12 @@ app.post('/api/ai/generate', async (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`[GrowthOS Proxy] Scraper Engine running on http://localhost:${PORT}`);
+    if (proxyPoolApiUrl) {
+        refreshProxyPoolFromApi()
+            .then(result => {
+                if (result.ok) console.log(`[ProxyPool] Loaded ${result.count} proxies from API`);
+                else console.warn(`[ProxyPool] API load skipped: ${result.reason}`);
+            })
+            .catch(err => console.warn(`[ProxyPool] API load failed: ${err.message}`));
+    }
 });

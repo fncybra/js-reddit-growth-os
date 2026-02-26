@@ -65,6 +65,41 @@ export function Sidebar() {
 function CloudSyncStatus() {
   const settings = useLiveQuery(() => db.settings.toArray());
   const isSynced = settings?.some(s => s.key === 'supabaseUrl' && s.value && s.value.length > 0);
+  const [proxyState, setProxyState] = React.useState({ checking: true, connected: false, ip: '' });
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    async function checkProxy() {
+      try {
+        const cfg = await SettingsService.getSettings();
+        const base = cfg?.proxyUrl;
+        if (!base) {
+          if (!cancelled) setProxyState({ checking: false, connected: false, ip: '' });
+          return;
+        }
+
+        const res = await fetch(`${base}/api/proxy/status`);
+        const data = await res.json().catch(() => ({}));
+        if (!cancelled) {
+          setProxyState({
+            checking: false,
+            connected: !!(res.ok && data.connected),
+            ip: data.currentIp || '',
+          });
+        }
+      } catch (_err) {
+        if (!cancelled) setProxyState({ checking: false, connected: false, ip: '' });
+      }
+    }
+
+    checkProxy();
+    const timer = setInterval(checkProxy, 60000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -72,6 +107,15 @@ function CloudSyncStatus() {
         {isSynced ? <Cloud size={14} /> : <CloudOff size={14} />}
         <span style={{ fontWeight: '500' }}>{isSynced ? "Cloud Live" : "Offline"}</span>
       </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: proxyState.connected ? 'var(--status-success)' : 'var(--text-secondary)' }}>
+        {proxyState.connected ? <Cloud size={14} /> : <CloudOff size={14} />}
+        <span style={{ fontWeight: '500' }}>
+          {proxyState.checking ? 'Proxy Checking...' : (proxyState.connected ? 'Proxy Connected' : 'Proxy Offline')}
+        </span>
+      </div>
+      {proxyState.connected && proxyState.ip && (
+        <div style={{ color: 'var(--text-secondary)', fontSize: '0.65rem' }}>IP {proxyState.ip}</div>
+      )}
       {isSynced && (
         <button
           onClick={async () => {
