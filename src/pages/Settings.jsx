@@ -22,7 +22,7 @@ export function Settings() {
                 modified = true;
             }
             if (!data.openRouterModel) {
-                updates.openRouterModel = 'mistralai/mistral-small-3.1-24b-instruct';
+                updates.openRouterModel = 'nousresearch/hermes-3-llama-3.1-70b';
                 modified = true;
             }
             if (!data.proxyUrl || data.proxyUrl === 'http://localhost:3001') {
