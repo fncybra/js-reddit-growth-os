@@ -26,59 +26,16 @@ export function Library() {
 
     async function syncGoogleDrive() {
         if (!selectedModelId) return alert("Select a model first.");
+        if (selectedModelId === 'all') return alert("Select one specific model to sync.");
         const targetModel = models.find(m => m.id === Number(selectedModelId));
         if (!targetModel?.driveFolderId) return alert("This model has no Drive Folder ID configured. Go to Models tab to add one.");
 
         setSyncing(true);
         try {
-            // Defensively extract just the Folder ID in case the user pasted the entire URL
-            let cleanFolderId = targetModel.driveFolderId;
-            if (cleanFolderId.includes('drive.google.com')) {
-                const match = cleanFolderId.match(/folders\/([a-zA-Z0-9_-]+)/);
-                if (match) cleanFolderId = match[1];
-            }
-
-            const { SettingsService } = await import('../services/growthEngine');
-            const proxyUrl = await SettingsService.getProxyUrl();
-            const res = await fetch(`${proxyUrl}/api/drive/list/${cleanFolderId}`);
-            if (!res.ok) {
-                const errData = await res.json();
-                throw new Error(errData.error || "Failed to fetch from Drive");
-            }
-            const driveFiles = await res.json();
-
-            let newCount = 0;
-            let updatedCount = 0;
-            for (const file of driveFiles) {
-                const exists = await db.assets.where('driveFileId').equals(file.id).first();
-                if (!exists) {
-                    await db.assets.add({
-                        modelId: Number(selectedModelId),
-                        assetType: file.mimeType.startsWith('image/') ? 'image' : 'video',
-                        angleTag: file.mappedTag || 'general',
-                        locationTag: '',
-                        reuseCooldownSetting: Number(formData.reuseCooldownSetting),
-                        approved: 1,
-                        lastUsedDate: null,
-                        timesUsed: 0,
-                        driveFileId: file.id,
-                        fileName: file.name,
-                        thumbnailUrl: file.thumbnailLink,
-                        originalUrl: file.webContentLink
-                    });
-                    newCount++;
-                } else {
-                    // Intelligence: If you moved the file to a new folder in Drive, update the tag here!
-                    if (file.mappedTag && exists.angleTag !== file.mappedTag) {
-                        await db.assets.update(exists.id, { angleTag: file.mappedTag });
-                        updatedCount++;
-                    }
-                }
-            }
+            const { DriveSyncService } = await import('../services/growthEngine');
+            const { newCount, updatedCount } = await DriveSyncService.syncModelFolder(Number(selectedModelId), Number(formData.reuseCooldownSetting));
 
             if (newCount > 0 || updatedCount > 0) {
-                const { CloudSyncService } = await import('../services/growthEngine');
-                await CloudSyncService.autoPush(['assets']);
                 alert(`Sync Complete! Added ${newCount} new assets and updated ${updatedCount} niche tags based on your Drive folders.`);
             } else {
                 alert("Everything is already up-to-date.");
