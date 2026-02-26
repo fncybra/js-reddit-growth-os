@@ -392,6 +392,84 @@ export const SubredditLifecycleService = {
     }
 };
 
+export const SubredditGuardService = {
+    _extractFirstNumber(regex, text) {
+        const m = text.match(regex);
+        return m?.[1] ? Number(m[1]) : null;
+    },
+
+    _inferConstraintsFromError(reason) {
+        const text = String(reason || '').toLowerCase();
+        const inferred = {
+            minAgeDays: null,
+            minKarma: null,
+            requiresVerified: false,
+            cooldownDays: 7,
+        };
+
+        const explicitAge = this._extractFirstNumber(/(\d{1,4})\s*(?:day|days|d)\b/i, text);
+        if (explicitAge) inferred.minAgeDays = explicitAge;
+        if (text.includes('too new') || text.includes('account age') || text.includes('new account')) {
+            inferred.minAgeDays = inferred.minAgeDays || 14;
+            inferred.cooldownDays = Math.max(inferred.cooldownDays, inferred.minAgeDays);
+        }
+
+        const explicitKarma = this._extractFirstNumber(/(\d{2,6})\s*karma\b/i, text);
+        if (explicitKarma) inferred.minKarma = explicitKarma;
+        if (text.includes('not enough karma') || text.includes('low karma')) {
+            inferred.minKarma = inferred.minKarma || 100;
+        }
+
+        if (text.includes('verify') || text.includes('verified email') || text.includes('email confirmed')) {
+            inferred.requiresVerified = true;
+        }
+
+        return inferred;
+    },
+
+    async isBlockedForPosting(subreddit) {
+        if (!subreddit) return false;
+        if (subreddit.cooldownUntil) {
+            return new Date(subreddit.cooldownUntil) > new Date();
+        }
+        return subreddit.status === 'cooldown';
+    },
+
+    async recordPostingError(subredditId, reason) {
+        const sub = await db.subreddits.get(subredditId);
+        if (!sub) return null;
+
+        const inferred = this._inferConstraintsFromError(reason);
+        const nowIso = new Date().toISOString();
+        const cooldownUntil = new Date(Date.now() + inferred.cooldownDays * 24 * 60 * 60 * 1000).toISOString();
+
+        const previousNotes = String(sub.hiddenRuleNotes || '').trim();
+        const newNote = `[${new Date().toLocaleDateString()}] ${String(reason || 'VA posting error')}`;
+        const notes = previousNotes ? `${newNote}\n${previousNotes}` : newNote;
+
+        const patch = {
+            status: 'cooldown',
+            cooldownUntil,
+            hiddenRuleNotes: notes.slice(0, 3000),
+            postErrorCount: Number(sub.postErrorCount || 0) + 1,
+            lastPostErrorAt: nowIso,
+        };
+
+        if (inferred.minAgeDays) {
+            patch.minAccountAgeDays = Math.max(Number(sub.minAccountAgeDays || 0), inferred.minAgeDays);
+        }
+        if (inferred.minKarma) {
+            patch.minRequiredKarma = Math.max(Number(sub.minRequiredKarma || 0), inferred.minKarma);
+        }
+        if (inferred.requiresVerified) {
+            patch.requiresVerified = 1;
+        }
+
+        await db.subreddits.update(sub.id, patch);
+        return { ...sub, ...patch };
+    }
+};
+
 export const DailyPlanGenerator = {
     // Automatically generates structured daily posting plans across multiple accounts
     async generateDailyPlan(modelId, targetDate = new Date()) {
@@ -410,13 +488,25 @@ export const DailyPlanGenerator = {
         const allModelTasksToday = await db.tasks.where('modelId').equals(modelId).filter(t => t.date === todayStr).toArray();
         const usedSubredditIds = new Set(allModelTasksToday.map(t => t.subredditId));
 
-        // Get available subreddits for this model
-        const provenSubs = await db.subreddits.where('modelId').equals(modelId).filter(s => s.status === 'proven').toArray();
-        const testingSubs = await db.subreddits.where('modelId').equals(modelId).filter(s => s.status === 'testing').toArray();
+        // Get available subreddits for this model (excluding temporary cooldown blocks)
+        const provenSubsRaw = await db.subreddits.where('modelId').equals(modelId).filter(s => s.status === 'proven').toArray();
+        const testingSubsRaw = await db.subreddits.where('modelId').equals(modelId).filter(s => s.status === 'testing').toArray();
+        const provenSubs = [];
+        const testingSubs = [];
+        for (const s of provenSubsRaw) {
+            if (!(await SubredditGuardService.isBlockedForPosting(s))) provenSubs.push(s);
+        }
+        for (const s of testingSubsRaw) {
+            if (!(await SubredditGuardService.isBlockedForPosting(s))) testingSubs.push(s);
+        }
 
         let fallbackSubs = [];
         if (provenSubs.length === 0 && testingSubs.length === 0) {
-            fallbackSubs = await db.subreddits.where('modelId').equals(modelId).toArray();
+            const fallbackAll = await db.subreddits.where('modelId').equals(modelId).toArray();
+            fallbackSubs = [];
+            for (const s of fallbackAll) {
+                if (!(await SubredditGuardService.isBlockedForPosting(s))) fallbackSubs.push(s);
+            }
             console.warn('DailyPlanGenerator: No proven/testing subreddits found – falling back to all subreddits');
         }
 
@@ -527,11 +617,22 @@ export const DailyPlanGenerator = {
 
             // Assign assets to selected subreddits for this account
             const cooldownDate = subDays(targetDate, settings.assetReuseCooldownDays);
+            const accountAgeDays = account.createdUtc
+                ? Math.floor((Date.now() - Number(account.createdUtc) * 1000) / (24 * 60 * 60 * 1000))
+                : 9999;
+            const accountKarma = Number(account.totalKarma || 0);
 
             // SHUFFLE assets before starting to ensure we don't always pick the same one as fallback
             const shuffledAssets = [...activeAssets].sort(() => Math.random() - 0.5);
 
             for (const sub of selectedSubsForAccount) {
+                if (sub.minRequiredKarma && accountKarma < Number(sub.minRequiredKarma)) {
+                    continue;
+                }
+                if (sub.minAccountAgeDays && accountAgeDays < Number(sub.minAccountAgeDays)) {
+                    continue;
+                }
+
                 let selectedAsset = null;
                 const subNameLower = sub.name.toLowerCase();
                 const subNiche = (sub.nicheTag || '').toLowerCase().trim();

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../db/db';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { extractRedditPostIdFromUrl } from '../services/growthEngine';
+import { extractRedditPostIdFromUrl, SubredditGuardService } from '../services/growthEngine';
 
 const vaResponsiveCss = `
 .va-root {
@@ -559,10 +559,16 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
             };
             await db.performances.add(perfInsert);
 
+            try {
+                await SubredditGuardService.recordPostingError(task.subredditId, reason);
+            } catch (guardErr) {
+                console.warn('[VA] Failed to store subreddit posting guard:', guardErr?.message || guardErr);
+            }
+
             // Cloud Sync Push (Native)
             try {
                 const { CloudSyncService } = await import('../services/growthEngine');
-                await CloudSyncService.autoPush(['tasks', 'performances']);
+                await CloudSyncService.autoPush(['tasks', 'performances', 'subreddits']);
             } catch (err) { }
         }
     }
