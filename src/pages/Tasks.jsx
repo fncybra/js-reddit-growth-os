@@ -190,6 +190,26 @@ function TaskRow({ task, activeModelId, proxyUrl }) {
         setSaved(true);
     }
 
+    async function handleDeleteTask(e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const confirmed = window.confirm('Delete this task and its linked outcome?');
+        if (!confirmed) return;
+
+        try {
+            await db.tasks.delete(task.id);
+            await CloudSyncService.deleteFromCloud('tasks', task.id);
+
+            if (performance) {
+                await db.performances.delete(performance.id);
+                await CloudSyncService.deleteFromCloud('performances', performance.id);
+            }
+        } catch (err) {
+            alert('Failed to delete task: ' + err.message);
+        }
+    }
+
     const objectUrl = asset?.fileBlob ? URL.createObjectURL(asset.fileBlob) : null;
     const previewUrl = objectUrl
         || (asset?.driveFileId ? `${proxyUrl}/api/drive/view/${asset.driveFileId}` : null)
@@ -258,6 +278,15 @@ function TaskRow({ task, activeModelId, proxyUrl }) {
                             Save
                         </button>
                     )}
+                    <button
+                        type="button"
+                        className="btn btn-outline"
+                        style={{ padding: '4px 8px', fontSize: '0.8rem', color: 'var(--status-danger)', borderColor: 'var(--status-danger)' }}
+                        onClick={handleDeleteTask}
+                        title="Delete task"
+                    >
+                        🗑️
+                    </button>
                 </div>
             </td>
         </tr>
