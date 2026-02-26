@@ -54,8 +54,8 @@ export function Settings() {
         setSyncing(true);
         try {
             await AccountSyncService.syncAllAccounts();
-            const count = await PerformanceSyncService.syncAllPendingPerformance();
-            alert(`Successfully synced metrics for ${count} live posts and all account stats.`);
+            const stats = await PerformanceSyncService.syncAllPendingPerformance();
+            alert(`Sync done. Scanned ${stats.scanned} tasks, attempted ${stats.attempted}, succeeded ${stats.succeeded}, failed ${stats.failed}, skipped ${stats.skipped}.`);
         } finally {
             setSyncing(false);
         }
@@ -256,7 +256,7 @@ export function Settings() {
                         <div className="card">
                             <h2 style={{ fontSize: '1.2rem', marginBottom: '20px' }}>Performance Tracking</h2>
                             <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '16px' }}>
-                                Automatic metric syncing is enabled. The system will scan live posts every 6 hours and update views/removal status.
+                                Use this to refresh live Reddit post stats (upvotes/removal status) across recent closed tasks.
                             </p>
                             <button
                                 onClick={handleForceSync}
