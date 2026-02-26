@@ -186,6 +186,7 @@ export function Subreddits() {
                                         <th>Tests</th>
                                         <th>Avg 24h</th>
                                         <th>Removal %</th>
+                                        <th>Posting Gate</th>
                                         <th>Action</th>
                                     </tr>
                                 </thead>
@@ -242,6 +243,18 @@ export function Subreddits() {
                                                 <td>{sub.totalTests}</td>
                                                 <td>{sub.avg24hViews?.toLocaleString() || 0}</td>
                                                 <td style={{ color: sub.removalPct > 20 ? 'var(--status-danger)' : 'inherit' }}>{sub.removalPct?.toFixed(1) || 0}%</td>
+                                                <td style={{ fontSize: '0.75rem' }}>
+                                                    {sub.cooldownUntil && new Date(sub.cooldownUntil) > new Date() ? (
+                                                        <span style={{ color: 'var(--status-warning)' }}>Cooldown until {new Date(sub.cooldownUntil).toLocaleDateString()}</span>
+                                                    ) : (
+                                                        <span style={{ color: 'var(--text-secondary)' }}>
+                                                            {sub.minRequiredKarma ? `Karma ${sub.minRequiredKarma}+` : ''}
+                                                            {sub.minRequiredKarma && sub.minAccountAgeDays ? ' • ' : ''}
+                                                            {sub.minAccountAgeDays ? `Age ${sub.minAccountAgeDays}d+` : ''}
+                                                            {!sub.minRequiredKarma && !sub.minAccountAgeDays ? 'Open' : ''}
+                                                        </span>
+                                                    )}
+                                                </td>
                                                 <td>
                                                     <button
                                                         type="button"
