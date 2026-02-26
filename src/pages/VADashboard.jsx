@@ -267,6 +267,39 @@ export function VADashboard() {
         }
     }
 
+    async function handleClearQueue() {
+        if (!tasks || tasks.length === 0) return;
+        const confirmed = window.confirm(`Clear ${tasks.length} task(s) from this queue? This removes linked outcomes too.`);
+        if (!confirmed) return;
+
+        try {
+            setClearingQueue(true);
+            const taskIds = tasks.map(t => t.id);
+            const linkedPerformances = await db.performances.where('taskId').anyOf(taskIds).toArray();
+            const performanceIds = linkedPerformances.map(p => p.id);
+
+            await db.transaction('rw', db.tasks, db.performances, async () => {
+                if (performanceIds.length > 0) await db.performances.bulkDelete(performanceIds);
+                await db.tasks.bulkDelete(taskIds);
+            });
+
+            const { CloudSyncService } = await import('../services/growthEngine');
+            const CHUNK_SIZE = 200;
+            for (let i = 0; i < performanceIds.length; i += CHUNK_SIZE) {
+                await CloudSyncService.deleteMultipleFromCloud('performances', performanceIds.slice(i, i + CHUNK_SIZE));
+            }
+            for (let i = 0; i < taskIds.length; i += CHUNK_SIZE) {
+                await CloudSyncService.deleteMultipleFromCloud('tasks', taskIds.slice(i, i + CHUNK_SIZE));
+            }
+
+            alert(`Cleared ${taskIds.length} task(s).`);
+        } catch (e) {
+            alert('Failed to clear queue: ' + e.message);
+        } finally {
+            setClearingQueue(false);
+        }
+    }
+
     if (!authenticated) {
         return (
             <div className="va-root" style={{ minHeight: '100vh', backgroundColor: '#0f1115', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#e5e7eb', fontFamily: 'sans-serif' }}>
@@ -635,39 +668,6 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
                 const { CloudSyncService } = await import('../services/growthEngine');
                 await CloudSyncService.autoPush(['tasks', 'performances', 'subreddits']);
             } catch (err) { }
-        }
-    }
-
-    async function handleClearQueue() {
-        if (!tasks || tasks.length === 0) return;
-        const confirmed = window.confirm(`Clear ${tasks.length} task(s) from this queue? This removes linked outcomes too.`);
-        if (!confirmed) return;
-
-        try {
-            setClearingQueue(true);
-            const taskIds = tasks.map(t => t.id);
-            const linkedPerformances = await db.performances.where('taskId').anyOf(taskIds).toArray();
-            const performanceIds = linkedPerformances.map(p => p.id);
-
-            await db.transaction('rw', db.tasks, db.performances, async () => {
-                if (performanceIds.length > 0) await db.performances.bulkDelete(performanceIds);
-                await db.tasks.bulkDelete(taskIds);
-            });
-
-            const { CloudSyncService } = await import('../services/growthEngine');
-            const CHUNK_SIZE = 200;
-            for (let i = 0; i < performanceIds.length; i += CHUNK_SIZE) {
-                await CloudSyncService.deleteMultipleFromCloud('performances', performanceIds.slice(i, i + CHUNK_SIZE));
-            }
-            for (let i = 0; i < taskIds.length; i += CHUNK_SIZE) {
-                await CloudSyncService.deleteMultipleFromCloud('tasks', taskIds.slice(i, i + CHUNK_SIZE));
-            }
-
-            alert(`Cleared ${taskIds.length} task(s).`);
-        } catch (e) {
-            alert('Failed to clear queue: ' + e.message);
-        } finally {
-            setClearingQueue(false);
         }
     }
 
