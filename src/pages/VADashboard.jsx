@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../db/db';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { extractRedditPostIdFromUrl, SubredditGuardService } from '../services/growthEngine';
@@ -389,21 +389,28 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
     const performance = useLiveQuery(() => db.performances.where({ taskId: task.id }).first(), [task.id]);
 
     const [redditUrl, setRedditUrl] = useState('');
+    const [mediaFailed, setMediaFailed] = useState(false);
     const proxyBase = 'https://js-reddit-proxy-production.up.railway.app';
 
     const isDone = task.status === 'closed' || performance;
 
     const isHeic = asset?.fileName && (asset.fileName.toLowerCase().endsWith('.heic') || asset.fileName.toLowerCase().endsWith('.heif'));
-    let objectUrl = asset?.thumbnailUrl || asset?.originalUrl;
-    if (asset?.fileBlob) {
-        objectUrl = URL.createObjectURL(asset.fileBlob);
-    } else if (asset?.driveFileId) {
-        if (asset.assetType === 'image') {
-            objectUrl = `${proxyBase}/api/drive/thumb/${asset.driveFileId}`;
-        } else {
-            objectUrl = `${proxyBase}/api/drive/view/${asset.driveFileId}`;
-        }
-    }
+    const localBlobUrl = useMemo(() => {
+        if (!asset?.fileBlob) return null;
+        return URL.createObjectURL(asset.fileBlob);
+    }, [asset?.id, asset?.fileBlob]);
+
+    useEffect(() => {
+        return () => {
+            if (localBlobUrl) URL.revokeObjectURL(localBlobUrl);
+        };
+    }, [localBlobUrl]);
+
+    const mediaUrl = localBlobUrl
+        || (asset?.driveFileId ? `${proxyBase}/api/drive/view/${asset.driveFileId}` : null)
+        || asset?.thumbnailUrl
+        || asset?.originalUrl
+        || null;
 
     async function handleDownloadMedia() {
         if (!asset) return;
@@ -582,6 +589,10 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
         alert(`${label} copied to clipboard!`);
     }
 
+    useEffect(() => {
+        setMediaFailed(false);
+    }, [task.id, mediaUrl]);
+
     if (isDone) {
         return (
             <div style={{ padding: '16px', backgroundColor: '#0f1115', border: '1px dashed #2d313a', borderRadius: '8px', color: '#9ca3af', display: 'flex', alignItems: 'center', gap: '16px', opacity: 0.6 }}>
@@ -597,12 +608,24 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
             <div className="va-media-sidebar" style={{ width: '100%', maxWidth: '280px', backgroundColor: '#000', display: 'flex', flexDirection: 'column', flexShrink: 0, position: 'relative', margin: '0 auto', borderRight: '1px solid #2d313a' }}>
                 <div className="va-media-preview" style={{ height: '280px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     {asset ? (
-                        asset.assetType === 'image' && objectUrl ? (
-                            <img src={objectUrl} alt="task media" style={{ width: '100%', height: '100%', objectFit: 'contain' }} onLoad={() => URL.revokeObjectURL(objectUrl)} />
-                        ) : asset.assetType === 'video' && objectUrl ? (
-                            <video src={objectUrl} style={{ width: '100%', height: '100%', objectFit: 'contain' }} controls />
+                        asset.assetType === 'image' && mediaUrl && !mediaFailed ? (
+                            <img src={mediaUrl} alt="task media" style={{ width: '100%', height: '100%', objectFit: 'contain' }} onError={() => setMediaFailed(true)} />
+                        ) : asset.assetType === 'video' && mediaUrl && !mediaFailed ? (
+                            <video src={mediaUrl} style={{ width: '100%', height: '100%', objectFit: 'contain' }} controls onError={() => setMediaFailed(true)} />
                         ) : (
-                            <div style={{ color: '#9ca3af' }}>No File</div>
+                            <div style={{ color: '#9ca3af', textAlign: 'center', padding: '12px' }}>
+                                <div>Media preview unavailable</div>
+                                {asset?.driveFileId && (
+                                    <a
+                                        href={`${proxyBase}/api/drive/view/${asset.driveFileId}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        style={{ color: '#6366f1', textDecoration: 'underline', fontSize: '0.85rem' }}
+                                    >
+                                        Open media directly
+                                    </a>
+                                )}
+                            </div>
                         )
                     ) : (
                         <div style={{ color: '#ef4444' }}>Missing Asset</div>
