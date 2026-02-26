@@ -5,40 +5,103 @@ const { google } = require('googleapis');
 const heicConvert = require('heic-convert');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 
 
 const { HttpsProxyAgent } = require('https-proxy-agent');
 
-// Only verified-working proxies (tested 2026-02-24)
-const rawProxies = [
+// Proxy priority:
+// 1) Request header: x-proxy-info
+// 2) REDDIT_PROXY_POOL env (comma/newline separated)
+// 3) hardcoded fallback pool
+const fallbackProxies = [
     "198.23.239.134:6540:cdlljwsf:3xtolj60p8g7",
     "107.172.163.27:6543:cdlljwsf:3xtolj60p8g7",
     "216.10.27.159:6837:cdlljwsf:3xtolj60p8g7"
 ];
 
+const envProxyPoolRaw = process.env.REDDIT_PROXY_POOL || '';
+const envProxyPool = envProxyPoolRaw
+    .split(/[\n,]/)
+    .map(s => s.trim())
+    .filter(Boolean);
+const rawProxies = envProxyPool.length > 0 ? envProxyPool : fallbackProxies;
+
 let proxyIndex = 0;
-function getNextProxyAgent() {
+
+function normalizeProxyInfo(raw = '') {
+    const value = String(raw || '').trim();
+    if (!value) return '';
+    if (value.startsWith('http://') || value.startsWith('https://')) return value;
+
+    const parts = value.split(':');
+    if (parts.length >= 4) {
+        const [ip, port, ...rest] = parts;
+        const pass = rest.pop();
+        const user = rest.join(':');
+        return `http://${encodeURIComponent(user)}:${encodeURIComponent(pass)}@${ip}:${port}`;
+    }
+    if (parts.length === 2) {
+        const [ip, port] = parts;
+        return `http://${ip}:${port}`;
+    }
+    return value;
+}
+
+function getNextProxyInfo() {
     const raw = rawProxies[proxyIndex % rawProxies.length];
     proxyIndex++;
-    const [ip, port, user, pass] = raw.split(':');
-    const proxyUrl = `http://${user}:${pass}@${ip}:${port}`;
-    console.log(`[Proxy] Using ${ip}:${port}`);
-    return new HttpsProxyAgent(proxyUrl);
+    return raw;
+}
+
+function getProxyAgentFromRaw(raw) {
+    const normalized = normalizeProxyInfo(raw);
+    if (!normalized) return null;
+    return new HttpsProxyAgent(normalized);
+}
+
+function rotateProxySession(raw) {
+    const token = `g${Date.now().toString(36)}${crypto.randomBytes(3).toString('hex')}`;
+    const value = String(raw || '').trim();
+    if (!value) return { proxyInfo: '', session: token };
+
+    if (value.startsWith('http://') || value.startsWith('https://')) {
+        const updated = value.replace(/(session-)([^:@/]+)/i, `$1${token}`);
+        if (updated !== value) return { proxyInfo: updated, session: token };
+        return { proxyInfo: value, session: token };
+    }
+
+    const parts = value.split(':');
+    if (parts.length >= 4) {
+        const [ip, port, ...rest] = parts;
+        const pass = rest.pop();
+        let user = rest.join(':');
+        if (/(^|[-_])session[-_]/i.test(user)) {
+            user = user.replace(/(session[-_])([^:_-]+)/i, `$1${token}`);
+        } else {
+            user = `${user}-session-${token}`;
+        }
+        return { proxyInfo: `${ip}:${port}:${user}:${pass}`, session: token };
+    }
+
+    return { proxyInfo: value, session: token };
 }
 
 // Resilient axios wrapper: tries up to 3 different proxies before giving up
-async function axiosWithRetry(url, extraHeaders = {}) {
-    const maxRetries = rawProxies.length;
+async function axiosWithRetry(url, extraHeaders = {}, options = {}) {
+    const directProxyInfo = options.proxyInfo ? String(options.proxyInfo).trim() : '';
+    const maxRetries = directProxyInfo ? 1 : rawProxies.length;
     let lastError;
     for (let i = 0; i < maxRetries; i++) {
         try {
+            const selectedProxy = directProxyInfo || getNextProxyInfo();
             const response = await axios.get(url, {
                 headers: {
                     'User-Agent': 'GrowthOS/1.0 (Internal Analytics Tool)',
                     'Accept': 'application/json',
                     ...extraHeaders
                 },
-                httpsAgent: getNextProxyAgent(),
+                httpsAgent: getProxyAgentFromRaw(selectedProxy),
                 timeout: 10000
             });
             if (response.status === 200) return response;
@@ -52,11 +115,37 @@ async function axiosWithRetry(url, extraHeaders = {}) {
     throw lastError || new Error('All proxies exhausted');
 }
 
+function getRequestProxyInfo(req) {
+    const headerProxy = req.headers['x-proxy-info'];
+    if (typeof headerProxy === 'string' && headerProxy.trim()) return headerProxy.trim();
+    if (typeof req.query.proxyInfo === 'string' && req.query.proxyInfo.trim()) return req.query.proxyInfo.trim();
+    return '';
+}
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(express.json()); // Allow JSON body for POST requests
 app.use(cors());
+
+app.post('/api/proxy/rotate', (req, res) => {
+    const sourceProxy = req.body?.proxyInfo || req.headers['x-proxy-info'] || getNextProxyInfo();
+    const rotated = rotateProxySession(sourceProxy);
+    res.json(rotated);
+});
+
+app.get('/api/proxy/check', async (req, res) => {
+    try {
+        const proxyInfo = getRequestProxyInfo(req);
+        const response = await axios.get('https://api.ipify.org?format=json', {
+            httpsAgent: proxyInfo ? getProxyAgentFromRaw(proxyInfo) : null,
+            timeout: 10000,
+        });
+        res.json({ ok: true, ip: response.data.ip, viaProxy: !!proxyInfo });
+    } catch (err) {
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
 
 // Initialize Google Drive API
 let drive = null;
@@ -97,8 +186,9 @@ app.get('/api/scrape/user/stats/:username', async (req, res) => {
         const { username } = req.params;
         const cleanName = username.replace(/^u\//i, '');
         const url = `https://old.reddit.com/user/${cleanName}/about.json`;
+        const proxyInfo = getRequestProxyInfo(req);
 
-        const response = await axiosWithRetry(url);
+        const response = await axiosWithRetry(url, {}, { proxyInfo });
 
         const data = response.data.data;
         res.json({
@@ -119,7 +209,8 @@ app.get('/api/scrape/user/stats/:username', async (req, res) => {
 app.get('/api/scrape/user/:username', async (req, res) => {
     try {
         const { username } = req.params;
-        const response = await axiosWithRetry(`https://old.reddit.com/user/${username}/submitted.json?limit=100`, { 'Accept-Language': 'en-US,en;q=0.9' });
+        const proxyInfo = getRequestProxyInfo(req);
+        const response = await axiosWithRetry(`https://old.reddit.com/user/${username}/submitted.json?limit=100`, { 'Accept-Language': 'en-US,en;q=0.9' }, { proxyInfo });
         res.json(response.data);
     } catch (error) {
         console.error("Scraper Error:", error.message);
@@ -136,9 +227,10 @@ app.get('/api/scrape/user/:username', async (req, res) => {
 app.get('/api/scrape/subreddit/:name', async (req, res) => {
     try {
         const { name } = req.params;
+        const proxyInfo = getRequestProxyInfo(req);
         const [aboutRes, rulesRes] = await Promise.all([
-            axiosWithRetry(`https://old.reddit.com/r/${name}/about.json`),
-            axiosWithRetry(`https://old.reddit.com/r/${name}/about/rules.json`)
+            axiosWithRetry(`https://old.reddit.com/r/${name}/about.json`, {}, { proxyInfo }),
+            axiosWithRetry(`https://old.reddit.com/r/${name}/about/rules.json`, {}, { proxyInfo })
         ]);
         const about = aboutRes.data.data;
         const rules = rulesRes.data.rules || [];
@@ -164,8 +256,9 @@ app.get('/api/scrape/subreddit/:name', async (req, res) => {
 app.get('/api/scrape/search/subreddits', async (req, res) => {
     try {
         const { q } = req.query;
+        const proxyInfo = getRequestProxyInfo(req);
         if (!q) return res.status(400).json({ error: "Query required" });
-        const response = await axiosWithRetry(`https://old.reddit.com/subreddits/search.json?q=${encodeURIComponent(q)}&limit=50`);
+        const response = await axiosWithRetry(`https://old.reddit.com/subreddits/search.json?q=${encodeURIComponent(q)}&limit=50`, {}, { proxyInfo });
         const results = response.data.data.children.map(c => ({
             name: c.data.display_name,
             subscribers: c.data.subscribers,
@@ -184,7 +277,8 @@ app.get('/api/scrape/search/subreddits', async (req, res) => {
 app.get('/api/scrape/subreddit/top/:name', async (req, res) => {
     try {
         const { name } = req.params;
-        const response = await axiosWithRetry(`https://old.reddit.com/r/${name}/top.json?t=month&limit=50`);
+        const proxyInfo = getRequestProxyInfo(req);
+        const response = await axiosWithRetry(`https://old.reddit.com/r/${name}/top.json?t=month&limit=50`, {}, { proxyInfo });
         const titles = response.data.data?.children?.map(c => c.data.title) || [];
         res.json(titles);
     } catch (error) {
@@ -194,7 +288,7 @@ app.get('/api/scrape/subreddit/top/:name', async (req, res) => {
 });
 
 // Resolve Reddit mobile share links (/s/XXXXX) to real post IDs
-async function resolveShareLink(shareId, subreddit) {
+async function resolveShareLink(shareId, subreddit, proxyInfo = '') {
     try {
         // Follow the redirect from the share URL to get the real URL
         const shareUrl = subreddit
@@ -203,7 +297,7 @@ async function resolveShareLink(shareId, subreddit) {
 
         const response = await axios.get(shareUrl, {
             headers: { 'User-Agent': 'GrowthOS/1.0 (Internal Analytics Tool)' },
-            httpsAgent: getNextProxyAgent(),
+            httpsAgent: getProxyAgentFromRaw(proxyInfo || getNextProxyInfo()),
             maxRedirects: 5,
             timeout: 10000
         });
@@ -229,20 +323,21 @@ app.get('/api/scrape/post/:postId', async (req, res) => {
     try {
         let { postId } = req.params;
         const subreddit = req.query.subreddit || '';
+        const proxyInfo = getRequestProxyInfo(req);
 
         // Detect share link IDs (they are longer and contain uppercase)
         const isShareId = /[A-Z]/.test(postId) || postId.length > 8;
 
         if (isShareId) {
             console.log(`[PostScrape] Detected share ID: ${postId}, resolving...`);
-            const realId = await resolveShareLink(postId, subreddit);
+            const realId = await resolveShareLink(postId, subreddit, proxyInfo);
             if (!realId) {
                 return res.status(404).json({ error: "Could not resolve share link to real post ID" });
             }
             postId = realId;
         }
 
-        const response = await axiosWithRetry(`https://old.reddit.com/by_id/t3_${postId}.json`);
+        const response = await axiosWithRetry(`https://old.reddit.com/by_id/t3_${postId}.json`, {}, { proxyInfo });
 
         const postData = response.data.data?.children[0]?.data;
         if (!postData) return res.status(404).json({ error: "Post not found or deleted" });
