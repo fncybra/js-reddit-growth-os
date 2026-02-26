@@ -655,6 +655,51 @@ export const DailyPlanGenerator = {
 };
 
 export const AnalyticsEngine = {
+    async getSubredditPerformanceRows(modelId, lookbackDays = 30) {
+        const cutoffIso = subDays(new Date(), lookbackDays).toISOString();
+        const subreddits = await db.subreddits.where('modelId').equals(modelId).toArray();
+        const tasks = await db.tasks.where('modelId').equals(modelId).toArray();
+
+        const recentTasks = tasks.filter(t => !t.date || t.date >= cutoffIso);
+        const taskIds = recentTasks.map(t => t.id);
+        const performances = taskIds.length > 0
+            ? await db.performances.where('taskId').anyOf(taskIds).toArray()
+            : [];
+
+        const perfByTaskId = new Map(performances.map(p => [p.taskId, p]));
+
+        return subreddits.map(sub => {
+            const matchedTasks = recentTasks.filter(t => {
+                if (t.subredditId === sub.id) return true;
+                if (t.redditUrl) {
+                    const urlMatch = t.redditUrl.match(/\/r\/([^\/]+)/i);
+                    if (urlMatch && urlMatch[1].toLowerCase() === sub.name.toLowerCase()) return true;
+                }
+                return false;
+            });
+
+            let totalViews = 0;
+            let removals = 0;
+            let tests = 0;
+
+            for (const task of matchedTasks) {
+                const perf = perfByTaskId.get(task.id);
+                if (!perf) continue;
+                tests++;
+                totalViews += Number(perf.views24h || 0);
+                if (perf.removed) removals++;
+            }
+
+            return {
+                name: sub.name,
+                status: sub.status,
+                totalTests: tests,
+                avgViews: tests > 0 ? Math.round(totalViews / tests) : 0,
+                removalPct: tests > 0 ? Number(((removals / tests) * 100).toFixed(1)) : 0,
+            };
+        });
+    },
+
     async getMetrics(modelId) {
         // Basic implementation for MVP metrics
         const allTasks = await db.tasks.where('modelId').equals(modelId).toArray();
@@ -723,29 +768,24 @@ export const AnalyticsEngine = {
     },
 
     async getSubredditRankings(modelId) {
-        const subreddits = await db.subreddits.where('modelId').equals(modelId).toArray();
-        const rankings = subreddits.map(s => ({
-            name: s.name,
-            avgViews: s.avg24hViews || 0,
-            removalPct: s.removalPct || 0,
-            status: s.status,
-            totalTests: s.totalTests || 0
-        })).sort((a, b) => b.avgViews - a.avgViews);
+        const rankings = await this.getSubredditPerformanceRows(modelId, 30);
+        rankings.sort((a, b) => b.avgViews - a.avgViews);
 
         return rankings.slice(0, 5); // Top 5
     },
 
     async getWorstSubreddits(modelId) {
-        const subreddits = await db.subreddits.where('modelId').equals(modelId).toArray();
-        // Only flag subs with high removal rates — upvotes are too low to use as a quality signal
-        const badSubs = subreddits.filter(s => s.totalTests > 0 && s.removalPct > 30)
+        // Manager-safe logic: do-not-post only when sample size is meaningful in last 30 days
+        const rows = await this.getSubredditPerformanceRows(modelId, 30);
+        const badSubs = rows
+            .filter(s => s.totalTests >= 3 && s.removalPct >= 40)
             .map(s => ({
                 name: s.name,
-                avgUps: s.avg24hViews || 0,
+                avgUps: s.avgViews || 0,
                 removalPct: s.removalPct || 0,
                 status: s.status,
                 totalTests: s.totalTests || 0,
-                action: s.removalPct > 60 ? "Ban Risk — Stop Immediately" : "High Removals — Review Rules"
+                action: s.removalPct >= 70 ? "Ban Risk — Stop Immediately" : "High Removals — Review Rules"
             }))
             .sort((a, b) => b.removalPct - a.removalPct);
 

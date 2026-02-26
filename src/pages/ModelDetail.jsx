@@ -152,6 +152,7 @@ export function ModelDetail() {
                     {/* Top Subreddits */}
                     <div className="card">
                         <h2 style={{ fontSize: '1rem', marginBottom: '12px', fontWeight: '600' }}>Top Subreddits</h2>
+                        <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginBottom: '10px' }}>Based on the last 30 days of synced posts.</div>
                         <div className="data-table-container">
                             <table className="data-table">
                                 <thead>
@@ -188,6 +189,7 @@ export function ModelDetail() {
                         <h2 style={{ fontSize: '1rem', marginBottom: '12px', fontWeight: '600', color: worstSubreddits?.length > 0 ? 'var(--status-danger)' : 'inherit' }}>
                             ⛔ Do Not Post
                         </h2>
+                        <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginBottom: '10px' }}>Only shown when a subreddit has at least 3 tests and 40%+ removals in the last 30 days.</div>
                         <div className="data-table-container">
                             <table className="data-table">
                                 <thead>
