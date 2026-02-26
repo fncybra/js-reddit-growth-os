@@ -26,13 +26,6 @@ export function Subreddits() {
         name: '', url: '', nicheTag: '', riskLevel: 'low', contentComplexity: 'general'
     });
 
-    if (models === undefined) {
-        return <div className="page-content" style={{ textAlign: 'center', padding: '48px', color: 'var(--text-secondary)' }}>Loading...</div>;
-    }
-    if (models.length === 0) {
-        return <div className="page-content"><div className="card">Please create a Model first.</div></div>;
-    }
-
     async function handleSubmit(e) {
         e.preventDefault();
         if (!formData.name || !selectedModelId) return;
@@ -91,6 +84,7 @@ export function Subreddits() {
     const visibleAccounts = (accounts || []).filter(a => tableModelFilter === 'all' || String(a.modelId) === String(tableModelFilter));
 
     React.useEffect(() => {
+        if (!models || models.length === 0) return;
         if (tableAccountFilter === 'all') return;
         const exists = visibleAccounts.some(a => String(a.id) === String(tableAccountFilter));
         if (!exists) setTableAccountFilter('all');
@@ -126,6 +120,13 @@ export function Subreddits() {
 
         return map;
     }, [tasks, performances, tableModelFilter, tableAccountFilter]);
+
+    if (models === undefined) {
+        return <div className="page-content" style={{ textAlign: 'center', padding: '48px', color: 'var(--text-secondary)' }}>Loading...</div>;
+    }
+    if (models.length === 0) {
+        return <div className="page-content"><div className="card">Please create a Model first.</div></div>;
+    }
 
     return (
         <>
