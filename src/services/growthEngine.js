@@ -98,6 +98,22 @@ export const TitleGeneratorService = {
         try {
             const proxyUrl = await SettingsService.getProxyUrl();
             let topTitles = [];
+            const getFallbackTitle = () => {
+                const pool = (topTitles && topTitles.length > 0)
+                    ? topTitles.filter(Boolean)
+                    : [
+                        `anyone into this?`,
+                        `who's online right now`,
+                        `honest opinion?`,
+                        `would you tap this?`,
+                        `rate me honestly`
+                    ];
+
+                const nonDuplicatePool = pool.filter(t => !previousTitles.includes(t));
+                const source = nonDuplicatePool.length > 0 ? nonDuplicatePool : pool;
+                const picked = source[Math.floor(Math.random() * source.length)] || `new post for r/${subredditName}`;
+                return String(picked).replace(/^\[.*?\]\s*/g, '').trim();
+            };
             // Try fetching from Reddit directly via JSON API (Top of the month)
             try {
                 const res = await fetchWithTimeout(`${proxyUrl}/api/scrape/subreddit/top/${subredditName}`, {}, 4000);
@@ -203,7 +219,8 @@ Print ONLY the single final title as plain text. No quotes. No numbering. No ext
                     const activeModel = (settings.openRouterModel || "").trim() || "mistralai/mixtral-8x7b-instruct";
 
                     if (!activeKey) {
-                        return "[NO API KEY DETECTED] Please add your API key in Settings and Save.";
+                        console.warn('[AI] No API key detected; using fallback title.');
+                        return getFallbackTitle();
                     }
 
                     // If user accidentally put a trailing /chat/completions into the Base URL box, fix it for the SDK
@@ -305,17 +322,17 @@ Print ONLY the single final title as plain text. No quotes. No numbering. No ext
 
                 } catch (err) {
                     console.error("AI Generation Error:", err);
-                    return `[API ERROR] ${err.message || "Failed to generate AI title. Check URL / Key / Model."}`;
+                    return getFallbackTitle();
                 }
             }
 
 
             // Fallback if no API key is set
-            console.error("No API Key detected in Settings. Returning explicit error title.");
-            return `[NO API KEY DETECTED] Please add your API key in Settings and Save.`;
+            console.error("No API Key detected in Settings. Using fallback title.");
+            return getFallbackTitle();
         } catch (err) {
             console.error("Title Generation Overall Error:", err);
-            return `[SYSTEM ERROR] Generated Post for r/${subredditName}`;
+            return `new post for r/${subredditName}`;
         }
     }
 };
