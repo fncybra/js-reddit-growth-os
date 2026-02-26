@@ -804,6 +804,7 @@ export const AnalyticsEngine = {
             tasksTotal: allTasks.length,
             accountHealth: await this.getAccountMetrics(modelId),
             nichePerformance: await this.getNichePerformance(modelId, lookbackDays),
+            topAssets: await this.getAssetPerformance(modelId, lookbackDays),
             topSubreddits,
             worstSubreddits,
             accountRankings,
@@ -842,6 +843,64 @@ export const AnalyticsEngine = {
             removalRate: stat.posts > 0 ? (stat.removals / stat.posts * 100).toFixed(1) : 0,
             totalViews: stat.views
         })).sort((a, b) => b.totalViews - a.totalViews);
+    },
+
+    async getAssetPerformance(modelId, lookbackDays = null, limit = 12) {
+        const tasks = await this._getModelTasksByWindow(modelId, lookbackDays);
+        const assetTaskMap = new Map();
+
+        tasks.forEach(task => {
+            if (!task.assetId) return;
+            if (!assetTaskMap.has(task.assetId)) assetTaskMap.set(task.assetId, []);
+            assetTaskMap.get(task.assetId).push(task);
+        });
+
+        const assetIds = Array.from(assetTaskMap.keys());
+        if (assetIds.length === 0) return [];
+
+        const assets = await db.assets.where('id').anyOf(assetIds).toArray();
+        const assetById = new Map(assets.map(asset => [asset.id, asset]));
+
+        const rows = [];
+        for (const assetId of assetIds) {
+            const asset = assetById.get(assetId);
+            if (!asset) continue;
+
+            const linkedTasks = assetTaskMap.get(assetId) || [];
+            let syncedPosts = 0;
+            let totalViews = 0;
+            let removals = 0;
+            let lastPostedDate = '';
+
+            for (const task of linkedTasks) {
+                if (task.date && task.date > lastPostedDate) lastPostedDate = task.date;
+                const perf = await db.performances.where('taskId').equals(task.id).first();
+                if (!perf) continue;
+                syncedPosts++;
+                totalViews += Number(perf.views24h || 0);
+                if (perf.removed) removals++;
+            }
+
+            rows.push({
+                assetId,
+                fileName: asset.fileName || `${asset.assetType || 'asset'}-${asset.id}`,
+                assetType: asset.assetType || 'unknown',
+                angleTag: asset.angleTag || 'general',
+                posts: linkedTasks.length,
+                syncedPosts,
+                totalViews,
+                avgViews: syncedPosts > 0 ? Math.round(totalViews / syncedPosts) : 0,
+                removalRate: syncedPosts > 0 ? Number(((removals / syncedPosts) * 100).toFixed(1)) : 0,
+                lastPostedDate: lastPostedDate || null,
+            });
+        }
+
+        return rows
+            .sort((a, b) => {
+                if (b.avgViews !== a.avgViews) return b.avgViews - a.avgViews;
+                return b.totalViews - a.totalViews;
+            })
+            .slice(0, limit);
     },
 
     async getSubredditRankings(modelId, lookbackDays = 30) {
