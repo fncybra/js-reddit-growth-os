@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { db } from '../db/db';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { AccountSyncService } from '../services/growthEngine';
-import { Smartphone, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Smartphone, RefreshCw, AlertTriangle, Trash2 } from 'lucide-react';
 
 export function Accounts() {
     const models = useLiveQuery(() => db.models.toArray());
@@ -26,6 +26,37 @@ export function Accounts() {
         setSyncing(true);
         await AccountSyncService.syncAllAccounts();
         setSyncing(false);
+    }
+
+    async function handleDeleteAccount(acc) {
+        const relatedTasks = await db.tasks.filter(t => t.accountId === acc.id).toArray();
+        const relatedTaskIds = relatedTasks.map(t => t.id);
+        const relatedPerformances = relatedTaskIds.length > 0
+            ? await db.performances.where('taskId').anyOf(relatedTaskIds).toArray()
+            : [];
+
+        const confirmMsg = relatedTasks.length > 0
+            ? `Delete ${acc.handle}? This will also delete ${relatedTasks.length} tasks and ${relatedPerformances.length} performance records linked to this account.`
+            : `Delete ${acc.handle}?`;
+
+        if (!window.confirm(confirmMsg)) return;
+
+        if (relatedPerformances.length > 0) {
+            await db.performances.bulkDelete(relatedPerformances.map(p => p.id));
+        }
+        if (relatedTaskIds.length > 0) {
+            await db.tasks.bulkDelete(relatedTaskIds);
+        }
+        await db.accounts.delete(acc.id);
+
+        try {
+            const { CloudSyncService } = await import('../services/growthEngine');
+            await CloudSyncService.deleteFromCloud('accounts', acc.id);
+            if (relatedTaskIds.length > 0) await CloudSyncService.deleteMultipleFromCloud('tasks', relatedTaskIds);
+            if (relatedPerformances.length > 0) await CloudSyncService.deleteMultipleFromCloud('performances', relatedPerformances.map(p => p.id));
+        } catch (e) {
+            console.error('Cloud delete failed:', e);
+        }
     }
 
     if (models === undefined) {
@@ -152,6 +183,7 @@ export function Accounts() {
                                         <th>CQS</th>
                                         <th>Proxy</th>
                                         <th>Last Sync</th>
+                                        <th>Action</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -188,6 +220,17 @@ export function Accounts() {
                                                 </td>
                                                 <td style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                                                     {acc.lastSyncDate ? new Date(acc.lastSyncDate).toLocaleDateString() : 'Never'}
+                                                </td>
+                                                <td>
+                                                    <button
+                                                        type="button"
+                                                        className="btn btn-outline"
+                                                        style={{ padding: '4px 8px', color: 'var(--status-danger)', borderColor: 'var(--status-danger)' }}
+                                                        onClick={() => handleDeleteAccount(acc)}
+                                                        title="Delete account"
+                                                    >
+                                                        <Trash2 size={14} />
+                                                    </button>
                                                 </td>
                                             </tr>
                                         );
