@@ -309,8 +309,10 @@ app.get('/api/drive/list/:folderId', async (req, res) => {
 
         res.json(filesWithTags);
     } catch (error) {
-        console.error("Drive List Error:", error.message);
-        res.status(500).json({ error: "Failed to list Drive files" });
+        const detail = error?.response?.data?.error?.message || error.message || 'Unknown error';
+        const status = Number(error?.code) === 404 ? 404 : (Number(error?.code) === 403 ? 403 : 500);
+        console.error("Drive List Error:", detail);
+        res.status(status).json({ error: "Failed to list Drive files", detail });
     }
 });
 
