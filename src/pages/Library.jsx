@@ -359,11 +359,14 @@ export function Library() {
                                     const model = models.find(m => m.id === asset.modelId);
                                     const isHeic = asset.fileName && (asset.fileName.toLowerCase().endsWith('.heic') || asset.fileName.toLowerCase().endsWith('.heif'));
 
-                                    let objectUrl = asset.thumbnailUrl || asset.originalUrl;
+                                    let objectUrl = null;
                                     if (asset.fileBlob) {
                                         objectUrl = URL.createObjectURL(asset.fileBlob);
                                     } else if (asset.driveFileId) {
-                                        objectUrl = `https://js-reddit-proxy-production.up.railway.app/api/drive/download/${asset.driveFileId}${isHeic ? '?convert=true' : ''}`;
+                                        // Use Google Drive's public thumbnail endpoint (no auth needed, loads fast)
+                                        objectUrl = `https://drive.google.com/thumbnail?id=${asset.driveFileId}&sz=w400`;
+                                    } else {
+                                        objectUrl = asset.thumbnailUrl || asset.originalUrl;
                                     }
 
                                     return (
