@@ -183,7 +183,6 @@ export function Accounts() {
                                         <th>CQS</th>
                                         <th>Proxy</th>
                                         <th>Last Sync</th>
-                                        <th>Action</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -192,9 +191,20 @@ export function Accounts() {
                                         return (
                                             <tr key={acc.id}>
                                                 <td style={{ fontWeight: '500' }}>
-                                                    <a href={`https://reddit.com/user/${acc.handle.replace(/^(u\/|\/u\/)/i, '')}`} target="_blank" rel="noreferrer" style={{ color: 'var(--primary-color)', textDecoration: 'none' }}>
-                                                        {acc.handle}
-                                                    </a>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                        <a href={`https://reddit.com/user/${acc.handle.replace(/^(u\/|\/u\/)/i, '')}`} target="_blank" rel="noreferrer" style={{ color: 'var(--primary-color)', textDecoration: 'none' }}>
+                                                            {acc.handle}
+                                                        </a>
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-outline"
+                                                            style={{ padding: '2px 6px', color: 'var(--status-danger)', borderColor: 'var(--status-danger)' }}
+                                                            onClick={() => handleDeleteAccount(acc)}
+                                                            title="Delete account"
+                                                        >
+                                                            <Trash2 size={12} />
+                                                        </button>
+                                                    </div>
                                                 </td>
                                                 <td>{model ? model.name : 'Unassigned'}</td>
                                                 <td style={{ fontWeight: '600' }}>
@@ -220,17 +230,6 @@ export function Accounts() {
                                                 </td>
                                                 <td style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                                                     {acc.lastSyncDate ? new Date(acc.lastSyncDate).toLocaleDateString() : 'Never'}
-                                                </td>
-                                                <td>
-                                                    <button
-                                                        type="button"
-                                                        className="btn btn-outline"
-                                                        style={{ padding: '4px 8px', color: 'var(--status-danger)', borderColor: 'var(--status-danger)' }}
-                                                        onClick={() => handleDeleteAccount(acc)}
-                                                        title="Delete account"
-                                                    >
-                                                        <Trash2 size={14} />
-                                                    </button>
                                                 </td>
                                             </tr>
                                         );

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../db/db';
 import { AnalyticsEngine, SettingsService } from '../services/growthEngine';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -11,6 +11,7 @@ export function ModelDetail() {
     const [metrics, setMetrics] = useState(null);
     const [lookbackDays, setLookbackDays] = useState(30);
     const [selectedAccountId, setSelectedAccountId] = useState('all');
+    const [analyticsMode, setAnalyticsMode] = useState('account-first');
     const [proxyUrl, setProxyUrl] = useState('https://js-reddit-proxy-production.up.railway.app');
     const model = useLiveQuery(() => db.models.get(modelId), [modelId]);
     const modelAccounts = useLiveQuery(() => db.accounts.where('modelId').equals(modelId).toArray(), [modelId]);
@@ -24,16 +25,29 @@ export function ModelDetail() {
         return `${taskSig}::${perfSig}`;
     }, [modelId]);
 
+    const primaryAccountId = useMemo(() => {
+        if (!modelAccounts || modelAccounts.length === 0) return null;
+        const activeAccount = modelAccounts.find(acc => acc.status === 'active');
+        return Number((activeAccount || modelAccounts[0]).id);
+    }, [modelAccounts]);
+
+    const effectiveAccountId = useMemo(() => {
+        if (analyticsMode === 'account-first') {
+            if (selectedAccountId === 'all') return primaryAccountId;
+            return Number(selectedAccountId);
+        }
+        return selectedAccountId === 'all' ? null : Number(selectedAccountId);
+    }, [analyticsMode, selectedAccountId, primaryAccountId]);
+
     useEffect(() => {
         async function fetchMetrics() {
             if (modelId) {
-                const scopedAccountId = selectedAccountId === 'all' ? null : Number(selectedAccountId);
-                const data = await AnalyticsEngine.getMetrics(modelId, lookbackDays || null, scopedAccountId);
+                const data = await AnalyticsEngine.getMetrics(modelId, lookbackDays || null, effectiveAccountId);
                 setMetrics(data);
             }
         }
         fetchMetrics();
-    }, [modelId, lookbackDays, selectedAccountId, analyticsTrigger]);
+    }, [modelId, lookbackDays, selectedAccountId, effectiveAccountId, analyticsTrigger]);
 
     useEffect(() => {
         async function loadProxy() {
@@ -43,12 +57,26 @@ export function ModelDetail() {
         loadProxy();
     }, []);
 
+    useEffect(() => {
+        if (!modelAccounts || modelAccounts.length !== 1) return;
+        if (selectedAccountId === 'all') {
+            setSelectedAccountId(String(modelAccounts[0].id));
+        }
+    }, [modelAccounts, selectedAccountId]);
+
+    useEffect(() => {
+        if (analyticsMode !== 'account-first') return;
+        if (selectedAccountId !== 'all') return;
+        if (!primaryAccountId) return;
+        setSelectedAccountId(String(primaryAccountId));
+    }, [analyticsMode, selectedAccountId, primaryAccountId]);
+
     async function handleExportCsv() {
         const tasks = await db.tasks.where('modelId').equals(modelId).toArray();
         const cutoffIso = lookbackDays ? new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000).toISOString() : null;
-        const scopedByAccount = selectedAccountId === 'all'
+        const scopedByAccount = !effectiveAccountId
             ? tasks
-            : tasks.filter(t => Number(t.accountId) === Number(selectedAccountId));
+            : tasks.filter(t => Number(t.accountId) === Number(effectiveAccountId));
         const filteredTasks = cutoffIso ? scopedByAccount.filter(t => !t.date || t.date >= cutoffIso) : scopedByAccount;
         const taskIds = filteredTasks.map(t => t.id);
         const performances = taskIds.length > 0 ? await db.performances.where('taskId').anyOf(taskIds).toArray() : [];
@@ -85,9 +113,9 @@ export function ModelDetail() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         const rangeLabel = lookbackDays ? `${lookbackDays}d` : 'all';
-        const accountLabel = selectedAccountId === 'all'
+        const accountLabel = !effectiveAccountId
             ? 'all-accounts'
-            : (modelAccounts?.find(a => Number(a.id) === Number(selectedAccountId))?.handle || `account-${selectedAccountId}`);
+            : (modelAccounts?.find(a => Number(a.id) === Number(effectiveAccountId))?.handle || `account-${effectiveAccountId}`);
         a.href = url;
         a.download = `${model?.name || 'model'}-${accountLabel}-posts-${rangeLabel}.csv`;
         document.body.appendChild(a);
@@ -111,6 +139,10 @@ export function ModelDetail() {
         managerSignals = null,
     } = metrics || {};
 
+    const selectedAccount = effectiveAccountId
+        ? modelAccounts?.find(acc => Number(acc.id) === Number(effectiveAccountId))
+        : null;
+
     return (
         <>
             <header className="page-header">
@@ -120,11 +152,49 @@ export function ModelDetail() {
                     </Link>
                     <div>
                         <h1 className="page-title">{model.name}</h1>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                            {selectedAccount
+                                ? `Focused on ${selectedAccount.handle}`
+                                : analyticsMode === 'model-wide'
+                                    ? 'Model-wide view across all linked accounts'
+                                    : 'Account-first mode (select an account)'}
+                        </div>
                     </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ display: 'inline-flex', border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
+                        <button
+                            type="button"
+                            className="btn btn-outline"
+                            onClick={() => setAnalyticsMode('account-first')}
+                            style={{
+                                border: 'none',
+                                borderRadius: '0',
+                                padding: '6px 10px',
+                                backgroundColor: analyticsMode === 'account-first' ? 'var(--surface-color)' : 'transparent',
+                                color: analyticsMode === 'account-first' ? 'var(--primary-color)' : 'var(--text-secondary)'
+                            }}
+                        >
+                            Account-first
+                        </button>
+                        <button
+                            type="button"
+                            className="btn btn-outline"
+                            onClick={() => setAnalyticsMode('model-wide')}
+                            style={{
+                                border: 'none',
+                                borderRadius: '0',
+                                borderLeft: '1px solid var(--border-color)',
+                                padding: '6px 10px',
+                                backgroundColor: analyticsMode === 'model-wide' ? 'var(--surface-color)' : 'transparent',
+                                color: analyticsMode === 'model-wide' ? 'var(--primary-color)' : 'var(--text-secondary)'
+                            }}
+                        >
+                            Model-wide
+                        </button>
+                    </div>
                     <select className="input-field" value={String(selectedAccountId)} onChange={e => setSelectedAccountId(e.target.value)} style={{ width: 'auto', minWidth: '180px' }}>
-                        <option value="all">All Accounts</option>
+                        <option value="all">All Accounts (Model-wide)</option>
                         {modelAccounts?.map(acc => (
                             <option key={acc.id} value={String(acc.id)}>{acc.handle}</option>
                         ))}

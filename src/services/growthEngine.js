@@ -1008,12 +1008,29 @@ export const AnalyticsEngine = {
         const avgViewsPerPost = performances.length > 0 ? (totalViews / performances.length).toFixed(0) : 0;
         const removalRatePct = performances.length > 0 ? ((removedCount / performances.length) * 100).toFixed(1) : 0;
 
-        // Subreddits breakdown
-        const provenSubs = await db.subreddits.where('modelId').equals(modelId).filter(s => s.status === 'proven').count();
-        const testingSubs = await db.subreddits.where('modelId').equals(modelId).filter(s => s.status === 'testing').count();
+        // Subreddits breakdown (scoped to selected account/date window when filters are active)
+        const subredditRows = await this.getSubredditPerformanceRows(modelId, lookbackDays || 30, accountId);
+        const subredditsWithData = subredditRows.filter(s => Number(s.totalTests || 0) > 0);
+        const provenSubs = subredditsWithData.filter(s => s.status === 'proven').length;
+        const testingSubs = subredditsWithData.filter(s => s.status === 'testing').length;
 
-        const topSubreddits = await this.getSubredditRankings(modelId, lookbackDays || 30, accountId);
-        const worstSubreddits = await this.getWorstSubreddits(modelId, lookbackDays || 30, accountId);
+        const topSubreddits = subredditRows
+            .slice()
+            .sort((a, b) => b.avgViews - a.avgViews)
+            .slice(0, 5);
+
+        const worstSubreddits = subredditRows
+            .filter(s => s.totalTests >= 3 && s.removalPct >= 40)
+            .map(s => ({
+                name: s.name,
+                avgUps: s.avgViews || 0,
+                removalPct: s.removalPct || 0,
+                status: s.status,
+                totalTests: s.totalTests || 0,
+                action: s.removalPct >= 70 ? "Ban Risk — Stop Immediately" : "High Removals — Review Rules"
+            }))
+            .sort((a, b) => b.removalPct - a.removalPct)
+            .slice(0, 10);
         const accountRankings = await this.getAccountRankings(modelId, lookbackDays, accountId);
 
         const managerSignals = this.getManagerSignals({
