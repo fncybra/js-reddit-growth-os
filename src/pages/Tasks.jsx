@@ -1,18 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../db/db';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { CloudSyncService, DailyPlanGenerator, SubredditLifecycleService } from '../services/growthEngine';
+import { CloudSyncService, DailyPlanGenerator, SettingsService, SubredditLifecycleService } from '../services/growthEngine';
 import { startOfDay } from 'date-fns';
 
 export function Tasks() {
     const models = useLiveQuery(() => db.models.toArray());
     const [selectedModelId, setSelectedModelId] = useState('');
+    const [proxyUrl, setProxyUrl] = useState('https://js-reddit-proxy-production.up.railway.app');
 
     useEffect(() => {
         if (models && models.length > 0 && !selectedModelId) {
             setSelectedModelId(models[0].id);
         }
     }, [models, selectedModelId]);
+
+    useEffect(() => {
+        async function loadProxy() {
+            const settings = await SettingsService.getSettings();
+            if (settings?.proxyUrl) setProxyUrl(settings.proxyUrl);
+        }
+        loadProxy();
+    }, []);
 
     const activeModelId = Number(selectedModelId);
     const todayStr = startOfDay(new Date()).toISOString();
@@ -50,14 +59,18 @@ export function Tasks() {
                 return;
             }
 
+            const linkedPerformances = await db.performances.where('taskId').anyOf(taskIds).toArray();
+            const performanceIds = linkedPerformances.map(p => p.id);
+
             await db.transaction('rw', db.tasks, db.performances, async () => {
-                const linkedPerformances = await db.performances.where('taskId').anyOf(taskIds).toArray();
                 if (linkedPerformances.length > 0) {
-                    await db.performances.bulkDelete(linkedPerformances.map(p => p.id));
+                    await db.performances.bulkDelete(performanceIds);
                 }
                 await db.tasks.bulkDelete(taskIds);
             });
 
+            await CloudSyncService.deleteMultipleFromCloud('performances', performanceIds);
+            await CloudSyncService.deleteMultipleFromCloud('tasks', taskIds);
             await CloudSyncService.autoPush(['tasks', 'performances']);
             alert(`Cleared ${taskIds.length} task(s) for today.`);
         } catch (e) {
@@ -126,7 +139,7 @@ export function Tasks() {
                                 </thead>
                                 <tbody>
                                     {tasks?.map(task => (
-                                        <TaskRow key={task.id} task={task} activeModelId={activeModelId} />
+                                        <TaskRow key={task.id} task={task} activeModelId={activeModelId} proxyUrl={proxyUrl} />
                                     ))}
                                 </tbody>
                             </table>
@@ -138,7 +151,7 @@ export function Tasks() {
     );
 }
 
-function TaskRow({ task, activeModelId }) {
+function TaskRow({ task, activeModelId, proxyUrl }) {
     const [outcome, setOutcome] = useState({ views: '', removed: false });
     const [saved, setSaved] = useState(false);
 
@@ -178,6 +191,11 @@ function TaskRow({ task, activeModelId }) {
     }
 
     const objectUrl = asset?.fileBlob ? URL.createObjectURL(asset.fileBlob) : null;
+    const previewUrl = objectUrl
+        || (asset?.driveFileId ? `${proxyUrl}/api/drive/view/${asset.driveFileId}` : null)
+        || asset?.thumbnailUrl
+        || asset?.originalUrl
+        || null;
 
     return (
         <tr style={{ opacity: saved ? 0.7 : 1, transition: 'opacity 0.2s', borderBottom: '1px solid var(--border-color)' }}>
@@ -188,10 +206,10 @@ function TaskRow({ task, activeModelId }) {
             <td style={{ verticalAlign: 'middle', width: '200px' }}>
                 {asset ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        {asset.assetType === 'image' && objectUrl ? (
-                            <img src={objectUrl} alt="asset thumbnail" style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '4px', border: '1px solid var(--border-color)' }} onLoad={() => URL.revokeObjectURL(objectUrl)} />
-                        ) : asset.assetType === 'video' && objectUrl ? (
-                            <video src={objectUrl} style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '4px', border: '1px solid var(--border-color)' }} />
+                        {asset.assetType === 'image' && previewUrl ? (
+                            <img src={previewUrl} alt="asset thumbnail" style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '4px', border: '1px solid var(--border-color)' }} onLoad={() => { if (objectUrl) URL.revokeObjectURL(objectUrl); }} />
+                        ) : asset.assetType === 'video' && previewUrl ? (
+                            <video src={previewUrl} style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '4px', border: '1px solid var(--border-color)' }} />
                         ) : (
                             <div style={{ width: '60px', height: '60px', backgroundColor: 'var(--surface-color)', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>No File</div>
                         )}
