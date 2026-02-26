@@ -31,9 +31,16 @@ export function Library() {
 
         setSyncing(true);
         try {
+            // Defensively extract just the Folder ID in case the user pasted the entire URL
+            let cleanFolderId = targetModel.driveFolderId;
+            if (cleanFolderId.includes('drive.google.com')) {
+                const match = cleanFolderId.match(/folders\/([a-zA-Z0-9_-]+)/);
+                if (match) cleanFolderId = match[1];
+            }
+
             const { SettingsService } = await import('../services/growthEngine');
             const proxyUrl = await SettingsService.getProxyUrl();
-            const res = await fetch(`${proxyUrl}/api/drive/list/${targetModel.driveFolderId}`);
+            const res = await fetch(`${proxyUrl}/api/drive/list/${cleanFolderId}`);
             if (!res.ok) {
                 const errData = await res.json();
                 throw new Error(errData.error || "Failed to fetch from Drive");

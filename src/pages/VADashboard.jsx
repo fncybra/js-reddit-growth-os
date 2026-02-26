@@ -364,16 +364,21 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
                 };
                 await db.assets.update(asset.id, assetUpdate);
 
-                // If it's a Drive-linked asset and model has a 'Used' folder, move it there
                 if (asset.driveFileId && targetModel?.usedFolderId) {
                     try {
-                        console.log(`Moving Drive file ${asset.driveFileId} to Used folder ${targetModel.usedFolderId}...`);
+                        let cleanUsedFolderId = targetModel.usedFolderId;
+                        if (cleanUsedFolderId.includes('drive.google.com')) {
+                            const match = cleanUsedFolderId.match(/folders\/([a-zA-Z0-9_-]+)/);
+                            if (match) cleanUsedFolderId = match[1];
+                        }
+
+                        console.log(`Moving Drive file ${asset.driveFileId} to Used folder ${cleanUsedFolderId}...`);
                         const moveRes = await fetch(`${proxyUrl}/api/drive/move`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 fileId: asset.driveFileId,
-                                targetFolderId: targetModel.usedFolderId
+                                targetFolderId: cleanUsedFolderId
                             })
                         });
                         if (!moveRes.ok) {
