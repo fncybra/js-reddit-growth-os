@@ -390,6 +390,8 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
 
     const [redditUrl, setRedditUrl] = useState('');
     const [mediaFailed, setMediaFailed] = useState(false);
+    const [heicPreviewUrl, setHeicPreviewUrl] = useState('');
+    const [heicLoading, setHeicLoading] = useState(false);
     const proxyBase = 'https://js-reddit-proxy-production.up.railway.app';
 
     const isDone = task.status === 'closed' || performance;
@@ -406,8 +408,40 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
         };
     }, [localBlobUrl]);
 
+    useEffect(() => {
+        let cancelled = false;
+        let generatedUrl = '';
+
+        async function prepareHeicPreview() {
+            setHeicPreviewUrl('');
+            if (!asset?.driveFileId || !isHeic) return;
+
+            try {
+                setHeicLoading(true);
+                const response = await fetch(`${proxyBase}/api/drive/download/${asset.driveFileId}?convert=true`);
+                if (!response.ok) throw new Error(`Preview conversion failed (${response.status})`);
+                const blob = await response.blob();
+                generatedUrl = URL.createObjectURL(blob);
+                if (!cancelled) setHeicPreviewUrl(generatedUrl);
+            } catch (err) {
+                console.warn('[VA] HEIC preview conversion failed:', err?.message || err);
+            } finally {
+                if (!cancelled) setHeicLoading(false);
+            }
+        }
+
+        prepareHeicPreview();
+
+        return () => {
+            cancelled = true;
+            if (generatedUrl) URL.revokeObjectURL(generatedUrl);
+        };
+    }, [asset?.id, asset?.driveFileId, isHeic]);
+
     const mediaUrl = localBlobUrl
-        || (asset?.driveFileId ? `${proxyBase}/api/drive/view/${asset.driveFileId}` : null)
+        || (isHeic ? heicPreviewUrl : null)
+        || (asset?.assetType === 'image' && asset?.driveFileId ? `${proxyBase}/api/drive/thumb/${asset.driveFileId}` : null)
+        || (asset?.assetType === 'video' && asset?.driveFileId ? `${proxyBase}/api/drive/view/${asset.driveFileId}` : null)
         || asset?.thumbnailUrl
         || asset?.originalUrl
         || null;
@@ -612,6 +646,10 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
                             <img src={mediaUrl} alt="task media" style={{ width: '100%', height: '100%', objectFit: 'contain' }} onError={() => setMediaFailed(true)} />
                         ) : asset.assetType === 'video' && mediaUrl && !mediaFailed ? (
                             <video src={mediaUrl} style={{ width: '100%', height: '100%', objectFit: 'contain' }} controls onError={() => setMediaFailed(true)} />
+                        ) : asset.assetType === 'image' && isHeic && heicLoading ? (
+                            <div style={{ color: '#9ca3af', textAlign: 'center', padding: '12px' }}>
+                                <div>Converting HEIC preview...</div>
+                            </div>
                         ) : (
                             <div style={{ color: '#9ca3af', textAlign: 'center', padding: '12px' }}>
                                 <div>Media preview unavailable</div>
