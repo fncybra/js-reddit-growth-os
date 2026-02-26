@@ -337,6 +337,71 @@ Print ONLY the single final title as plain text. No quotes. No numbering. No ext
     }
 };
 
+export const TitleGuardService = {
+    normalize(title = '') {
+        return String(title || '')
+            .toLowerCase()
+            .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, ' ')
+            .replace(/[^a-z0-9\s]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    },
+
+    levenshtein(a = '', b = '') {
+        const s = this.normalize(a);
+        const t = this.normalize(b);
+        const n = s.length;
+        const m = t.length;
+        if (!n) return m;
+        if (!m) return n;
+
+        const dp = Array.from({ length: n + 1 }, () => Array(m + 1).fill(0));
+        for (let i = 0; i <= n; i++) dp[i][0] = i;
+        for (let j = 0; j <= m; j++) dp[0][j] = j;
+
+        for (let i = 1; i <= n; i++) {
+            for (let j = 1; j <= m; j++) {
+                const cost = s[i - 1] === t[j - 1] ? 0 : 1;
+                dp[i][j] = Math.min(
+                    dp[i - 1][j] + 1,
+                    dp[i][j - 1] + 1,
+                    dp[i - 1][j - 1] + cost
+                );
+            }
+        }
+        return dp[n][m];
+    },
+
+    similarityRatio(a = '', b = '') {
+        const na = this.normalize(a);
+        const nb = this.normalize(b);
+        if (!na || !nb) return 0;
+        if (na === nb) return 1;
+        const dist = this.levenshtein(na, nb);
+        return 1 - (dist / Math.max(na.length, nb.length));
+    },
+
+    isTooClose(candidate, existingTitle) {
+        const c = this.normalize(candidate);
+        const e = this.normalize(existingTitle);
+        if (!c || !e) return false;
+        if (c === e) return true;
+        const ratio = this.similarityRatio(c, e);
+        if (ratio >= 0.86) return true;
+        if ((c.includes(e) || e.includes(c)) && Math.abs(c.length - e.length) <= 8) return true;
+        return false;
+    },
+
+    async getRecentPostedTitles(modelId, subredditId, lookbackDays = 90) {
+        const cutoffIso = subDays(new Date(), lookbackDays).toISOString();
+        const tasks = await db.tasks
+            .where('modelId').equals(modelId)
+            .filter(t => t.status === 'closed' && t.subredditId === subredditId && t.title && (!t.date || t.date >= cutoffIso))
+            .toArray();
+        return tasks.map(t => t.title).filter(Boolean);
+    },
+};
+
 export const SubredditLifecycleService = {
     // Evaluates all testing subreddits against criteria to promote or demote them
     async evaluateSubreddits(modelId) {
@@ -601,6 +666,7 @@ export const DailyPlanGenerator = {
 
         let taskGenerationPromises = [];
         const usedAssetsInSession = new Map(); // Track counts to reuse a photo multiple times a day
+        const postedTitleCache = new Map();
 
         // 2. Iterate through accounts and fill their individual quotas
         for (const account of activeAccounts) {
@@ -766,13 +832,36 @@ export const DailyPlanGenerator = {
                             }
                         }
 
+                        const cacheKey = `${modelId}:${sub.id}`;
+                        let postedTitles = postedTitleCache.get(cacheKey);
+                        if (!postedTitles) {
+                            postedTitles = await TitleGuardService.getRecentPostedTitles(modelId, sub.id, 90);
+                            postedTitleCache.set(cacheKey, postedTitles);
+                        }
+
                         // Generate AI title based on top 50 scraped posts for THIS specific subreddit
-                        const aiTitle = await TitleGeneratorService.generateTitle(
+                        let aiTitle = await TitleGeneratorService.generateTitle(
                             sub.name,
                             currentRules,
                             sub.requiredFlair,
                             previousTitles
                         );
+
+                        // Hard guard: avoid titles too close to already posted ones in this subreddit/model.
+                        // Keep title-gen logic untouched; only regenerate if too similar.
+                        let attempt = 0;
+                        while (attempt < 2 && postedTitles.some(t => TitleGuardService.isTooClose(aiTitle, t))) {
+                            attempt++;
+                            aiTitle = await TitleGeneratorService.generateTitle(
+                                sub.name,
+                                currentRules,
+                                sub.requiredFlair,
+                                [...previousTitles, ...postedTitles, aiTitle]
+                            );
+                        }
+
+                        postedTitles.push(aiTitle);
+                        postedTitleCache.set(cacheKey, postedTitles);
 
                         return {
                             date: todayStr,
