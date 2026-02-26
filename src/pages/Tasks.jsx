@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../db/db';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { DailyPlanGenerator, SubredditLifecycleService } from '../services/growthEngine';
+import { CloudSyncService, DailyPlanGenerator, SubredditLifecycleService } from '../services/growthEngine';
 import { startOfDay } from 'date-fns';
 
 export function Tasks() {
@@ -36,6 +36,35 @@ export function Tasks() {
         }
     }
 
+    async function handleClearTodayTasks() {
+        if (!activeModelId) return;
+        const confirmed = window.confirm('Clear all tasks for this model and date? This will also remove linked outcomes.');
+        if (!confirmed) return;
+
+        try {
+            const todayTasks = await db.tasks.where({ modelId: activeModelId, date: todayStr }).toArray();
+            const taskIds = todayTasks.map(t => t.id);
+
+            if (taskIds.length === 0) {
+                alert('No tasks to clear for this date.');
+                return;
+            }
+
+            await db.transaction('rw', db.tasks, db.performances, async () => {
+                const linkedPerformances = await db.performances.where('taskId').anyOf(taskIds).toArray();
+                if (linkedPerformances.length > 0) {
+                    await db.performances.bulkDelete(linkedPerformances.map(p => p.id));
+                }
+                await db.tasks.bulkDelete(taskIds);
+            });
+
+            await CloudSyncService.autoPush(['tasks', 'performances']);
+            alert(`Cleared ${taskIds.length} task(s) for today.`);
+        } catch (e) {
+            alert('Failed to clear tasks: ' + e.message);
+        }
+    }
+
     if (!models || models.length === 0) {
         return <div className="page-content"><div className="card">Please create a Model first.</div></div>;
     }
@@ -60,13 +89,23 @@ export function Tasks() {
                         • Date: <strong>{new Date().toLocaleDateString()}</strong>
                     </div>
                 </div>
-                <button
-                    className="btn btn-primary"
-                    onClick={handleGenerate}
-                    disabled={generating}
-                >
-                    {generating ? 'Generating...' : 'Generate Daily Plan'}
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <button
+                        className="btn btn-outline"
+                        onClick={handleClearTodayTasks}
+                        disabled={generating || !tasks || tasks.length === 0}
+                        style={{ color: 'var(--status-danger)', borderColor: 'var(--status-danger)' }}
+                    >
+                        Clear Tasks
+                    </button>
+                    <button
+                        className="btn btn-primary"
+                        onClick={handleGenerate}
+                        disabled={generating}
+                    >
+                        {generating ? 'Generating...' : 'Generate Daily Plan'}
+                    </button>
+                </div>
             </header>
             <div className="page-content">
                 <div className="card">
