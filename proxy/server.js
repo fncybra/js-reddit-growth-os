@@ -249,8 +249,10 @@ app.get('/api/scrape/post/:postId', async (req, res) => {
 
         res.json({
             ups: postData.ups,
-            removed: postData.removed_by_category !== null || postData.banned_by !== null || postData.is_robot_indexable === false,
-            removed_category: postData.removed_by_category || (!postData.is_robot_indexable ? 'shadowban/spam_filter' : null),
+            // NOTE: is_robot_indexable can be false for legitimate posts in some contexts,
+            // so we only mark removed on explicit Reddit removal signals.
+            removed: postData.removed_by_category !== null || postData.banned_by !== null,
+            removed_category: postData.removed_by_category || (postData.banned_by ? 'banned' : null),
             realPostId: postId  // Return the resolved real ID so frontend can update
         });
     } catch (error) {
