@@ -10,8 +10,10 @@ export function ModelDetail() {
     const modelId = Number(id);
     const [metrics, setMetrics] = useState(null);
     const [lookbackDays, setLookbackDays] = useState(30);
+    const [selectedAccountId, setSelectedAccountId] = useState('all');
     const [proxyUrl, setProxyUrl] = useState('https://js-reddit-proxy-production.up.railway.app');
     const model = useLiveQuery(() => db.models.get(modelId), [modelId]);
+    const modelAccounts = useLiveQuery(() => db.accounts.where('modelId').equals(modelId).toArray(), [modelId]);
     const analyticsTrigger = useLiveQuery(async () => {
         if (!modelId) return '';
         const tasks = await db.tasks.where('modelId').equals(modelId).toArray();
@@ -25,12 +27,13 @@ export function ModelDetail() {
     useEffect(() => {
         async function fetchMetrics() {
             if (modelId) {
-                const data = await AnalyticsEngine.getMetrics(modelId, lookbackDays || null);
+                const scopedAccountId = selectedAccountId === 'all' ? null : Number(selectedAccountId);
+                const data = await AnalyticsEngine.getMetrics(modelId, lookbackDays || null, scopedAccountId);
                 setMetrics(data);
             }
         }
         fetchMetrics();
-    }, [modelId, lookbackDays, analyticsTrigger]);
+    }, [modelId, lookbackDays, selectedAccountId, analyticsTrigger]);
 
     useEffect(() => {
         async function loadProxy() {
@@ -43,7 +46,10 @@ export function ModelDetail() {
     async function handleExportCsv() {
         const tasks = await db.tasks.where('modelId').equals(modelId).toArray();
         const cutoffIso = lookbackDays ? new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000).toISOString() : null;
-        const filteredTasks = cutoffIso ? tasks.filter(t => !t.date || t.date >= cutoffIso) : tasks;
+        const scopedByAccount = selectedAccountId === 'all'
+            ? tasks
+            : tasks.filter(t => Number(t.accountId) === Number(selectedAccountId));
+        const filteredTasks = cutoffIso ? scopedByAccount.filter(t => !t.date || t.date >= cutoffIso) : scopedByAccount;
         const taskIds = filteredTasks.map(t => t.id);
         const performances = taskIds.length > 0 ? await db.performances.where('taskId').anyOf(taskIds).toArray() : [];
 
@@ -79,8 +85,11 @@ export function ModelDetail() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         const rangeLabel = lookbackDays ? `${lookbackDays}d` : 'all';
+        const accountLabel = selectedAccountId === 'all'
+            ? 'all-accounts'
+            : (modelAccounts?.find(a => Number(a.id) === Number(selectedAccountId))?.handle || `account-${selectedAccountId}`);
         a.href = url;
-        a.download = `${model?.name || 'model'}-posts-${rangeLabel}.csv`;
+        a.download = `${model?.name || 'model'}-${accountLabel}-posts-${rangeLabel}.csv`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -114,6 +123,12 @@ export function ModelDetail() {
                     </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <select className="input-field" value={String(selectedAccountId)} onChange={e => setSelectedAccountId(e.target.value)} style={{ width: 'auto', minWidth: '180px' }}>
+                        <option value="all">All Accounts</option>
+                        {modelAccounts?.map(acc => (
+                            <option key={acc.id} value={String(acc.id)}>{acc.handle}</option>
+                        ))}
+                    </select>
                     <select className="input-field" value={String(lookbackDays)} onChange={e => setLookbackDays(Number(e.target.value))} style={{ width: 'auto', minWidth: '120px' }}>
                         <option value="7">Last 7 days</option>
                         <option value="30">Last 30 days</option>
