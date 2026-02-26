@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../db/db';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { CloudSyncService, DailyPlanGenerator, SettingsService, SubredditLifecycleService } from '../services/growthEngine';
@@ -32,6 +32,7 @@ export function Tasks() {
     );
 
     const [generating, setGenerating] = useState(false);
+    const [clearing, setClearing] = useState(false);
 
     async function handleGenerate() {
         if (!activeModelId) return;
@@ -46,13 +47,13 @@ export function Tasks() {
     }
 
     async function handleClearTodayTasks() {
-        if (!activeModelId) return;
+        if (!activeModelId || !tasks || tasks.length === 0) return;
         const confirmed = window.confirm('Clear all tasks for this model and date? This will also remove linked outcomes.');
         if (!confirmed) return;
 
         try {
-            const todayTasks = await db.tasks.where({ modelId: activeModelId, date: todayStr }).toArray();
-            const taskIds = todayTasks.map(t => t.id);
+            setClearing(true);
+            const taskIds = tasks.map(t => t.id);
 
             if (taskIds.length === 0) {
                 alert('No tasks to clear for this date.');
@@ -69,12 +70,21 @@ export function Tasks() {
                 await db.tasks.bulkDelete(taskIds);
             });
 
-            await CloudSyncService.deleteMultipleFromCloud('performances', performanceIds);
-            await CloudSyncService.deleteMultipleFromCloud('tasks', taskIds);
-            await CloudSyncService.autoPush(['tasks', 'performances']);
+            const CHUNK_SIZE = 200;
+            for (let i = 0; i < performanceIds.length; i += CHUNK_SIZE) {
+                const chunk = performanceIds.slice(i, i + CHUNK_SIZE);
+                await CloudSyncService.deleteMultipleFromCloud('performances', chunk);
+            }
+            for (let i = 0; i < taskIds.length; i += CHUNK_SIZE) {
+                const chunk = taskIds.slice(i, i + CHUNK_SIZE);
+                await CloudSyncService.deleteMultipleFromCloud('tasks', chunk);
+            }
+
             alert(`Cleared ${taskIds.length} task(s) for today.`);
         } catch (e) {
             alert('Failed to clear tasks: ' + e.message);
+        } finally {
+            setClearing(false);
         }
     }
 
@@ -106,10 +116,10 @@ export function Tasks() {
                     <button
                         className="btn btn-outline"
                         onClick={handleClearTodayTasks}
-                        disabled={generating || !tasks || tasks.length === 0}
+                        disabled={generating || clearing || !tasks || tasks.length === 0}
                         style={{ color: 'var(--status-danger)', borderColor: 'var(--status-danger)' }}
                     >
-                        Clear Tasks
+                        {clearing ? 'Clearing...' : 'Clear Tasks'}
                     </button>
                     <button
                         className="btn btn-primary"
@@ -210,9 +220,20 @@ function TaskRow({ task, activeModelId, proxyUrl }) {
         }
     }
 
-    const objectUrl = asset?.fileBlob ? URL.createObjectURL(asset.fileBlob) : null;
+    const objectUrl = useMemo(() => {
+        if (!asset?.fileBlob) return null;
+        return URL.createObjectURL(asset.fileBlob);
+    }, [asset?.id, asset?.fileBlob]);
+
+    useEffect(() => {
+        return () => {
+            if (objectUrl) URL.revokeObjectURL(objectUrl);
+        };
+    }, [objectUrl]);
+
     const previewUrl = objectUrl
-        || (asset?.driveFileId ? `${proxyUrl}/api/drive/view/${asset.driveFileId}` : null)
+        || (asset?.assetType === 'image' && asset?.driveFileId ? `${proxyUrl}/api/drive/thumb/${asset.driveFileId}` : null)
+        || (asset?.assetType === 'video' && asset?.driveFileId ? `${proxyUrl}/api/drive/view/${asset.driveFileId}` : null)
         || asset?.thumbnailUrl
         || asset?.originalUrl
         || null;
@@ -227,7 +248,7 @@ function TaskRow({ task, activeModelId, proxyUrl }) {
                 {asset ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         {asset.assetType === 'image' && previewUrl ? (
-                            <img src={previewUrl} alt="asset thumbnail" style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '4px', border: '1px solid var(--border-color)' }} onLoad={() => { if (objectUrl) URL.revokeObjectURL(objectUrl); }} />
+                            <img src={previewUrl} alt="asset thumbnail" style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '4px', border: '1px solid var(--border-color)' }} />
                         ) : asset.assetType === 'video' && previewUrl ? (
                             <video src={previewUrl} style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '4px', border: '1px solid var(--border-color)' }} />
                         ) : (
