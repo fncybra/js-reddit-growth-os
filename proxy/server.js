@@ -265,25 +265,47 @@ app.get('/api/drive/list/:folderId', async (req, res) => {
     try {
         const { folderId } = req.params;
 
-        // 1. Get the folder metadata to find its name (this becomes our Niche Tag)
+        // 1. Get the root folder metadata to find its name (default Niche Tag)
         const folderMeta = await drive.files.get({
             fileId: folderId,
             fields: 'name'
         });
-        const folderName = folderMeta.data.name;
+        const rootTag = (folderMeta.data.name || 'general').toLowerCase();
 
-        // 2. List the files (optimized to pull 1000 at once instead of the default 100)
-        const response = await drive.files.list({
-            q: `'${folderId}' in parents and trashed = false and (mimeType contains 'image/' or mimeType contains 'video/')`,
-            fields: 'files(id, name, mimeType, webContentLink, thumbnailLink)',
-            pageSize: 1000
-        });
+        // 2. Recursively walk subfolders so teams can keep niche folders organized
+        const foldersToVisit = [{ id: folderId, tag: rootTag }];
+        const filesWithTags = [];
 
-        // 3. Map the folder name to each file so the frontend can auto-tag them
-        const filesWithTags = response.data.files.map(f => ({
-            ...f,
-            mappedTag: folderName.toLowerCase()
-        }));
+        while (foldersToVisit.length > 0) {
+            const current = foldersToVisit.shift();
+            let pageToken = undefined;
+
+            do {
+                const response = await drive.files.list({
+                    q: `'${current.id}' in parents and trashed = false`,
+                    fields: 'nextPageToken, files(id, name, mimeType, webContentLink, thumbnailLink)',
+                    pageSize: 1000,
+                    pageToken
+                });
+
+                const files = response.data.files || [];
+                for (const f of files) {
+                    if (f.mimeType === 'application/vnd.google-apps.folder') {
+                        foldersToVisit.push({ id: f.id, tag: (f.name || current.tag || 'general').toLowerCase() });
+                        continue;
+                    }
+
+                    if (f.mimeType.startsWith('image/') || f.mimeType.startsWith('video/')) {
+                        filesWithTags.push({
+                            ...f,
+                            mappedTag: current.tag || rootTag
+                        });
+                    }
+                }
+
+                pageToken = response.data.nextPageToken;
+            } while (pageToken);
+        }
 
         res.json(filesWithTags);
     } catch (error) {
