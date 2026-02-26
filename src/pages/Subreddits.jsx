@@ -7,6 +7,8 @@ export function Subreddits() {
     const subreddits = useLiveQuery(() => db.subreddits.toArray());
 
     const [selectedModelId, setSelectedModelId] = useState('');
+    const [tableModelFilter, setTableModelFilter] = useState('all');
+    const [searchText, setSearchText] = useState('');
 
     React.useEffect(() => {
         if (models && models.length > 0 && !selectedModelId) {
@@ -62,6 +64,23 @@ export function Subreddits() {
 
         setFormData({ name: '', url: '', nicheTag: '', riskLevel: 'low', contentComplexity: 'general' });
     }
+
+    const filteredSubreddits = (subreddits || [])
+        .filter(sub => tableModelFilter === 'all' || String(sub.modelId) === String(tableModelFilter))
+        .filter(sub => {
+            if (!searchText.trim()) return true;
+            const q = searchText.toLowerCase();
+            return (
+                String(sub.name || '').toLowerCase().includes(q)
+                || String(sub.nicheTag || '').toLowerCase().includes(q)
+            );
+        })
+        .sort((a, b) => {
+            const modelA = models?.find(m => m.id === a.modelId)?.name || '';
+            const modelB = models?.find(m => m.id === b.modelId)?.name || '';
+            if (modelA !== modelB) return modelA.localeCompare(modelB);
+            return (b.avg24hViews || 0) - (a.avg24hViews || 0);
+        });
 
     return (
         <>
@@ -129,8 +148,30 @@ export function Subreddits() {
                 </div>
 
                 <div className="card">
-                    <h2 style={{ fontSize: '1.1rem', marginBottom: '16px' }}>Managed Subreddits ({subreddits?.length || 0})</h2>
-                    {subreddits?.length === 0 ? (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'end', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                        <h2 style={{ fontSize: '1.1rem' }}>Managed Subreddits ({filteredSubreddits.length})</h2>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                            <select
+                                className="input-field"
+                                value={tableModelFilter}
+                                onChange={e => setTableModelFilter(e.target.value)}
+                                style={{ width: 'auto', minWidth: '160px', padding: '6px 10px' }}
+                            >
+                                <option value="all">All Models</option>
+                                {models?.map(m => (
+                                    <option key={m.id} value={String(m.id)}>{m.name}</option>
+                                ))}
+                            </select>
+                            <input
+                                className="input-field"
+                                placeholder="Search subreddit/tag"
+                                value={searchText}
+                                onChange={e => setSearchText(e.target.value)}
+                                style={{ minWidth: '220px', padding: '6px 10px' }}
+                            />
+                        </div>
+                    </div>
+                    {filteredSubreddits.length === 0 ? (
                         <div style={{ color: 'var(--text-secondary)' }}>No subreddits added.</div>
                     ) : (
                         <div className="data-table-container">
@@ -149,7 +190,7 @@ export function Subreddits() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {subreddits?.map(sub => {
+                                    {filteredSubreddits.map(sub => {
                                         const model = models?.find(m => m.id === sub.modelId);
                                         return (
                                             <tr key={sub.id}>
@@ -158,7 +199,23 @@ export function Subreddits() {
                                                         r/{sub.name}
                                                     </a>
                                                 </td>
-                                                <td>{model ? model.name : 'Unassigned'}</td>
+                                                <td>
+                                                    <select
+                                                        className="input-field"
+                                                        value={String(sub.modelId)}
+                                                        style={{ padding: '4px 8px', fontSize: '0.8rem', width: '140px' }}
+                                                        onChange={async (e) => {
+                                                            const nextModelId = Number(e.target.value);
+                                                            if (nextModelId !== sub.modelId) {
+                                                                await db.subreddits.update(sub.id, { modelId: nextModelId });
+                                                            }
+                                                        }}
+                                                    >
+                                                        {models?.map(m => (
+                                                            <option key={m.id} value={String(m.id)}>{m.name}</option>
+                                                        ))}
+                                                    </select>
+                                                </td>
                                                 <td>
                                                     <span className={`badge ${sub.status === 'proven' ? 'badge-success' :
                                                         sub.status === 'testing' ? 'badge-info' :
