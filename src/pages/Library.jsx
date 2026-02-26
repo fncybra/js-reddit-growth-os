@@ -363,11 +363,16 @@ export function Library() {
                                     if (asset.fileBlob) {
                                         objectUrl = URL.createObjectURL(asset.fileBlob);
                                     } else if (asset.driveFileId) {
-                                        // Use Google Drive's public thumbnail endpoint (no auth needed, loads fast)
-                                        objectUrl = `https://drive.google.com/thumbnail?id=${asset.driveFileId}&sz=w400`;
+                                        // Use lh3 thumbnail with forced JPEG export — works for ALL formats including HEIC
+                                        objectUrl = `https://lh3.googleusercontent.com/d/${asset.driveFileId}=w400`;
                                     } else {
                                         objectUrl = asset.thumbnailUrl || asset.originalUrl;
                                     }
+
+                                    // Fallback URL for when the primary thumbnail fails (e.g. permissions)
+                                    const fallbackUrl = asset.driveFileId
+                                        ? `https://js-reddit-proxy-production.up.railway.app/api/drive/download/${asset.driveFileId}`
+                                        : null;
 
                                     return (
                                         <div key={asset.id} style={{
@@ -398,9 +403,9 @@ export function Library() {
                                                     </div>
                                                 )}
                                                 {asset.assetType === 'image' && objectUrl ? (
-                                                    <img src={objectUrl} alt={asset.angleTag} loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onLoad={() => asset.fileBlob && URL.revokeObjectURL(objectUrl)} onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling && (e.target.nextSibling.style.display = 'flex'); }} />
+                                                    <img src={objectUrl} alt={asset.angleTag} loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onLoad={() => asset.fileBlob && URL.revokeObjectURL(objectUrl)} onError={(e) => { if (fallbackUrl && e.target.src !== fallbackUrl) { e.target.src = fallbackUrl; } else { e.target.style.display = 'none'; } }} />
                                                 ) : asset.assetType === 'video' ? (
-                                                    <video src={objectUrl} loading="lazy" preload="none" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                    <video src={fallbackUrl || objectUrl} loading="lazy" preload="none" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                                 ) : (
                                                     <div style={{ color: 'var(--text-secondary)' }}>No Preview</div>
                                                 )}
