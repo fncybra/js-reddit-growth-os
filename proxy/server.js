@@ -292,6 +292,49 @@ app.get('/api/drive/list/:folderId', async (req, res) => {
     }
 });
 
+// Google Drive: Fast thumbnail endpoint (tiny cached JPEG, ~10KB instead of 2-5MB)
+const thumbCache = new Map(); // In-memory cache for thumbnails
+app.get('/api/drive/thumb/:fileId', async (req, res) => {
+    if (!drive) return res.status(503).json({ error: "Google Drive not configured" });
+
+    try {
+        const { fileId } = req.params;
+
+        // Return cached thumbnail if available (instant)
+        if (thumbCache.has(fileId)) {
+            res.setHeader('Content-Type', 'image/jpeg');
+            res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache 24h
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            return res.send(thumbCache.get(fileId));
+        }
+
+        // Download the file and create a small thumbnail
+        const response = await drive.files.get(
+            { fileId: fileId, alt: 'media' },
+            { responseType: 'arraybuffer' }
+        );
+
+        const sharp = require('sharp');
+        const thumbBuffer = await sharp(Buffer.from(response.data))
+            .resize(300, 300, { fit: 'cover', position: 'center' })
+            .jpeg({ quality: 70 })
+            .toBuffer();
+
+        // Cache it for subsequent requests (max 500 thumbnails ~5MB RAM)
+        if (thumbCache.size < 500) {
+            thumbCache.set(fileId, thumbBuffer);
+        }
+
+        res.setHeader('Content-Type', 'image/jpeg');
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.send(thumbBuffer);
+    } catch (error) {
+        console.error("Thumb Error:", error.message);
+        res.status(500).json({ error: "Failed to generate thumbnail" });
+    }
+});
+
 // Google Drive: Download a file (with HEIC→JPEG conversion support)
 app.get('/api/drive/download/:fileId', async (req, res) => {
     if (!drive) return res.status(503).json({ error: "Google Drive not configured" });
