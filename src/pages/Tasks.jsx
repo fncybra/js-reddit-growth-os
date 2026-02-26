@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../db/db';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { DailyPlanGenerator, SubredditLifecycleService, CloudSyncService } from '../services/growthEngine';
+import { DailyPlanGenerator, SubredditLifecycleService } from '../services/growthEngine';
 import { startOfDay } from 'date-fns';
 
 export function Tasks() {
@@ -18,7 +18,7 @@ export function Tasks() {
     const todayStr = startOfDay(new Date()).toISOString();
 
     const tasks = useLiveQuery(
-        () => activeModelId ? db.tasks.where('modelId').equals(activeModelId).filter(t => t.date === todayStr).toArray() : [],
+        () => activeModelId ? db.tasks.where({ modelId: activeModelId, date: todayStr }).toArray() : [],
         [activeModelId, todayStr]
     );
 
@@ -36,47 +36,7 @@ export function Tasks() {
         }
     }
 
-    async function handleClearPending() {
-        if (!activeModelId) return;
-
-        // Query the database directly to find ANY unclosed tasks for this model, 
-        // regardless of whether they were generated today or a previous day
-        const pendingTasks = await db.tasks
-            .where('modelId')
-            .equals(activeModelId)
-            .filter(t => t.status !== 'closed')
-            .toArray();
-
-        if (pendingTasks.length === 0) {
-            alert("No pending tasks to clear.");
-            return;
-        }
-
-        if (window.confirm(`Are you sure you want to permanently delete ALL ${pendingTasks.length} pending tasks across the entire cloud?`)) {
-            try {
-                const ids = pendingTasks.map(t => t.id);
-                await db.tasks.bulkDelete(ids);
-
-                // Track down any related performances to delete from cloud
-                const perfs = await db.performances.where('taskId').anyOf(ids).toArray();
-                if (perfs.length > 0) {
-                    const perfIds = perfs.map(p => p.id);
-                    await db.performances.bulkDelete(perfIds);
-                    await CloudSyncService.deleteMultipleFromCloud('performances', perfIds);
-                }
-
-                await CloudSyncService.deleteMultipleFromCloud('tasks', ids);
-            } catch (err) {
-                console.error("Failed to clear tasks:", err);
-                alert("Failed to clear tasks: " + err.message);
-            }
-        }
-    }
-
-    if (models === undefined) {
-        return <div className="page-content" style={{ textAlign: 'center', padding: '48px', color: 'var(--text-secondary)' }}>Loading...</div>;
-    }
-    if (models.length === 0) {
+    if (!models || models.length === 0) {
         return <div className="page-content"><div className="card">Please create a Model first.</div></div>;
     }
 
@@ -100,23 +60,13 @@ export function Tasks() {
                         • Date: <strong>{new Date().toLocaleDateString()}</strong>
                     </div>
                 </div>
-                <div style={{ display: 'flex', gap: '12px' }}>
-                    <button
-                        className="btn btn-outline"
-                        style={{ color: 'var(--status-danger)', borderColor: 'var(--status-danger)' }}
-                        onClick={handleClearPending}
-                        disabled={generating || !tasks || tasks.length === 0}
-                    >
-                        Clear Pending
-                    </button>
-                    <button
-                        className="btn btn-primary"
-                        onClick={handleGenerate}
-                        disabled={generating}
-                    >
-                        {generating ? 'Generating...' : 'Generate Daily Plan'}
-                    </button>
-                </div>
+                <button
+                    className="btn btn-primary"
+                    onClick={handleGenerate}
+                    disabled={generating}
+                >
+                    {generating ? 'Generating...' : 'Generate Daily Plan'}
+                </button>
             </header>
             <div className="page-content">
                 <div className="card">
@@ -188,24 +138,6 @@ function TaskRow({ task, activeModelId }) {
         setSaved(true);
     }
 
-    async function handleDeleteTask(e) {
-        e.preventDefault();
-        e.stopPropagation();
-
-        try {
-            await db.tasks.delete(task.id);
-            await CloudSyncService.deleteFromCloud('tasks', task.id);
-
-            if (performance) {
-                await db.performances.delete(performance.id);
-                await CloudSyncService.deleteFromCloud('performances', performance.id);
-            }
-        } catch (err) {
-            console.error("Failed to delete task:", err);
-            alert("Failed to delete task: " + err.message);
-        }
-    }
-
     const objectUrl = asset?.fileBlob ? URL.createObjectURL(asset.fileBlob) : null;
 
     return (
@@ -269,9 +201,6 @@ function TaskRow({ task, activeModelId }) {
                             Save
                         </button>
                     )}
-                    <button type="button" className="btn btn-outline" style={{ padding: '4px 8px', fontSize: '0.8rem', color: 'var(--status-danger)', borderColor: 'var(--status-danger)' }} onClick={handleDeleteTask} title="Delete Task">
-                        🗑️
-                    </button>
                 </div>
             </td>
         </tr>
