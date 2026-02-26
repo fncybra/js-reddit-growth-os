@@ -344,6 +344,9 @@ export const SubredditLifecycleService = {
         const allSubs = await db.subreddits.where('modelId').equals(modelId).toArray();
 
         for (const sub of allSubs) {
+            if (sub.status === 'cooldown' && sub.cooldownUntil && new Date(sub.cooldownUntil) > new Date()) {
+                continue;
+            }
             // Match tasks by subredditId OR by subreddit name in the reddit URL
             const allModelTasks = await db.tasks.where('modelId').equals(modelId).toArray();
             const matchedTasks = allModelTasks.filter(t => {
@@ -435,7 +438,7 @@ export const SubredditGuardService = {
         return subreddit.status === 'cooldown';
     },
 
-    async recordPostingError(subredditId, reason) {
+    async recordPostingError(subredditId, reason, context = {}) {
         const sub = await db.subreddits.get(subredditId);
         if (!sub) return null;
 
@@ -446,11 +449,21 @@ export const SubredditGuardService = {
         const previousNotes = String(sub.hiddenRuleNotes || '').trim();
         const newNote = `[${new Date().toLocaleDateString()}] ${String(reason || 'VA posting error')}`;
         const notes = previousNotes ? `${newNote}\n${previousNotes}` : newNote;
+        const previousHistory = Array.isArray(sub.postErrorHistory) ? sub.postErrorHistory : [];
+        const historyEntry = {
+            at: nowIso,
+            reason: String(reason || 'VA posting error'),
+            accountHandle: context.accountHandle || '',
+            modelName: context.modelName || '',
+            taskId: context.taskId || null,
+        };
+        const postErrorHistory = [historyEntry, ...previousHistory].slice(0, 10);
 
         const patch = {
             status: 'cooldown',
             cooldownUntil,
             hiddenRuleNotes: notes.slice(0, 3000),
+            postErrorHistory,
             postErrorCount: Number(sub.postErrorCount || 0) + 1,
             lastPostErrorAt: nowIso,
         };
@@ -466,6 +479,17 @@ export const SubredditGuardService = {
         }
 
         await db.subreddits.update(sub.id, patch);
+        return { ...sub, ...patch };
+    },
+
+    async moveCooldownToTesting(subredditId) {
+        const sub = await db.subreddits.get(subredditId);
+        if (!sub) return null;
+        const patch = {
+            status: 'testing',
+            cooldownUntil: null,
+        };
+        await db.subreddits.update(subredditId, patch);
         return { ...sub, ...patch };
     }
 };

@@ -12,7 +12,8 @@ import {
   Telescope,
   Cloud,
   CloudOff,
-  BookOpen
+  BookOpen,
+  Repeat,
 } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
@@ -25,6 +26,7 @@ const navItems = [
   { path: '/accounts', label: 'Accounts', icon: Smartphone },
   { path: '/subreddits', label: 'Subreddits', icon: Globe },
   { path: '/library', label: 'Content Library', icon: ImageIcon },
+  { path: '/repurpose', label: 'Repurpose Ready', icon: Repeat },
   { path: '/tasks', label: 'Post Tasks', icon: CheckSquare },
   { path: '/sop', label: 'Training SOP', icon: BookOpen },
   { path: '/settings', label: 'Settings', icon: Settings },

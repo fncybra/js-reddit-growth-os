@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { db } from '../db/db';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { SubredditGuardService } from '../services/growthEngine';
 
 export function Subreddits() {
     const models = useLiveQuery(() => db.models.toArray());
@@ -9,6 +10,7 @@ export function Subreddits() {
     const [selectedModelId, setSelectedModelId] = useState('');
     const [tableModelFilter, setTableModelFilter] = useState('all');
     const [searchText, setSearchText] = useState('');
+    const [historySubredditId, setHistorySubredditId] = useState(null);
 
     React.useEffect(() => {
         if (models && models.length > 0 && !selectedModelId) {
@@ -279,6 +281,31 @@ export function Subreddits() {
                                                     <button
                                                         type="button"
                                                         className="btn btn-outline"
+                                                        style={{ padding: '2px 8px', fontSize: '0.8rem', marginRight: '6px' }}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setHistorySubredditId(sub.id);
+                                                        }}
+                                                    >
+                                                        🧾 Errors
+                                                    </button>
+                                                    {(sub.cooldownUntil && new Date(sub.cooldownUntil) > new Date()) && (
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-outline"
+                                                            style={{ padding: '2px 8px', fontSize: '0.8rem', marginRight: '6px', color: 'var(--status-warning)', borderColor: 'var(--status-warning)' }}
+                                                            onClick={async (e) => {
+                                                                e.stopPropagation();
+                                                                if (!window.confirm(`Move r/${sub.name} from cooldown back to testing?`)) return;
+                                                                await SubredditGuardService.moveCooldownToTesting(sub.id);
+                                                            }}
+                                                        >
+                                                            ↩ Unblock
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        type="button"
+                                                        className="btn btn-outline"
                                                         style={{ padding: '2px 8px', fontSize: '0.8rem', color: 'var(--status-danger)', borderColor: 'var(--status-danger)' }}
                                                         onClick={async (e) => {
                                                             e.stopPropagation();
@@ -303,6 +330,43 @@ export function Subreddits() {
                         </div>
                     )}
                 </div>
+
+                {historySubredditId && (
+                    <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+                        <div className="card" style={{ width: 'min(720px, 95vw)', maxHeight: '80vh', overflow: 'auto' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                                <h2 style={{ fontSize: '1.05rem' }}>Posting Error History - r/{(subreddits || []).find(s => s.id === historySubredditId)?.name}</h2>
+                                <button className="btn btn-outline" onClick={() => setHistorySubredditId(null)}>Close</button>
+                            </div>
+                            {Array.isArray((subreddits || []).find(s => s.id === historySubredditId)?.postErrorHistory) && (subreddits || []).find(s => s.id === historySubredditId)?.postErrorHistory.length > 0 ? (
+                                <div className="data-table-container">
+                                    <table className="data-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Date</th>
+                                                <th>Account</th>
+                                                <th>Model</th>
+                                                <th>Reason</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {((subreddits || []).find(s => s.id === historySubredditId)?.postErrorHistory || []).map((entry, idx) => (
+                                                <tr key={`${entry.at}-${idx}`}>
+                                                    <td>{entry.at ? new Date(entry.at).toLocaleString() : '-'}</td>
+                                                    <td>{entry.accountHandle || '-'}</td>
+                                                    <td>{entry.modelName || '-'}</td>
+                                                    <td style={{ maxWidth: '360px', whiteSpace: 'pre-wrap' }}>{entry.reason || '-'}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            ) : (
+                                <div style={{ color: 'var(--text-secondary)' }}>No recorded posting errors yet.</div>
+                            )}
+                        </div>
+                    </div>
+                )}
             </div>
         </>
     );
