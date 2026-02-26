@@ -3,6 +3,14 @@ export default {
     async fetch(request, env) {
         const url = new URL(request.url);
 
+        const isNavigation = request.method === 'GET' && !url.pathname.includes('.');
+        const isAssetPath = url.pathname.startsWith('/assets/') || url.pathname.startsWith('/favicon');
+
+        if (isNavigation && !isAssetPath) {
+            const indexUrl = new URL('/index.html', request.url);
+            return env.ASSETS.fetch(new Request(indexUrl, request));
+        }
+
         // Try to serve the asset directly
         const response = await env.ASSETS.fetch(request);
 
