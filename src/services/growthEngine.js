@@ -923,15 +923,17 @@ export const CloudSyncService = {
                     return; // SKIP — do NOT clear local data if cloud pull errored
                 }
 
+                let cloudData = data;
+
                 // Only replace local data if we actually got valid data back
-                if (data && data.length > 0) {
+                if (cloudData && cloudData.length > 0) {
                     if (table === 'assets') {
                         const localAssets = await db.assets.toArray();
                         const byId = new Map(localAssets.map(a => [a.id, a]));
                         const byDriveId = new Map(localAssets.filter(a => a.driveFileId).map(a => [a.driveFileId, a]));
                         const byModelAndName = new Map(localAssets.filter(a => a.modelId && a.fileName).map(a => [`${a.modelId}::${a.fileName}`, a]));
 
-                        data = data.map(remote => {
+                        cloudData = cloudData.map(remote => {
                             const localMatch = byId.get(remote.id)
                                 || (remote.driveFileId ? byDriveId.get(remote.driveFileId) : null)
                                 || ((remote.modelId && remote.fileName) ? byModelAndName.get(`${remote.modelId}::${remote.fileName}`) : null);
@@ -944,8 +946,8 @@ export const CloudSyncService = {
                     }
 
                     await db[table].clear();
-                    await db[table].bulkPut(data);
-                    console.log(`[CloudSync] Pulled ${data.length} rows for ${table}`);
+                    await db[table].bulkPut(cloudData);
+                    console.log(`[CloudSync] Pulled ${cloudData.length} rows for ${table}`);
                 } else {
                     console.log(`[CloudSync] Cloud table '${table}' is empty — keeping local data`);
                 }
