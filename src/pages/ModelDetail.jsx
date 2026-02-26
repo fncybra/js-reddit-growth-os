@@ -9,17 +9,65 @@ export function ModelDetail() {
     const { id } = useParams();
     const modelId = Number(id);
     const [metrics, setMetrics] = useState(null);
+    const [lookbackDays, setLookbackDays] = useState(30);
     const model = useLiveQuery(() => db.models.get(modelId), [modelId]);
 
     useEffect(() => {
         async function fetchMetrics() {
             if (modelId) {
-                const data = await AnalyticsEngine.getMetrics(modelId);
+                const data = await AnalyticsEngine.getMetrics(modelId, lookbackDays || null);
                 setMetrics(data);
             }
         }
         fetchMetrics();
-    }, [modelId]);
+    }, [modelId, lookbackDays]);
+
+    async function handleExportCsv() {
+        const tasks = await db.tasks.where('modelId').equals(modelId).toArray();
+        const cutoffIso = lookbackDays ? new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000).toISOString() : null;
+        const filteredTasks = cutoffIso ? tasks.filter(t => !t.date || t.date >= cutoffIso) : tasks;
+        const taskIds = filteredTasks.map(t => t.id);
+        const performances = taskIds.length > 0 ? await db.performances.where('taskId').anyOf(taskIds).toArray() : [];
+
+        const perfByTaskId = new Map(performances.map(p => [p.taskId, p]));
+        const subreddits = await db.subreddits.where('modelId').equals(modelId).toArray();
+        const accounts = await db.accounts.where('modelId').equals(modelId).toArray();
+        const subById = new Map(subreddits.map(s => [s.id, s]));
+        const accountById = new Map(accounts.map(a => [a.id, a]));
+
+        const rows = filteredTasks.map(t => {
+            const p = perfByTaskId.get(t.id);
+            const sub = subById.get(t.subredditId);
+            const acc = accountById.get(t.accountId);
+            return {
+                date: t.date || '',
+                account: acc?.handle || '',
+                subreddit: sub?.name || '',
+                title: (t.title || '').replace(/\"/g, '""'),
+                redditUrl: t.redditUrl || '',
+                redditPostId: t.redditPostId || '',
+                status: t.status || '',
+                upvotes: p?.views24h ?? '',
+                removed: p?.removed ? 'yes' : 'no',
+                notes: (p?.notes || '').replace(/\"/g, '""')
+            };
+        });
+
+        const header = ['date', 'account', 'subreddit', 'title', 'redditUrl', 'redditPostId', 'status', 'upvotes', 'removed', 'notes'];
+        const csvLines = [header.join(',')].concat(rows.map(r => header.map(k => `"${String(r[k] ?? '')}"`).join(',')));
+        const csv = csvLines.join('\n');
+
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const rangeLabel = lookbackDays ? `${lookbackDays}d` : 'all';
+        a.href = url;
+        a.download = `${model?.name || 'model'}-posts-${rangeLabel}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
 
     if (!model) return <div className="page-content" style={{ padding: '48px', textAlign: 'center', color: 'var(--text-secondary)' }}>Loading model...</div>;
 
@@ -44,6 +92,17 @@ export function ModelDetail() {
                     <div>
                         <h1 className="page-title">{model.name}</h1>
                     </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <select className="input-field" value={String(lookbackDays)} onChange={e => setLookbackDays(Number(e.target.value))} style={{ width: 'auto', minWidth: '120px' }}>
+                        <option value="7">Last 7 days</option>
+                        <option value="30">Last 30 days</option>
+                        <option value="90">Last 90 days</option>
+                        <option value="180">Last 180 days</option>
+                        <option value="365">Last 365 days</option>
+                        <option value="0">All time</option>
+                    </select>
+                    <button className="btn btn-outline" onClick={handleExportCsv}>Export CSV</button>
                 </div>
             </header>
 
@@ -152,7 +211,7 @@ export function ModelDetail() {
                     {/* Top Subreddits */}
                     <div className="card">
                         <h2 style={{ fontSize: '1rem', marginBottom: '12px', fontWeight: '600' }}>Top Subreddits</h2>
-                        <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginBottom: '10px' }}>Based on the last 30 days of synced posts.</div>
+                        <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginBottom: '10px' }}>Based on synced posts in the selected date range.</div>
                         <div className="data-table-container">
                             <table className="data-table">
                                 <thead>
@@ -189,7 +248,7 @@ export function ModelDetail() {
                         <h2 style={{ fontSize: '1rem', marginBottom: '12px', fontWeight: '600', color: worstSubreddits?.length > 0 ? 'var(--status-danger)' : 'inherit' }}>
                             ⛔ Do Not Post
                         </h2>
-                        <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginBottom: '10px' }}>Only shown when a subreddit has at least 3 tests and 40%+ removals in the last 30 days.</div>
+                        <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginBottom: '10px' }}>Only shown when a subreddit has at least 3 tests and 40%+ removals in the selected date range.</div>
                         <div className="data-table-container">
                             <table className="data-table">
                                 <thead>

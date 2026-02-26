@@ -655,12 +655,16 @@ export const DailyPlanGenerator = {
 };
 
 export const AnalyticsEngine = {
-    async getSubredditPerformanceRows(modelId, lookbackDays = 30) {
-        const cutoffIso = subDays(new Date(), lookbackDays).toISOString();
-        const subreddits = await db.subreddits.where('modelId').equals(modelId).toArray();
-        const tasks = await db.tasks.where('modelId').equals(modelId).toArray();
+    async _getModelTasksByWindow(modelId, lookbackDays = null) {
+        const allTasks = await db.tasks.where('modelId').equals(modelId).toArray();
+        if (!lookbackDays) return allTasks;
+        const cutoffIso = subDays(new Date(), Number(lookbackDays)).toISOString();
+        return allTasks.filter(t => !t.date || t.date >= cutoffIso);
+    },
 
-        const recentTasks = tasks.filter(t => !t.date || t.date >= cutoffIso);
+    async getSubredditPerformanceRows(modelId, lookbackDays = 30) {
+        const subreddits = await db.subreddits.where('modelId').equals(modelId).toArray();
+        const recentTasks = await this._getModelTasksByWindow(modelId, lookbackDays);
         const taskIds = recentTasks.map(t => t.id);
         const performances = taskIds.length > 0
             ? await db.performances.where('taskId').anyOf(taskIds).toArray()
@@ -700,9 +704,9 @@ export const AnalyticsEngine = {
         });
     },
 
-    async getMetrics(modelId) {
+    async getMetrics(modelId, lookbackDays = null) {
         // Basic implementation for MVP metrics
-        const allTasks = await db.tasks.where('modelId').equals(modelId).toArray();
+        const allTasks = await this._getModelTasksByWindow(modelId, lookbackDays);
         const taskIds = allTasks.map(t => t.id);
         const performances = taskIds.length > 0
             ? await db.performances.where('taskId').anyOf(taskIds).toArray()
@@ -733,22 +737,28 @@ export const AnalyticsEngine = {
             tasksCompleted: performances.length,
             tasksTotal: allTasks.length,
             accountHealth: await this.getAccountMetrics(modelId),
-            nichePerformance: await this.getNichePerformance(modelId),
-            topSubreddits: await this.getSubredditRankings(modelId),
-            worstSubreddits: await this.getWorstSubreddits(modelId),
-            accountRankings: await this.getAccountRankings(modelId)
+            nichePerformance: await this.getNichePerformance(modelId, lookbackDays),
+            topSubreddits: await this.getSubredditRankings(modelId, lookbackDays || 30),
+            worstSubreddits: await this.getWorstSubreddits(modelId, lookbackDays || 30),
+            accountRankings: await this.getAccountRankings(modelId, lookbackDays)
         };
     },
 
-    async getNichePerformance(modelId) {
+    async getNichePerformance(modelId, lookbackDays = null) {
         const assets = await db.assets.where('modelId').equals(modelId).toArray();
         const nicheStats = {};
+        const filteredTasks = await this._getModelTasksByWindow(modelId, lookbackDays);
+        const taskByAssetId = new Map();
+        filteredTasks.forEach(t => {
+            if (!taskByAssetId.has(t.assetId)) taskByAssetId.set(t.assetId, []);
+            taskByAssetId.get(t.assetId).push(t);
+        });
 
         for (const asset of assets) {
             const tag = asset.angleTag || 'untagged';
             if (!nicheStats[tag]) nicheStats[tag] = { views: 0, posts: 0, removals: 0 };
 
-            const tasks = await db.tasks.where('assetId').equals(asset.id).toArray();
+            const tasks = taskByAssetId.get(asset.id) || [];
             for (const t of tasks) {
                 const perf = await db.performances.where('taskId').equals(t.id).first();
                 if (perf) {
@@ -767,16 +777,16 @@ export const AnalyticsEngine = {
         })).sort((a, b) => b.totalViews - a.totalViews);
     },
 
-    async getSubredditRankings(modelId) {
-        const rankings = await this.getSubredditPerformanceRows(modelId, 30);
+    async getSubredditRankings(modelId, lookbackDays = 30) {
+        const rankings = await this.getSubredditPerformanceRows(modelId, lookbackDays);
         rankings.sort((a, b) => b.avgViews - a.avgViews);
 
         return rankings.slice(0, 5); // Top 5
     },
 
-    async getWorstSubreddits(modelId) {
+    async getWorstSubreddits(modelId, lookbackDays = 30) {
         // Manager-safe logic: do-not-post only when sample size is meaningful in last 30 days
-        const rows = await this.getSubredditPerformanceRows(modelId, 30);
+        const rows = await this.getSubredditPerformanceRows(modelId, lookbackDays);
         const badSubs = rows
             .filter(s => s.totalTests >= 3 && s.removalPct >= 40)
             .map(s => ({
@@ -792,16 +802,14 @@ export const AnalyticsEngine = {
         return badSubs.slice(0, 10);
     },
 
-    async getAccountRankings(modelId) {
+    async getAccountRankings(modelId, lookbackDays = null) {
         const accounts = await db.accounts.where('modelId').equals(modelId).toArray();
+        const filteredTasks = await this._getModelTasksByWindow(modelId, lookbackDays);
         const results = [];
 
         for (const acc of accounts) {
             // Find tasks posted by this account
-            const accountTasks = await db.tasks
-                .where('modelId').equals(modelId)
-                .filter(t => t.accountId === acc.id && t.status === 'closed')
-                .toArray();
+            const accountTasks = filteredTasks.filter(t => t.accountId === acc.id && t.status === 'closed');
 
             let totalUps = 0;
             let removedCount = 0;
