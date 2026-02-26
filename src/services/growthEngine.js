@@ -360,7 +360,14 @@ export const DailyPlanGenerator = {
             console.log('DailyPlanGenerator: Auto-syncing from Google Drive folder', model.driveFolderId);
             try {
                 const proxyUrl = await SettingsService.getProxyUrl();
-                const res = await fetch(`${proxyUrl}/api/drive/list/${model.driveFolderId}`);
+
+                let cleanFolderId = model.driveFolderId;
+                if (cleanFolderId.includes('drive.google.com')) {
+                    const match = cleanFolderId.match(/folders\/([a-zA-Z0-9_-]+)/);
+                    if (match) cleanFolderId = match[1];
+                }
+
+                const res = await fetch(`${proxyUrl}/api/drive/list/${cleanFolderId}`);
                 if (res.ok) {
                     const driveFiles = await res.json();
                     const assetsToAdd = [];
