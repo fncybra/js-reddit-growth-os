@@ -235,6 +235,9 @@ export function Settings() {
                                 <small style={{ color: 'var(--text-secondary)' }}>The URL of your deployed Node.js proxy server.</small>
                             </div>
                             <button onClick={handleSave} className="btn btn-outline" style={{ width: '100%', marginTop: '8px' }}>Save Engine URL</button>
+                            <small style={{ color: 'var(--text-secondary)', display: 'block', marginTop: '10px' }}>
+                                Railway env vars for scraper IP control: <code>PROXY_POOL_API_URL</code> (or <code>SMARTPROXY_API_URL</code>) and optional <code>REDDIT_PROXY_POOL</code>.
+                            </small>
                         </div>
 
                         <div className="card">
