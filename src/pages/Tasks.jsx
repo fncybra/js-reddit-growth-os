@@ -164,6 +164,8 @@ export function Tasks() {
 function TaskRow({ task, activeModelId, proxyUrl }) {
     const [outcome, setOutcome] = useState({ views: '', removed: false });
     const [saved, setSaved] = useState(false);
+    const [mediaFailed, setMediaFailed] = useState(false);
+    const [heicPreviewUrl, setHeicPreviewUrl] = useState('');
 
     // Load related data
     const subreddit = useLiveQuery(() => db.subreddits.get(task.subredditId), [task.subredditId]);
@@ -225,13 +227,47 @@ function TaskRow({ task, activeModelId, proxyUrl }) {
         return URL.createObjectURL(asset.fileBlob);
     }, [asset?.id, asset?.fileBlob]);
 
+    const isHeic = !!asset?.fileName && /\.hei[cf]$/i.test(asset.fileName);
+
     useEffect(() => {
         return () => {
             if (objectUrl) URL.revokeObjectURL(objectUrl);
         };
     }, [objectUrl]);
 
+    useEffect(() => {
+        let cancelled = false;
+        let generatedUrl = '';
+
+        async function prepareHeicPreview() {
+            setHeicPreviewUrl('');
+            if (!asset?.driveFileId || !isHeic) return;
+
+            try {
+                const response = await fetch(`${proxyUrl}/api/drive/download/${asset.driveFileId}?convert=true`);
+                if (!response.ok) return;
+                const blob = await response.blob();
+                generatedUrl = URL.createObjectURL(blob);
+                if (!cancelled) setHeicPreviewUrl(generatedUrl);
+            } catch {
+                // leave fallback chain in place
+            }
+        }
+
+        prepareHeicPreview();
+
+        return () => {
+            cancelled = true;
+            if (generatedUrl) URL.revokeObjectURL(generatedUrl);
+        };
+    }, [asset?.id, asset?.driveFileId, isHeic, proxyUrl]);
+
+    useEffect(() => {
+        setMediaFailed(false);
+    }, [task.id, objectUrl, heicPreviewUrl, asset?.driveFileId, asset?.thumbnailUrl, asset?.originalUrl]);
+
     const previewUrl = objectUrl
+        || (isHeic ? heicPreviewUrl : null)
         || (asset?.assetType === 'image' && asset?.driveFileId ? `${proxyUrl}/api/drive/thumb/${asset.driveFileId}` : null)
         || (asset?.assetType === 'video' && asset?.driveFileId ? `${proxyUrl}/api/drive/view/${asset.driveFileId}` : null)
         || asset?.thumbnailUrl
@@ -247,10 +283,10 @@ function TaskRow({ task, activeModelId, proxyUrl }) {
             <td style={{ verticalAlign: 'middle', width: '200px' }}>
                 {asset ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        {asset.assetType === 'image' && previewUrl ? (
-                            <img src={previewUrl} alt="asset thumbnail" style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '4px', border: '1px solid var(--border-color)' }} />
-                        ) : asset.assetType === 'video' && previewUrl ? (
-                            <video src={previewUrl} style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '4px', border: '1px solid var(--border-color)' }} />
+                        {asset.assetType === 'image' && previewUrl && !mediaFailed ? (
+                            <img src={previewUrl} alt="asset thumbnail" style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '4px', border: '1px solid var(--border-color)' }} onError={() => setMediaFailed(true)} />
+                        ) : asset.assetType === 'video' && previewUrl && !mediaFailed ? (
+                            <video src={previewUrl} style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '4px', border: '1px solid var(--border-color)' }} onError={() => setMediaFailed(true)} />
                         ) : (
                             <div style={{ width: '60px', height: '60px', backgroundColor: 'var(--surface-color)', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>No File</div>
                         )}
