@@ -176,27 +176,28 @@ Print ONLY the single final title as plain text. No quotes. No numbering. No ext
 
                     const aiEndpoint = aiBaseUrl.endsWith('/') ? aiBaseUrl.slice(0, -1) : aiBaseUrl;
 
-                    const openai = new OpenAI({
-                        baseURL: aiEndpoint,
-                        apiKey: activeKey,
-                        dangerouslyAllowBrowser: true, // Required for client-side queries
-                        defaultHeaders: {
-                            'HTTP-Referer': 'https://js-reddit-growth-os.vercel.app/', // Required by OR
-                            'X-Title': 'js-reddit-growth-os'
-                        }
+                    const response = await fetch(`${proxyUrl}/api/ai/generate`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            aiBaseUrl: aiEndpoint,
+                            apiKey: activeKey,
+                            model: activeModel,
+                            messages: [{ role: "user", content: prompt }],
+                            temperature: 0.9,
+                            presence_penalty: 0.4
+                        })
                     });
 
-                    const response = await openai.chat.completions.create({
-                        model: activeModel,
-                        messages: [
-                            { role: "user", content: prompt }
-                        ],
-                        temperature: 0.9,     // High variance so words aren't repeated globally
-                        presence_penalty: 0.4 // Penalizes the AI for re-using the exact same vocabulary tokens
-                    });
+                    if (!response.ok) {
+                        const errData = await response.json();
+                        throw new Error(errData.details || errData.error || "Failed proxy AI generation");
+                    }
 
-                    let finalTitle = response.choices && response.choices[0] && response.choices[0].message
-                        ? response.choices[0].message.content.trim()
+                    const data = await response.json();
+
+                    let finalTitle = data.choices && data.choices[0] && data.choices[0].message
+                        ? data.choices[0].message.content.trim()
                         : "Generated Title Failed";
 
                     finalTitle = finalTitle.replace(/^"/, '').replace(/"$/, '');

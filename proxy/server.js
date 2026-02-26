@@ -343,7 +343,7 @@ app.post('/api/drive/move', async (req, res) => {
 // Proxy endpoint for AI Generation (Bypasses Browser CORS / Preflight blocks)
 app.post('/api/ai/generate', async (req, res) => {
     try {
-        const { aiBaseUrl, apiKey, model, messages } = req.body;
+        const { aiBaseUrl, apiKey, model, messages, temperature, presence_penalty } = req.body;
 
         if (!apiKey) {
             return res.status(400).json({ error: "No API Key provided to proxy." });
@@ -358,7 +358,9 @@ app.post('/api/ai/generate', async (req, res) => {
 
         const response = await axios.post(completetionsUrl, {
             model: model || "mistralai/mixtral-8x7b-instruct",
-            messages: messages
+            messages: messages,
+            ...(temperature !== undefined && { temperature }),
+            ...(presence_penalty !== undefined && { presence_penalty })
         }, {
             headers: {
                 'Authorization': `Bearer ${apiKey}`,
