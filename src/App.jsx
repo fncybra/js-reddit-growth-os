@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { Dashboard } from './pages/Dashboard';
 import { Models } from './pages/Models';
@@ -55,6 +55,7 @@ class ErrorBoundary extends React.Component {
 function App() {
   return (
     <BrowserRouter>
+      <RoutePersistence />
       <CloudSyncHandler />
       <ErrorBoundary>
         <Routes>
@@ -79,6 +80,32 @@ function App() {
       </ErrorBoundary>
     </BrowserRouter>
   );
+}
+
+function RoutePersistence() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  React.useEffect(() => {
+    const current = `${location.pathname}${location.search}${location.hash}`;
+    sessionStorage.setItem('lastRoute', current);
+  }, [location.pathname, location.search, location.hash]);
+
+  React.useEffect(() => {
+    try {
+      const navEntry = performance.getEntriesByType('navigation')?.[0];
+      const isReload = navEntry?.type === 'reload';
+      const lastRoute = sessionStorage.getItem('lastRoute');
+
+      if (isReload && location.pathname === '/' && lastRoute && lastRoute !== '/') {
+        navigate(lastRoute, { replace: true });
+      }
+    } catch (_err) {
+      // no-op
+    }
+  }, [location.pathname, navigate]);
+
+  return null;
 }
 
 export default App;
