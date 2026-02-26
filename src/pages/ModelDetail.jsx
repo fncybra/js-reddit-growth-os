@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../db/db';
-import { AnalyticsEngine } from '../services/growthEngine';
+import { AnalyticsEngine, SettingsService } from '../services/growthEngine';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, ArrowUp, Shield, AlertTriangle, CheckCircle, XCircle, User } from 'lucide-react';
@@ -10,6 +10,7 @@ export function ModelDetail() {
     const modelId = Number(id);
     const [metrics, setMetrics] = useState(null);
     const [lookbackDays, setLookbackDays] = useState(30);
+    const [proxyUrl, setProxyUrl] = useState('https://js-reddit-proxy-production.up.railway.app');
     const model = useLiveQuery(() => db.models.get(modelId), [modelId]);
     const analyticsTrigger = useLiveQuery(async () => {
         if (!modelId) return '';
@@ -30,6 +31,14 @@ export function ModelDetail() {
         }
         fetchMetrics();
     }, [modelId, lookbackDays, analyticsTrigger]);
+
+    useEffect(() => {
+        async function loadProxy() {
+            const settings = await SettingsService.getSettings();
+            if (settings?.proxyUrl) setProxyUrl(settings.proxyUrl);
+        }
+        loadProxy();
+    }, []);
 
     async function handleExportCsv() {
         const tasks = await db.tasks.where('modelId').equals(modelId).toArray();
@@ -184,6 +193,7 @@ export function ModelDetail() {
                             <table className="data-table">
                                 <thead>
                                     <tr>
+                                        <th>Preview</th>
                                         <th>Asset</th>
                                         <th>Type</th>
                                         <th>Tag</th>
@@ -196,6 +206,23 @@ export function ModelDetail() {
                                 <tbody>
                                     {topAssets.map(asset => (
                                         <tr key={asset.assetId}>
+                                            <td style={{ width: '56px' }}>
+                                                {asset.driveFileId ? (
+                                                    <img
+                                                        src={`${proxyUrl}/api/drive/thumb/${asset.driveFileId}`}
+                                                        alt={asset.fileName}
+                                                        style={{ width: '40px', height: '40px', borderRadius: '6px', objectFit: 'cover', border: '1px solid var(--border-color)' }}
+                                                    />
+                                                ) : asset.thumbnailUrl ? (
+                                                    <img
+                                                        src={asset.thumbnailUrl}
+                                                        alt={asset.fileName}
+                                                        style={{ width: '40px', height: '40px', borderRadius: '6px', objectFit: 'cover', border: '1px solid var(--border-color)' }}
+                                                    />
+                                                ) : (
+                                                    <div style={{ width: '40px', height: '40px', borderRadius: '6px', backgroundColor: 'var(--surface-color)', border: '1px solid var(--border-color)' }} />
+                                                )}
+                                            </td>
                                             <td style={{ maxWidth: '280px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={asset.fileName}>{asset.fileName}</td>
                                             <td>{asset.assetType}</td>
                                             <td><span className="badge badge-info">{asset.angleTag}</span></td>

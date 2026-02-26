@@ -886,6 +886,8 @@ export const AnalyticsEngine = {
                 fileName: asset.fileName || `${asset.assetType || 'asset'}-${asset.id}`,
                 assetType: asset.assetType || 'unknown',
                 angleTag: asset.angleTag || 'general',
+                driveFileId: asset.driveFileId || '',
+                thumbnailUrl: asset.thumbnailUrl || '',
                 posts: linkedTasks.length,
                 syncedPosts,
                 totalViews,
