@@ -1,7 +1,146 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../db/db';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { startOfDay } from 'date-fns';
+
+const vaResponsiveCss = `
+.va-root {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+}
+
+.va-main {
+    padding: 24px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.va-header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.va-auth-card {
+    width: min(360px, 92vw);
+}
+
+.va-pin-input {
+    font-size: 1.5rem;
+    letter-spacing: 8px;
+}
+
+.va-task-body {
+    padding: 24px;
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.va-task-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 24px;
+}
+
+.va-meta-grid {
+    display: grid;
+    grid-template-columns: 110px 1fr;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.va-rules-panel {
+    border-left: 1px solid #2d313a;
+    padding-left: 24px;
+}
+
+.va-actions-row {
+    display: flex;
+    gap: 12px;
+    margin-top: 24px;
+    border-top: 1px solid #2d313a;
+    padding-top: 24px;
+}
+
+@media (max-width: 920px) {
+    .va-header-wrap {
+        padding: 14px;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+    }
+
+    .va-header-left select {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .va-header-stats {
+        justify-content: space-between;
+        gap: 8px;
+    }
+
+    .va-main {
+        padding: 14px;
+    }
+
+    .va-card-container {
+        flex-direction: column;
+    }
+
+    .va-media-sidebar {
+        width: 100%;
+        max-width: none;
+        border-right: none;
+        border-bottom: 1px solid #2d313a;
+        margin: 0;
+    }
+
+    .va-media-preview {
+        height: 240px;
+    }
+
+    .va-task-body {
+        padding: 14px;
+    }
+
+    .va-task-grid {
+        grid-template-columns: 1fr;
+        gap: 16px;
+    }
+
+    .va-meta-grid {
+        grid-template-columns: 1fr;
+        gap: 4px;
+    }
+
+    .va-rules-panel {
+        border-left: none;
+        border-top: 1px solid #2d313a;
+        padding-top: 14px;
+        padding-left: 0;
+    }
+
+    .va-actions-row {
+        flex-direction: column;
+        margin-top: 16px;
+        padding-top: 16px;
+    }
+
+    .va-actions-row button {
+        width: 100%;
+        font-size: 1rem;
+        padding: 14px;
+    }
+
+    .va-pin-input {
+        font-size: 1.35rem;
+        letter-spacing: 6px;
+    }
+}
+`;
 
 export function VADashboard() {
     const [selectedModelId, setSelectedModelId] = useState('');
@@ -116,8 +255,9 @@ export function VADashboard() {
 
     if (!authenticated) {
         return (
-            <div style={{ minHeight: '100vh', backgroundColor: '#0f1115', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#e5e7eb', fontFamily: 'sans-serif' }}>
-                <div style={{ backgroundColor: '#1a1d24', padding: '40px', borderRadius: '12px', border: '1px solid #2d313a', width: '320px' }}>
+            <div className="va-root" style={{ minHeight: '100vh', backgroundColor: '#0f1115', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#e5e7eb', fontFamily: 'sans-serif' }}>
+                <style>{vaResponsiveCss}</style>
+                <div className="va-auth-card" style={{ backgroundColor: '#1a1d24', padding: '40px', borderRadius: '12px', border: '1px solid #2d313a' }}>
                     <div style={{ textAlign: 'center', marginBottom: '24px' }}>
                         <div style={{ fontSize: '2rem', marginBottom: '8px' }}>🔐</div>
                         <h2 style={{ fontSize: '1.2rem' }}>VA Terminal Access</h2>
@@ -125,8 +265,8 @@ export function VADashboard() {
                     </div>
                     <input
                         type="password"
-                        className="input-field"
-                        style={{ fontSize: '1.5rem', textAlign: 'center', letterSpacing: '8px', marginBottom: '16px', backgroundColor: '#0f1115' }}
+                        className="input-field va-pin-input"
+                        style={{ textAlign: 'center', marginBottom: '16px', backgroundColor: '#0f1115' }}
                         maxLength={4}
                         value={pinInput}
                         onChange={e => setPinInput(e.target.value)}
@@ -161,9 +301,10 @@ export function VADashboard() {
     }
 
     return (
-        <div style={{ minHeight: '100vh', backgroundColor: '#0f1115', color: '#e5e7eb', fontFamily: 'sans-serif' }}>
+        <div className="va-root" style={{ minHeight: '100vh', backgroundColor: '#0f1115', color: '#e5e7eb', fontFamily: 'sans-serif' }}>
+            <style>{vaResponsiveCss}</style>
             <header className="va-header-wrap" style={{ backgroundColor: '#1a1d24', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #2d313a' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <div className="va-header-left">
                     <div style={{ fontWeight: 'bold', fontSize: '1.2rem', color: '#6366f1' }}>VA Operations Terminal</div>
                     {syncing && <span style={{ color: '#fbbf24', fontSize: '0.8rem' }}>☁️ Syncing...</span>}
                     <select
@@ -217,7 +358,7 @@ export function VADashboard() {
                 </div>
             </header>
 
-            <main style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
+            <main className="va-main">
                 <h2 style={{ fontSize: '1.5rem', marginBottom: '8px' }}>Today's Queue</h2>
                 <p style={{ color: '#9ca3af', marginBottom: '24px' }}>Execute the following posts linearly. Mark them done as you go.</p>
 
@@ -437,7 +578,7 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
         <div className="va-card-container" style={{ backgroundColor: '#1a1d24', border: '1px solid #2d313a', borderRadius: '8px', overflow: 'hidden', display: 'flex', flexWrap: 'wrap' }}>
             {/* Media Area */}
             <div className="va-media-sidebar" style={{ width: '100%', maxWidth: '280px', backgroundColor: '#000', display: 'flex', flexDirection: 'column', flexShrink: 0, position: 'relative', margin: '0 auto', borderRight: '1px solid #2d313a' }}>
-                <div style={{ height: '280px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div className="va-media-preview" style={{ height: '280px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     {asset ? (
                         asset.assetType === 'image' && objectUrl ? (
                             <img src={objectUrl} alt="task media" style={{ width: '100%', height: '100%', objectFit: 'contain' }} onLoad={() => URL.revokeObjectURL(objectUrl)} />
@@ -509,12 +650,12 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
             </div>
 
             {/* Details & Actions Area */}
-            <div style={{ padding: '24px', flex: 1, minWidth: '300px', display: 'flex', flexDirection: 'column' }}>
+            <div className="va-task-body">
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', flex: 1 }}>
                     {/* Posting Instructions */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '24px' }}>
+                    <div className="va-task-grid">
                         <div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: '8px', marginBottom: '16px' }}>
+                            <div className="va-meta-grid">
                                 <div style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Account:</div>
                                 <div style={{ fontWeight: 'bold', fontSize: '1.2rem', color: '#6366f1' }}>u/{account?.handle}</div>
 
@@ -557,7 +698,7 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
                         </div>
 
                         {/* Rules & Compliance */}
-                        <div style={{ borderLeft: '1px solid #2d313a', paddingLeft: '24px', borderTop: '1px solid #2d313a', paddingTop: '24px', borderLeftColor: 'transparent', marginLeft: '-24px', paddingLeft: '24px' }}>
+                        <div className="va-rules-panel">
                             <div style={{ marginBottom: '16px' }}>
                                 <div style={{ color: '#9ca3af', fontSize: '0.85rem', marginBottom: '8px' }}>REQUIRED FLAIR:</div>
                                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -587,7 +728,7 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
                     </div>
 
                     {/* Final Actions */}
-                    <div style={{ display: 'flex', gap: '12px', marginTop: '24px', borderTop: '1px solid #2d313a', paddingTop: '24px' }}>
+                    <div className="va-actions-row">
                         <button
                             onClick={handleMarkPosted}
                             disabled={!redditUrl || cooldownActive}
