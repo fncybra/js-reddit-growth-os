@@ -675,6 +675,39 @@ export const DailyPlanGenerator = {
 };
 
 export const AnalyticsEngine = {
+    getManagerSignals({ tasksCompleted, avgViewsPerPost, removalRatePct, worstSubreddits, testingSubs, provenSubs }) {
+        const confidence = tasksCompleted >= 15 ? 'high' : tasksCompleted >= 5 ? 'medium' : 'low';
+        const removalPenalty = Math.min(40, removalRatePct * 1.2);
+        const scaleScore = Math.min(40, avgViewsPerPost * 0.8);
+        const provenBonus = Math.min(12, provenSubs * 2);
+        const testingBonus = testingSubs > 0 ? 8 : 0;
+        const dangerPenalty = Math.min(20, (worstSubreddits?.length || 0) * 8);
+
+        const healthScore = Math.max(0, Math.min(100, Math.round(40 + scaleScore + provenBonus + testingBonus - removalPenalty - dangerPenalty)));
+
+        let status = 'healthy';
+        if (healthScore < 45) status = 'critical';
+        else if (healthScore < 70) status = 'watch';
+
+        let primaryAction = 'Keep scaling proven subreddits and maintain posting quality.';
+        if (confidence === 'low') {
+            primaryAction = 'Low sample size: run more tests before changing strategy.';
+        } else if (removalRatePct >= 25) {
+            primaryAction = 'High removals: pause risky subs and tighten title/rules compliance.';
+        } else if (worstSubreddits?.length > 0) {
+            primaryAction = 'Review flagged subreddits and reduce exposure until removals drop.';
+        } else if (testingSubs === 0) {
+            primaryAction = 'No testing pipeline: add fresh subreddits to avoid growth plateaus.';
+        }
+
+        return {
+            healthScore,
+            confidence,
+            status,
+            primaryAction
+        };
+    },
+
     async _getModelTasksByWindow(modelId, lookbackDays = null) {
         const allTasks = await db.tasks.where('modelId').equals(modelId).toArray();
         if (!lookbackDays) return allTasks;
@@ -747,6 +780,19 @@ export const AnalyticsEngine = {
         const provenSubs = await db.subreddits.where('modelId').equals(modelId).filter(s => s.status === 'proven').count();
         const testingSubs = await db.subreddits.where('modelId').equals(modelId).filter(s => s.status === 'testing').count();
 
+        const topSubreddits = await this.getSubredditRankings(modelId, lookbackDays || 30);
+        const worstSubreddits = await this.getWorstSubreddits(modelId, lookbackDays || 30);
+        const accountRankings = await this.getAccountRankings(modelId, lookbackDays);
+
+        const managerSignals = this.getManagerSignals({
+            tasksCompleted: performances.length,
+            avgViewsPerPost: Number(avgViewsPerPost),
+            removalRatePct: Number(removalRatePct),
+            worstSubreddits,
+            testingSubs,
+            provenSubs,
+        });
+
         return {
             totalViews,
             avgViewsPerPost: Number(avgViewsPerPost),
@@ -758,9 +804,10 @@ export const AnalyticsEngine = {
             tasksTotal: allTasks.length,
             accountHealth: await this.getAccountMetrics(modelId),
             nichePerformance: await this.getNichePerformance(modelId, lookbackDays),
-            topSubreddits: await this.getSubredditRankings(modelId, lookbackDays || 30),
-            worstSubreddits: await this.getWorstSubreddits(modelId, lookbackDays || 30),
-            accountRankings: await this.getAccountRankings(modelId, lookbackDays)
+            topSubreddits,
+            worstSubreddits,
+            accountRankings,
+            managerSignals
         };
     },
 

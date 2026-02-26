@@ -209,6 +209,7 @@ export function Dashboard() {
                             <tbody>
                                 {leaderboard.map((model) => {
                                     const m = model.metrics;
+                                    const ms = m.managerSignals || { status: 'watch', healthScore: 0 };
                                     return (
                                         <tr key={model.id}>
                                             <td style={{ fontWeight: '600' }}>{model.name}</td>
@@ -220,12 +221,13 @@ export function Dashboard() {
                                                 </span>
                                             </td>
                                             <td>
-                                                {m.removalRatePct > 25
+                                                {ms.status === 'critical'
                                                     ? <span className="badge badge-danger" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><XCircle size={12} /> Risky</span>
-                                                    : m.totalViews > 0
+                                                    : ms.status === 'healthy'
                                                         ? <span className="badge badge-success" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><CheckCircle size={12} /> Healthy</span>
-                                                        : <span className="badge badge-info">New</span>
+                                                        : <span className="badge badge-warning">Watch</span>
                                                 }
+                                                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '4px' }}>Score {ms.healthScore}</div>
                                             </td>
                                             <td>
                                                 <Link to={`/model/${model.id}`} className="btn btn-outline" style={{ padding: '4px 10px', fontSize: '0.8rem' }}>

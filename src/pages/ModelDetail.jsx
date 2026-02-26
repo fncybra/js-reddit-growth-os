@@ -89,6 +89,7 @@ export function ModelDetail() {
         topSubreddits = [],
         worstSubreddits = [],
         accountRankings = [],
+        managerSignals = null,
     } = metrics || {};
 
     return (
@@ -116,6 +117,37 @@ export function ModelDetail() {
             </header>
 
             <div className="page-content">
+
+                {/* Manager Scoreboard */}
+                <div className="card" style={{ marginBottom: '16px', borderColor: managerSignals?.status === 'critical' ? 'var(--status-danger)' : managerSignals?.status === 'watch' ? 'var(--status-warning)' : 'var(--status-success)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                        <h2 style={{ fontSize: '1rem', fontWeight: '600' }}>Manager Scoreboard</h2>
+                        <span className={`badge ${managerSignals?.status === 'critical' ? 'badge-danger' : managerSignals?.status === 'watch' ? 'badge-warning' : 'badge-success'}`}>
+                            {managerSignals?.status === 'critical' ? 'Critical' : managerSignals?.status === 'watch' ? 'Watch' : 'Healthy'}
+                        </span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '12px' }}>
+                        <div style={{ backgroundColor: 'var(--surface-color)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '10px' }}>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>Health Score</div>
+                            <div style={{ fontSize: '1.3rem', fontWeight: '700' }}>{managerSignals?.healthScore ?? 0}</div>
+                        </div>
+                        <div style={{ backgroundColor: 'var(--surface-color)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '10px' }}>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>Confidence</div>
+                            <div style={{ fontSize: '1rem', fontWeight: '600', textTransform: 'capitalize' }}>{managerSignals?.confidence || 'low'}</div>
+                        </div>
+                        <div style={{ backgroundColor: 'var(--surface-color)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '10px' }}>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>Posts Sampled</div>
+                            <div style={{ fontSize: '1rem', fontWeight: '600' }}>{metrics?.tasksCompleted || 0}</div>
+                        </div>
+                        <div style={{ backgroundColor: 'var(--surface-color)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '10px' }}>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>Flagged Subs</div>
+                            <div style={{ fontSize: '1rem', fontWeight: '600' }}>{worstSubreddits?.length || 0}</div>
+                        </div>
+                    </div>
+                    <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                        <strong style={{ color: 'var(--text-primary)' }}>Next action:</strong> {managerSignals?.primaryAction || 'Gather more data and run sync.'}
+                    </div>
+                </div>
 
                 {/* Model Summary - 4 cards */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '24px' }}>
