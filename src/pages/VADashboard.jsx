@@ -560,7 +560,11 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
             await db.performances.add(perfInsert);
 
             try {
-                await SubredditGuardService.recordPostingError(task.subredditId, reason);
+                await SubredditGuardService.recordPostingError(task.subredditId, reason, {
+                    accountHandle: account?.handle || '',
+                    modelName: model?.name || '',
+                    taskId: task.id,
+                });
             } catch (guardErr) {
                 console.warn('[VA] Failed to store subreddit posting guard:', guardErr?.message || guardErr);
             }
