@@ -2,13 +2,17 @@
 export default {
     async fetch(request, env) {
         const url = new URL(request.url);
+        const workerVersion = 'spa-fallback-v3';
 
         const isNavigation = request.method === 'GET' && !url.pathname.includes('.');
         const isAssetPath = url.pathname.startsWith('/assets/') || url.pathname.startsWith('/favicon');
 
         if (isNavigation && !isAssetPath) {
             const rootUrl = new URL('/', request.url);
-            return env.ASSETS.fetch(new Request(rootUrl, request));
+            const navResponse = await env.ASSETS.fetch(new Request(rootUrl, request));
+            const taggedResponse = new Response(navResponse.body, navResponse);
+            taggedResponse.headers.set('x-growthos-worker', workerVersion);
+            return taggedResponse;
         }
 
         // Try to serve the asset directly
@@ -20,6 +24,8 @@ export default {
             return env.ASSETS.fetch(new Request(indexUrl, request));
         }
 
-        return response;
+        const taggedResponse = new Response(response.body, response);
+        taggedResponse.headers.set('x-growthos-worker', workerVersion);
+        return taggedResponse;
     }
 };
