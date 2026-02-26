@@ -292,19 +292,42 @@ app.get('/api/drive/list/:folderId', async (req, res) => {
     }
 });
 
-// Google Drive: Download a file (for HEIC conversions on frontend)
+// Google Drive: Download a file (with HEIC→JPEG conversion support)
 app.get('/api/drive/download/:fileId', async (req, res) => {
     if (!drive) return res.status(503).json({ error: "Google Drive not configured" });
 
     try {
         const { fileId } = req.params;
+        const shouldConvert = req.query.convert === 'true';
+
         const response = await drive.files.get(
             { fileId: fileId, alt: 'media' },
-            { responseType: 'stream' }
+            { responseType: 'arraybuffer' }
         );
+
         res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Content-Disposition', `attachment; filename="${fileId}"`);
-        response.data.pipe(res);
+
+        if (shouldConvert) {
+            // Convert HEIC/HEIF to JPEG using sharp
+            try {
+                const sharp = require('sharp');
+                const jpegBuffer = await sharp(Buffer.from(response.data))
+                    .jpeg({ quality: 90 })
+                    .toBuffer();
+                res.setHeader('Content-Type', 'image/jpeg');
+                res.setHeader('Content-Disposition', `attachment; filename="${fileId}.jpg"`);
+                res.send(jpegBuffer);
+                console.log(`[Drive] Converted HEIC ${fileId} to JPEG (${jpegBuffer.length} bytes)`);
+            } catch (convErr) {
+                console.error("HEIC conversion failed, sending raw file:", convErr.message);
+                // Fallback: send the raw file if conversion fails
+                res.setHeader('Content-Disposition', `attachment; filename="${fileId}"`);
+                res.send(Buffer.from(response.data));
+            }
+        } else {
+            res.setHeader('Content-Disposition', `attachment; filename="${fileId}"`);
+            res.send(Buffer.from(response.data));
+        }
     } catch (error) {
         console.error("Drive Download Error:", error.message);
         res.status(500).json({ error: "Failed to download Drive file" });
