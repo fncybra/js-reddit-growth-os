@@ -32,6 +32,26 @@ const normalizeDriveFolderId = (rawValue = '') => {
     return value;
 };
 
+export const extractRedditPostIdFromUrl = (rawUrl = '') => {
+    const url = String(rawUrl || '').trim();
+    if (!url) return '';
+
+    const patterns = [
+        /\/comments\/([a-z0-9]{6,8})/i,
+        /redd\.it\/([a-z0-9]{6,8})/i,
+        /\/gallery\/([a-z0-9]{6,8})/i,
+        /\/s\/([a-zA-Z0-9]+)/i,
+        /\/r\/[^/]+\/([a-z0-9]{6,8})(?:[/?#]|$)/i,
+    ];
+
+    for (const pattern of patterns) {
+        const match = url.match(pattern);
+        if (match?.[1]) return match[1];
+    }
+
+    return '';
+};
+
 export const SettingsService = {
     async getSettings() {
         const defaultSettings = {
@@ -1198,12 +1218,9 @@ export const PerformanceSyncService = {
 
             // Retroactive Auto-Healing for bad URLs saved previously
             if (!postId && task.redditUrl) {
-                const match = task.redditUrl.match(/\/comments\/([a-z0-9]+)/i)
-                    || task.redditUrl.match(/\/s\/([a-zA-Z0-9]+)/i)
-                    || task.redditUrl.match(/\/gallery\/([a-z0-9]+)/i)
-                    || task.redditUrl.match(/\/r\/[^/]+\/([a-z0-9]{6,8})/i);
-                if (match) {
-                    postId = match[1];
+                const extractedPostId = extractRedditPostIdFromUrl(task.redditUrl);
+                if (extractedPostId) {
+                    postId = extractedPostId;
                     await db.tasks.update(task.id, { redditPostId: postId });
                 }
             }

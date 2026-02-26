@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../db/db';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { extractRedditPostIdFromUrl } from '../services/growthEngine';
 
 const vaResponsiveCss = `
 .va-root {
@@ -463,20 +464,11 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
     }
 
     async function handleMarkPosted() {
-        if (!redditUrl.includes('reddit.com/r/')) {
+        if (!redditUrl || (!redditUrl.includes('reddit.com') && !redditUrl.includes('redd.it'))) {
             return alert("Please paste the actual Reddit Post URL first so stats can be tracked.");
         }
 
-        let redditPostId = '';
-        const standardMatch = redditUrl.match(/\/comments\/([a-z0-9]+)/i);
-        const shareMatch = redditUrl.match(/\/s\/([a-zA-Z0-9]+)/i);
-
-        if (standardMatch) {
-            redditPostId = standardMatch[1];
-        } else if (shareMatch) {
-            // Mobile share links don't have the standard ID, but we try to grab what we can, though proxy might fail to parse 's' links.
-            redditPostId = shareMatch[1];
-        }
+        const redditPostId = extractRedditPostIdFromUrl(redditUrl);
 
         if (!redditPostId) {
             console.warn("Could not extract a valid Reddit Post ID from URL: " + redditUrl);
@@ -539,6 +531,15 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
                 // Cloud Sync Push (Native)
                 const { CloudSyncService } = await import('../services/growthEngine');
                 await CloudSyncService.autoPush(['tasks', 'performances', 'assets']);
+
+                if (redditPostId) {
+                    try {
+                        const { PerformanceSyncService } = await import('../services/growthEngine');
+                        await PerformanceSyncService.syncPostPerformance(task.id);
+                    } catch (syncErr) {
+                        console.warn('[VA] Immediate performance sync failed:', syncErr?.message || syncErr);
+                    }
+                }
             }
         }
         onPosted(); // Move onto next task instantly

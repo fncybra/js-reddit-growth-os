@@ -14,6 +14,15 @@ export function AccountDetail() {
         () => account ? db.models.get(account.modelId) : null,
         [account]
     );
+    const analyticsTrigger = useLiveQuery(async () => {
+        if (!accountId) return '';
+        const tasks = await db.tasks.filter(t => t.accountId === accountId).toArray();
+        const taskIds = tasks.map(t => t.id);
+        const perfs = taskIds.length > 0 ? await db.performances.where('taskId').anyOf(taskIds).toArray() : [];
+        const taskSig = tasks.map(t => `${t.id}:${t.status}:${t.redditPostId || ''}`).join('|');
+        const perfSig = perfs.map(p => `${p.taskId}:${p.views24h || 0}:${p.removed ? 1 : 0}`).join('|');
+        return `${taskSig}::${perfSig}`;
+    }, [accountId]);
 
     useEffect(() => {
         async function buildStats() {
@@ -98,7 +107,7 @@ export function AccountDetail() {
             });
         }
         buildStats();
-    }, [accountId]);
+    }, [accountId, analyticsTrigger]);
 
     if (!account) return <div className="page-content" style={{ padding: '48px', textAlign: 'center', color: 'var(--text-secondary)' }}>Loading account...</div>;
 

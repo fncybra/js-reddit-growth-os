@@ -9,7 +9,12 @@ export function Dashboard() {
     const [metrics, setMetrics] = useState(null);
     const [syncing, setSyncing] = useState(false);
     const models = useLiveQuery(() => db.models.toArray());
-    const taskCountTrigger = useLiveQuery(() => db.tasks.count(), []);
+    const analyticsTrigger = useLiveQuery(async () => {
+        const [tasks, perfs] = await Promise.all([db.tasks.toArray(), db.performances.toArray()]);
+        const taskSig = tasks.map(t => `${t.id}:${t.status}:${t.redditPostId || ''}`).join('|');
+        const perfSig = perfs.map(p => `${p.taskId}:${p.views24h || 0}:${p.removed ? 1 : 0}`).join('|');
+        return `${taskSig}::${perfSig}`;
+    }, []);
 
     useEffect(() => {
         async function fetchMetrics() {
@@ -17,7 +22,7 @@ export function Dashboard() {
             setMetrics(data);
         }
         fetchMetrics();
-    }, [models, taskCountTrigger]);
+    }, [models, analyticsTrigger]);
 
     if (!models) return <div style={{ padding: '48px', textAlign: 'center', color: 'var(--text-secondary)' }}>Loading...</div>;
 
