@@ -11,6 +11,15 @@ export function ModelDetail() {
     const [metrics, setMetrics] = useState(null);
     const [lookbackDays, setLookbackDays] = useState(30);
     const model = useLiveQuery(() => db.models.get(modelId), [modelId]);
+    const analyticsTrigger = useLiveQuery(async () => {
+        if (!modelId) return '';
+        const tasks = await db.tasks.where('modelId').equals(modelId).toArray();
+        const taskIds = tasks.map(t => t.id);
+        const perfs = taskIds.length > 0 ? await db.performances.where('taskId').anyOf(taskIds).toArray() : [];
+        const taskSig = tasks.map(t => `${t.id}:${t.status}:${t.redditPostId || ''}`).join('|');
+        const perfSig = perfs.map(p => `${p.taskId}:${p.views24h || 0}:${p.removed ? 1 : 0}`).join('|');
+        return `${taskSig}::${perfSig}`;
+    }, [modelId]);
 
     useEffect(() => {
         async function fetchMetrics() {
@@ -20,7 +29,7 @@ export function ModelDetail() {
             }
         }
         fetchMetrics();
-    }, [modelId, lookbackDays]);
+    }, [modelId, lookbackDays, analyticsTrigger]);
 
     async function handleExportCsv() {
         const tasks = await db.tasks.where('modelId').equals(modelId).toArray();
