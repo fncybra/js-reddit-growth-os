@@ -1,0 +1,7 @@
+name = "js-reddit-growth-os"
+compatibility_date = "2024-12-01"
+
+[assets]
+directory = "dist"
+html_handling = "auto-trailing-slash"
+not_found_handling = "single-page-application"
