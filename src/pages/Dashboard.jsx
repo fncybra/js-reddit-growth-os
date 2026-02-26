@@ -82,7 +82,8 @@ export function Dashboard() {
         try {
             const { PerformanceSyncService, AccountSyncService } = await import('../services/growthEngine');
             await AccountSyncService.syncAllAccounts();
-            await PerformanceSyncService.syncAllPendingPerformance();
+            const stats = await PerformanceSyncService.syncAllPendingPerformance();
+            alert(`Stats sync finished. Attempted ${stats.attempted}, succeeded ${stats.succeeded}, failed ${stats.failed}.`);
             window.location.reload();
         } catch (err) {
             alert("Sync error: " + err.message);

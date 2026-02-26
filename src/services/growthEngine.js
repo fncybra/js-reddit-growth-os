@@ -1080,7 +1080,9 @@ export const AccountSyncService = {
 export const PerformanceSyncService = {
     async syncPostPerformance(taskId) {
         const task = await db.tasks.get(taskId);
-        if (!task || !task.redditPostId) return;
+        if (!task || !task.redditPostId) {
+            return { ok: false, reason: 'missing_post_id' };
+        }
 
         try {
             const proxyUrl = await SettingsService.getProxyUrl();
@@ -1124,27 +1126,34 @@ export const PerformanceSyncService = {
             await SubredditLifecycleService.evaluateSubreddits(task.modelId);
             await CloudSyncService.autoPush();
 
-            return data;
+            return { ok: true, data };
         } catch (err) {
             console.error("Performance Sync Error:", err);
+            return { ok: false, reason: err.message || 'sync_failed' };
         }
     },
 
     async syncAllPendingPerformance() {
-        // Find tasks from the last 7 days that are closed
-        const weekAgo = subDays(new Date(), 7).toISOString();
+        // Find tasks from the last 14 days that are closed or failed (some failed posts still have live URLs)
+        const cutoff = subDays(new Date(), 14).toISOString();
         const pendingTasks = await db.tasks
-            .where('status').equals('closed')
-            .filter(t => t.date >= weekAgo)
+            .filter(t => (t.status === 'closed' || t.status === 'failed') && (!t.date || t.date >= cutoff))
             .toArray();
 
-        let count = 0;
+        let attempted = 0;
+        let succeeded = 0;
+        let failed = 0;
+        let skipped = 0;
+
         for (const task of pendingTasks) {
             let postId = task.redditPostId;
 
             // Retroactive Auto-Healing for bad URLs saved previously
             if (!postId && task.redditUrl) {
-                const match = task.redditUrl.match(/\/comments\/([a-z0-9]+)/i) || task.redditUrl.match(/\/s\/([a-zA-Z0-9]+)/i);
+                const match = task.redditUrl.match(/\/comments\/([a-z0-9]+)/i)
+                    || task.redditUrl.match(/\/s\/([a-zA-Z0-9]+)/i)
+                    || task.redditUrl.match(/\/gallery\/([a-z0-9]+)/i)
+                    || task.redditUrl.match(/\/r\/[^/]+\/([a-z0-9]{6,8})/i);
                 if (match) {
                     postId = match[1];
                     await db.tasks.update(task.id, { redditPostId: postId });
@@ -1152,15 +1161,19 @@ export const PerformanceSyncService = {
             }
 
             if (postId) {
-                await this.syncPostPerformance(task.id);
-                count++;
+                attempted++;
+                const result = await this.syncPostPerformance(task.id);
+                if (result?.ok) succeeded++;
+                else failed++;
                 // Throttle slightly to be nice to proxy/reddit
                 await new Promise(r => setTimeout(r, 1000));
+            } else {
+                skipped++;
             }
         }
 
         await CloudSyncService.autoPush();
 
-        return count;
+        return { attempted, succeeded, failed, skipped, scanned: pendingTasks.length };
     }
 };
