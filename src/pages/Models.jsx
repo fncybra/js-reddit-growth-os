@@ -13,7 +13,7 @@ export function Models() {
         e.preventDefault();
         if (!formData.name) return;
 
-        await db.models.add({
+        const newModelId = await db.models.add({
             ...formData,
             weeklyViewTarget: Number(formData.weeklyViewTarget),
             weeklyPostTarget: Number(formData.weeklyPostTarget),
@@ -25,6 +25,20 @@ export function Models() {
             const { CloudSyncService } = await import('../services/growthEngine');
             await CloudSyncService.autoPush(['models']);
         } catch (e) { console.error('Auto-push after model add failed:', e); }
+
+        // If Drive folder is provided, auto-sync assets for the new model immediately
+        if (formData.driveFolderId && String(formData.driveFolderId).trim()) {
+            try {
+                const { DriveSyncService } = await import('../services/growthEngine');
+                const { newCount } = await DriveSyncService.syncModelFolder(Number(newModelId), 30);
+                if (newCount > 0) {
+                    alert(`Model created and ${newCount} Drive assets synced.`);
+                }
+            } catch (e) {
+                console.error('Auto Drive sync after model add failed:', e);
+                alert(`Model created, but Drive sync failed: ${e.message}`);
+            }
+        }
 
         setFormData({ name: '', primaryNiche: '', weeklyViewTarget: 50000, weeklyPostTarget: 50, driveFolderId: '', usedFolderId: '', redgifsProfile: '', proxyInfo: '', vaPin: '' });
     }

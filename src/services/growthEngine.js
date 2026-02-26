@@ -15,6 +15,23 @@ const fetchWithTimeout = async (url, options = {}, timeoutMs = 5000) => {
     }
 };
 
+const normalizeDriveFolderId = (rawValue = '') => {
+    const value = String(rawValue || '').trim();
+    if (!value) return '';
+
+    if (!value.includes('drive.google.com')) {
+        return value;
+    }
+
+    const folderMatch = value.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+    if (folderMatch?.[1]) return folderMatch[1];
+
+    const idParamMatch = value.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (idParamMatch?.[1]) return idParamMatch[1];
+
+    return value;
+};
+
 export const SettingsService = {
     async getSettings() {
         const defaultSettings = {
@@ -908,6 +925,24 @@ export const CloudSyncService = {
 
                 // Only replace local data if we actually got valid data back
                 if (data && data.length > 0) {
+                    if (table === 'assets') {
+                        const localAssets = await db.assets.toArray();
+                        const byId = new Map(localAssets.map(a => [a.id, a]));
+                        const byDriveId = new Map(localAssets.filter(a => a.driveFileId).map(a => [a.driveFileId, a]));
+                        const byModelAndName = new Map(localAssets.filter(a => a.modelId && a.fileName).map(a => [`${a.modelId}::${a.fileName}`, a]));
+
+                        data = data.map(remote => {
+                            const localMatch = byId.get(remote.id)
+                                || (remote.driveFileId ? byDriveId.get(remote.driveFileId) : null)
+                                || ((remote.modelId && remote.fileName) ? byModelAndName.get(`${remote.modelId}::${remote.fileName}`) : null);
+
+                            if (!remote.fileBlob && localMatch?.fileBlob) {
+                                return { ...remote, fileBlob: localMatch.fileBlob };
+                            }
+                            return remote;
+                        });
+                    }
+
                     await db[table].clear();
                     await db[table].bulkPut(data);
                     console.log(`[CloudSync] Pulled ${data.length} rows for ${table}`);
@@ -953,6 +988,57 @@ export const CloudSyncService = {
             const { error } = await supabase.from(table).delete().in('id', ids);
             if (error) console.error(`[CloudSync] Error bulk deleting from ${table}:`, error.message);
         }
+    }
+};
+
+export const DriveSyncService = {
+    async syncModelFolder(modelId, reuseCooldownSetting = 30) {
+        const model = await db.models.get(Number(modelId));
+        if (!model) throw new Error('Model not found');
+        if (!model.driveFolderId) throw new Error('This model has no Drive Folder ID configured. Go to Models tab to add one.');
+
+        const proxyUrl = await SettingsService.getProxyUrl();
+        const cleanFolderId = normalizeDriveFolderId(model.driveFolderId);
+        const res = await fetch(`${proxyUrl}/api/drive/list/${cleanFolderId}`);
+
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.error || 'Failed to fetch from Drive');
+        }
+
+        const driveFiles = await res.json();
+        let newCount = 0;
+        let updatedCount = 0;
+
+        for (const file of driveFiles) {
+            const exists = await db.assets.where('driveFileId').equals(file.id).first();
+            if (!exists) {
+                await db.assets.add({
+                    modelId: Number(model.id),
+                    assetType: file.mimeType.startsWith('image/') ? 'image' : 'video',
+                    angleTag: file.mappedTag || 'general',
+                    locationTag: '',
+                    reuseCooldownSetting: Number(reuseCooldownSetting),
+                    approved: 1,
+                    lastUsedDate: null,
+                    timesUsed: 0,
+                    driveFileId: file.id,
+                    fileName: file.name,
+                    thumbnailUrl: file.thumbnailLink,
+                    originalUrl: file.webContentLink
+                });
+                newCount++;
+            } else if (file.mappedTag && exists.angleTag !== file.mappedTag) {
+                await db.assets.update(exists.id, { angleTag: file.mappedTag });
+                updatedCount++;
+            }
+        }
+
+        if (newCount > 0 || updatedCount > 0) {
+            await CloudSyncService.autoPush(['assets']);
+        }
+
+        return { newCount, updatedCount, totalFiles: driveFiles.length };
     }
 };
 
