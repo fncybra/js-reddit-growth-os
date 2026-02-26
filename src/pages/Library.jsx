@@ -90,7 +90,7 @@ export function Library() {
         }
     }
 
-    const PAGE_SIZE = 48;
+    const PAGE_SIZE = 12;
     const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
     // Reset pagination when filters change
@@ -398,7 +398,7 @@ export function Library() {
                                                     </div>
                                                 )}
                                                 {asset.assetType === 'image' && objectUrl ? (
-                                                    <img src={objectUrl} alt={asset.angleTag} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onLoad={() => asset.fileBlob && URL.revokeObjectURL(objectUrl)} />
+                                                    <img src={objectUrl} alt={asset.angleTag} loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onLoad={() => asset.fileBlob && URL.revokeObjectURL(objectUrl)} onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling && (e.target.nextSibling.style.display = 'flex'); }} />
                                                 ) : asset.assetType === 'video' ? (
                                                     <video src={objectUrl} loading="lazy" preload="none" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                                 ) : (
