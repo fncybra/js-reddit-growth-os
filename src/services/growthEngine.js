@@ -98,6 +98,23 @@ export const TitleGeneratorService = {
         try {
             const proxyUrl = await SettingsService.getProxyUrl();
             let topTitles = [];
+            const sanitizeFinalTitle = (title) => {
+                let clean = String(title || '').replace(/[\r\n]+/g, ' ').trim();
+                try {
+                    clean = clean.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, '');
+                } catch {
+                    clean = clean.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '');
+                }
+
+                clean = clean.replace(/[\u200D\uFE0F]/g, '');
+
+                if (!requiredFlair || String(requiredFlair).toLowerCase() !== 'f') {
+                    clean = clean.replace(/\[\s*[fF]\s*\]|\(\s*[fF]\s*\)/g, '');
+                }
+
+                return clean.replace(/\s{2,}/g, ' ').trim();
+            };
+
             const getFallbackTitle = () => {
                 const pool = (topTitles && topTitles.length > 0)
                     ? topTitles.filter(Boolean)
@@ -112,7 +129,7 @@ export const TitleGeneratorService = {
                 const nonDuplicatePool = pool.filter(t => !previousTitles.includes(t));
                 const source = nonDuplicatePool.length > 0 ? nonDuplicatePool : pool;
                 const picked = source[Math.floor(Math.random() * source.length)] || `new post for r/${subredditName}`;
-                return String(picked).replace(/^\[.*?\]\s*/g, '').trim();
+                return sanitizeFinalTitle(String(picked).replace(/^\[.*?\]\s*/g, '').trim());
             };
             // Try fetching from Reddit directly via JSON API (Top of the month)
             try {
@@ -318,7 +335,7 @@ Print ONLY the single final title as plain text. No quotes. No numbering. No ext
                         console.error('Failed string cleanup:', cleanupErr);
                     }
 
-                    return finalTitle.trim();
+                    return sanitizeFinalTitle(finalTitle.trim());
 
                 } catch (err) {
                     console.error("AI Generation Error:", err);
