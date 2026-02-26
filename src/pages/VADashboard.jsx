@@ -149,6 +149,7 @@ export function VADashboard() {
     const [pinInput, setPinInput] = useState('');
     const [error, setError] = useState('');
     const [syncing, setSyncing] = useState(false);
+    const [clearingQueue, setClearingQueue] = useState(false);
     const [cooldownUntil, setCooldownUntil] = useState(0);
     const [timeLeft, setTimeLeft] = useState(0);
     const [authorizedModels, setAuthorizedModels] = useState([]);
@@ -224,7 +225,19 @@ export function VADashboard() {
                 const acctId = Number(selectedAccountId);
                 query = query.filter(t => t.accountId === acctId);
             }
-            return query.toArray();
+
+            return query.toArray().then(rows => {
+                if (!rows || rows.length === 0) return [];
+
+                const datedRows = rows.filter(r => !!r.date);
+                if (datedRows.length === 0) return rows;
+
+                const latestDate = datedRows
+                    .map(r => r.date)
+                    .sort((a, b) => (a > b ? -1 : a < b ? 1 : 0))[0];
+
+                return rows.filter(r => !r.date || r.date === latestDate);
+            });
         },
         [activeModelId, selectedAccountId]
     );
@@ -341,6 +354,13 @@ export function VADashboard() {
                     <div style={{ padding: '4px 12px', backgroundColor: '#10b98122', color: '#10b981', border: '1px solid #10b98144', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold' }}>
                         {tasks?.filter(t => t.status === 'closed').length} / {tasks?.length} COMPLETED
                     </div>
+                    <button
+                        onClick={handleClearQueue}
+                        disabled={clearingQueue || !tasks || tasks.length === 0}
+                        style={{ backgroundColor: 'transparent', color: '#ef4444', border: '1px solid #ef4444', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', opacity: (clearingQueue || !tasks || tasks.length === 0) ? 0.5 : 1 }}
+                    >
+                        {clearingQueue ? 'Clearing...' : 'Clear Queue'}
+                    </button>
                     <button
                         onClick={async () => {
                             setSyncing(true);
@@ -615,6 +635,39 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
                 const { CloudSyncService } = await import('../services/growthEngine');
                 await CloudSyncService.autoPush(['tasks', 'performances', 'subreddits']);
             } catch (err) { }
+        }
+    }
+
+    async function handleClearQueue() {
+        if (!tasks || tasks.length === 0) return;
+        const confirmed = window.confirm(`Clear ${tasks.length} task(s) from this queue? This removes linked outcomes too.`);
+        if (!confirmed) return;
+
+        try {
+            setClearingQueue(true);
+            const taskIds = tasks.map(t => t.id);
+            const linkedPerformances = await db.performances.where('taskId').anyOf(taskIds).toArray();
+            const performanceIds = linkedPerformances.map(p => p.id);
+
+            await db.transaction('rw', db.tasks, db.performances, async () => {
+                if (performanceIds.length > 0) await db.performances.bulkDelete(performanceIds);
+                await db.tasks.bulkDelete(taskIds);
+            });
+
+            const { CloudSyncService } = await import('../services/growthEngine');
+            const CHUNK_SIZE = 200;
+            for (let i = 0; i < performanceIds.length; i += CHUNK_SIZE) {
+                await CloudSyncService.deleteMultipleFromCloud('performances', performanceIds.slice(i, i + CHUNK_SIZE));
+            }
+            for (let i = 0; i < taskIds.length; i += CHUNK_SIZE) {
+                await CloudSyncService.deleteMultipleFromCloud('tasks', taskIds.slice(i, i + CHUNK_SIZE));
+            }
+
+            alert(`Cleared ${taskIds.length} task(s).`);
+        } catch (e) {
+            alert('Failed to clear queue: ' + e.message);
+        } finally {
+            setClearingQueue(false);
         }
     }
 
