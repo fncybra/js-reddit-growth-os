@@ -176,25 +176,43 @@ Print ONLY the single final title as plain text. No quotes. No numbering. No ext
 
                     const aiEndpoint = aiBaseUrl.endsWith('/') ? aiBaseUrl.slice(0, -1) : aiBaseUrl;
 
-                    const response = await fetch(`${proxyUrl}/api/ai/generate`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            aiBaseUrl: aiEndpoint,
-                            apiKey: activeKey,
-                            model: activeModel,
-                            messages: [{ role: "user", content: prompt }],
-                            temperature: 0.9,
-                            presence_penalty: 0.4
-                        })
-                    });
+                    // Retry logic for 429 rate limits (free models cap at 8 req/min)
+                    const MAX_RETRIES = 3;
+                    let data = null;
+                    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+                        const response = await fetch(`${proxyUrl}/api/ai/generate`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                aiBaseUrl: aiEndpoint,
+                                apiKey: activeKey,
+                                model: activeModel,
+                                messages: [{ role: "user", content: prompt }],
+                                temperature: 0.9,
+                                presence_penalty: 0.4
+                            })
+                        });
 
-                    if (!response.ok) {
-                        const errData = await response.json();
-                        throw new Error(errData.details || errData.error || "Failed proxy AI generation");
+                        if (response.ok) {
+                            data = await response.json();
+                            break;
+                        }
+
+                        const errData = await response.json().catch(() => ({}));
+                        const errMsg = errData.details?.message || errData.details || errData.error || '';
+                        const is429 = response.status === 500 && (typeof errMsg === 'string' && errMsg.includes('429'));
+
+                        if (is429 && attempt < MAX_RETRIES) {
+                            const waitSec = 8 * Math.pow(2, attempt); // 8s, 16s, 32s
+                            console.warn(`[AI] Rate limited (429), waiting ${waitSec}s before retry ${attempt + 1}/${MAX_RETRIES}...`);
+                            await new Promise(r => setTimeout(r, waitSec * 1000));
+                            continue;
+                        }
+
+                        throw new Error(errMsg || "Failed proxy AI generation");
                     }
 
-                    const data = await response.json();
+                    if (!data) throw new Error("AI generation failed after all retries");
 
                     let finalTitle = data.choices && data.choices[0] && data.choices[0].message
                         ? data.choices[0].message.content.trim()
@@ -594,8 +612,8 @@ export const DailyPlanGenerator = {
             }
         }
 
-        // Process in chunks of 5 for fast parallel AI generation
-        const chunkSize = 5;
+        // Process in chunks of 10 — paid models support 100+ requests/min
+        const chunkSize = 10;
         let finalNewTasks = [];
 
         for (let i = 0; i < taskGenerationPromises.length; i += chunkSize) {
