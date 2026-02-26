@@ -6,9 +6,13 @@ import { SubredditGuardService } from '../services/growthEngine';
 export function Subreddits() {
     const models = useLiveQuery(() => db.models.toArray());
     const subreddits = useLiveQuery(() => db.subreddits.toArray());
+    const accounts = useLiveQuery(() => db.accounts.toArray());
+    const tasks = useLiveQuery(() => db.tasks.toArray());
+    const performances = useLiveQuery(() => db.performances.toArray());
 
     const [selectedModelId, setSelectedModelId] = useState('');
     const [tableModelFilter, setTableModelFilter] = useState('all');
+    const [tableAccountFilter, setTableAccountFilter] = useState('all');
     const [searchText, setSearchText] = useState('');
     const [historySubredditId, setHistorySubredditId] = useState(null);
 
@@ -83,6 +87,45 @@ export function Subreddits() {
             if (modelA !== modelB) return modelA.localeCompare(modelB);
             return (b.avg24hViews || 0) - (a.avg24hViews || 0);
         });
+
+    const visibleAccounts = (accounts || []).filter(a => tableModelFilter === 'all' || String(a.modelId) === String(tableModelFilter));
+
+    React.useEffect(() => {
+        if (tableAccountFilter === 'all') return;
+        const exists = visibleAccounts.some(a => String(a.id) === String(tableAccountFilter));
+        if (!exists) setTableAccountFilter('all');
+    }, [tableModelFilter, tableAccountFilter, visibleAccounts]);
+
+    const scopedStatsBySubreddit = React.useMemo(() => {
+        const map = new Map();
+        if (!tasks || !performances) return map;
+
+        const perfByTaskId = new Map((performances || []).map(p => [p.taskId, p]));
+        const relevantTasks = (tasks || []).filter(t => {
+            if (tableModelFilter !== 'all' && String(t.modelId) !== String(tableModelFilter)) return false;
+            if (tableAccountFilter !== 'all' && String(t.accountId) !== String(tableAccountFilter)) return false;
+            return true;
+        });
+
+        for (const task of relevantTasks) {
+            if (!task.subredditId) continue;
+            if (!map.has(task.subredditId)) map.set(task.subredditId, { tests: 0, totalViews: 0, removed: 0 });
+            const bucket = map.get(task.subredditId);
+            const perf = perfByTaskId.get(task.id);
+            if (!perf) continue;
+            bucket.tests += 1;
+            bucket.totalViews += Number(perf.views24h || 0);
+            if (perf.removed) bucket.removed += 1;
+        }
+
+        for (const [subredditId, stats] of map.entries()) {
+            const avg24h = stats.tests > 0 ? Math.round(stats.totalViews / stats.tests) : 0;
+            const removalPct = stats.tests > 0 ? Number(((stats.removed / stats.tests) * 100).toFixed(1)) : 0;
+            map.set(subredditId, { tests: stats.tests, avg24h, removalPct });
+        }
+
+        return map;
+    }, [tasks, performances, tableModelFilter, tableAccountFilter]);
 
     return (
         <>
@@ -171,6 +214,17 @@ export function Subreddits() {
                                 onChange={e => setSearchText(e.target.value)}
                                 style={{ minWidth: '220px', padding: '6px 10px' }}
                             />
+                            <select
+                                className="input-field"
+                                value={tableAccountFilter}
+                                onChange={e => setTableAccountFilter(e.target.value)}
+                                style={{ width: 'auto', minWidth: '180px', padding: '6px 10px' }}
+                            >
+                                <option value="all">All Accounts</option>
+                                {visibleAccounts.map(acc => (
+                                    <option key={acc.id} value={String(acc.id)}>{acc.handle}</option>
+                                ))}
+                            </select>
                         </div>
                     </div>
                     {filteredSubreddits.length === 0 ? (
@@ -194,6 +248,10 @@ export function Subreddits() {
                                 </thead>
                                 <tbody>
                                     {filteredSubreddits.map(sub => {
+                                        const scoped = scopedStatsBySubreddit.get(sub.id);
+                                        const tests = scoped ? scoped.tests : (sub.totalTests || 0);
+                                        const avg24h = scoped ? scoped.avg24h : (sub.avg24hViews || 0);
+                                        const removalPct = scoped ? scoped.removalPct : Number(sub.removalPct || 0);
                                         const model = models?.find(m => m.id === sub.modelId);
                                         return (
                                             <tr key={sub.id}>
@@ -242,9 +300,9 @@ export function Subreddits() {
                                                     />
                                                 </td>
                                                 <td>{sub.riskLevel}</td>
-                                                <td>{sub.totalTests}</td>
-                                                <td>{sub.avg24hViews?.toLocaleString() || 0}</td>
-                                                <td style={{ color: sub.removalPct > 20 ? 'var(--status-danger)' : 'inherit' }}>{sub.removalPct?.toFixed(1) || 0}%</td>
+                                                <td>{tests}</td>
+                                                <td>{avg24h?.toLocaleString() || 0}</td>
+                                                <td style={{ color: removalPct > 20 ? 'var(--status-danger)' : 'inherit' }}>{Number(removalPct || 0).toFixed(1)}%</td>
                                                 <td style={{ fontSize: '0.75rem' }}>
                                                     {sub.cooldownUntil && new Date(sub.cooldownUntil) > new Date() ? (
                                                         <span style={{ color: 'var(--status-warning)' }}>Cooldown until {new Date(sub.cooldownUntil).toLocaleDateString()}</span>
