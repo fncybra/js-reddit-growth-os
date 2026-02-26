@@ -272,10 +272,11 @@ app.get('/api/drive/list/:folderId', async (req, res) => {
         });
         const folderName = folderMeta.data.name;
 
-        // 2. List the files
+        // 2. List the files (optimized to pull 1000 at once instead of the default 100)
         const response = await drive.files.list({
             q: `'${folderId}' in parents and trashed = false and (mimeType contains 'image/' or mimeType contains 'video/')`,
             fields: 'files(id, name, mimeType, webContentLink, thumbnailLink)',
+            pageSize: 1000
         });
 
         // 3. Map the folder name to each file so the frontend can auto-tag them
