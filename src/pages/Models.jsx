@@ -20,12 +20,22 @@ export function Models() {
             status: 'active'
         });
 
+        // Immediately push to cloud so the model survives CloudSync pulls
+        try {
+            const { CloudSyncService } = await import('../services/growthEngine');
+            await CloudSyncService.autoPush(['models']);
+        } catch (e) { console.error('Auto-push after model add failed:', e); }
+
         setFormData({ name: '', primaryNiche: '', weeklyViewTarget: 50000, weeklyPostTarget: 50, driveFolderId: '', usedFolderId: '', redgifsProfile: '', proxyInfo: '', vaPin: '' });
     }
 
     async function toggleStatus(id, currentStatus) {
         const newStatus = currentStatus === 'active' ? 'paused' : 'active';
         await db.models.update(id, { status: newStatus });
+        try {
+            const { CloudSyncService } = await import('../services/growthEngine');
+            await CloudSyncService.autoPush(['models']);
+        } catch (e) { console.error('Auto-push after toggle failed:', e); }
     }
 
     function startEditing(model) {
@@ -52,12 +62,21 @@ export function Models() {
             proxyInfo: editingModel.proxyInfo,
             vaPin: editingModel.vaPin
         });
+        // Push edit to cloud immediately
+        try {
+            const { CloudSyncService } = await import('../services/growthEngine');
+            await CloudSyncService.autoPush(['models']);
+        } catch (e) { console.error('Auto-push after edit failed:', e); }
         setEditingModel(null);
     }
 
     async function handleDelete(id, name) {
         if (window.confirm(`Delete model "${name}"? This cannot be undone.`)) {
             await db.models.delete(id);
+            try {
+                const { CloudSyncService } = await import('../services/growthEngine');
+                await CloudSyncService.deleteFromCloud('models', id);
+            } catch (e) { console.error('Cloud delete failed:', e); }
         }
     }
 
