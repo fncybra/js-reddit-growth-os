@@ -146,6 +146,32 @@ export function Subreddits() {
         return map;
     }, [tasks, performances, tableModelFilter, tableAccountFilter]);
 
+    async function handleAttachUnassignedToSelectedAccount() {
+        if (!tableModelFilter || tableAccountFilter === 'all' || !tableAccountFilter) return;
+
+        const unassigned = (subreddits || []).filter(
+            s => String(s.modelId) === String(tableModelFilter) && !s.accountId
+        );
+
+        if (unassigned.length === 0) {
+            alert('No unassigned subreddits for this model.');
+            return;
+        }
+
+        const account = (accounts || []).find(a => String(a.id) === String(tableAccountFilter));
+        const confirmed = window.confirm(`Attach ${unassigned.length} unassigned subreddits to ${account?.handle || tableAccountFilter}?`);
+        if (!confirmed) return;
+
+        try {
+            await db.subreddits.bulkPut(unassigned.map(s => ({ ...s, accountId: Number(tableAccountFilter) })));
+            const { CloudSyncService } = await import('../services/growthEngine');
+            await CloudSyncService.autoPush(['subreddits']);
+            alert(`Attached ${unassigned.length} subreddits to ${account?.handle || tableAccountFilter}.`);
+        } catch (err) {
+            alert('Failed to attach subreddits: ' + err.message);
+        }
+    }
+
     if (models === undefined) {
         return <div className="page-content" style={{ textAlign: 'center', padding: '48px', color: 'var(--text-secondary)' }}>Loading...</div>;
     }
@@ -263,6 +289,15 @@ export function Subreddits() {
                                     <option key={acc.id} value={String(acc.id)}>{acc.handle}</option>
                                 ))}
                             </select>
+                            <button
+                                type="button"
+                                className="btn btn-outline"
+                                onClick={handleAttachUnassignedToSelectedAccount}
+                                disabled={!tableModelFilter || tableAccountFilter === 'all' || !tableAccountFilter}
+                                style={{ padding: '6px 10px', fontSize: '0.8rem' }}
+                            >
+                                Attach Unassigned to Account
+                            </button>
                         </div>
                     </div>
                     {filteredSubreddits.length === 0 ? (
