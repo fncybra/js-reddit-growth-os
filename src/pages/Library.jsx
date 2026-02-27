@@ -23,6 +23,7 @@ export function Library() {
 
     const [syncing, setSyncing] = useState(false);
     const [uploading, setUploading] = useState(false);
+    const [redgifsUploadingId, setRedgifsUploadingId] = useState(null);
 
     async function syncGoogleDrive() {
         if (!selectedModelId) return alert("Select a model first.");
@@ -166,6 +167,43 @@ export function Library() {
             await db.assets.delete(id);
             const { CloudSyncService } = await import('../services/growthEngine');
             await CloudSyncService.deleteFromCloud('assets', id);
+        }
+    }
+
+    async function uploadVideoToRedgifs(asset) {
+        if (!asset || asset.assetType !== 'video') return;
+        const confirmed = window.confirm(`Upload ${asset.fileName || 'this video'} to RedGifs now?`);
+        if (!confirmed) return;
+
+        try {
+            setRedgifsUploadingId(asset.id);
+            const { SettingsService, CloudSyncService } = await import('../services/growthEngine');
+            const proxyUrl = await SettingsService.getProxyUrl();
+
+            const response = await fetch(`${proxyUrl}/api/redgifs/upload-from-asset`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    driveFileId: asset.driveFileId || null,
+                    sourceUrl: asset.originalUrl || asset.externalUrl || null,
+                    fileName: asset.fileName || `asset-${asset.id}.mp4`,
+                    title: '',
+                    tags: [asset.angleTag, 'growthos'].filter(Boolean),
+                })
+            });
+
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload?.url) {
+                throw new Error(payload?.error || payload?.detail || `Upload failed (${response.status})`);
+            }
+
+            await db.assets.update(asset.id, { externalUrl: payload.url });
+            await CloudSyncService.autoPush(['assets']);
+            alert('Uploaded to RedGifs successfully. Link saved on this asset.');
+        } catch (err) {
+            alert('RedGifs upload failed: ' + err.message);
+        } finally {
+            setRedgifsUploadingId(null);
         }
     }
 
@@ -396,6 +434,14 @@ export function Library() {
                                                                 CloudSyncService.autoPush(['assets']).catch(console.error);
                                                             }}
                                                         />
+                                                        <button
+                                                            className="btn btn-outline"
+                                                            onClick={() => uploadVideoToRedgifs(asset)}
+                                                            disabled={redgifsUploadingId === asset.id}
+                                                            style={{ marginTop: '8px', width: '100%', padding: '6px 8px', fontSize: '0.75rem' }}
+                                                        >
+                                                            {redgifsUploadingId === asset.id ? 'Uploading...' : 'Upload to RedGifs (Confirm)'}
+                                                        </button>
                                                     </div>
                                                 )}
 
