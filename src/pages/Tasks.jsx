@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../db/db';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { CloudSyncService, DailyPlanGenerator, SettingsService, SubredditLifecycleService } from '../services/growthEngine';
-import { startOfDay } from 'date-fns';
 
 export function Tasks() {
     const models = useLiveQuery(() => db.models.toArray());
@@ -24,12 +23,32 @@ export function Tasks() {
     }, []);
 
     const activeModelId = Number(selectedModelId);
-    const todayStr = startOfDay(new Date()).toISOString();
 
-    const tasks = useLiveQuery(
-        () => activeModelId ? db.tasks.where({ modelId: activeModelId, date: todayStr }).toArray() : [],
-        [activeModelId, todayStr]
+    const taskBundle = useLiveQuery(
+        async () => {
+            if (!activeModelId) return { queueDate: null, tasks: [] };
+            const rows = await db.tasks.where('modelId').equals(activeModelId).toArray();
+            if (!rows || rows.length === 0) return { queueDate: null, tasks: [] };
+
+            const datedRows = rows.filter(r => !!r.date);
+            if (datedRows.length === 0) return { queueDate: null, tasks: rows };
+
+            const latestDate = datedRows
+                .map(r => r.date)
+                .sort((a, b) => (a > b ? -1 : a < b ? 1 : 0))[0];
+
+            return {
+                queueDate: latestDate,
+                tasks: rows.filter(r => !r.date || r.date === latestDate)
+            };
+        },
+        [activeModelId]
     );
+
+    const tasks = taskBundle?.tasks || [];
+    const queueDateLabel = taskBundle?.queueDate
+        ? new Date(taskBundle.queueDate).toLocaleDateString()
+        : new Date().toLocaleDateString();
 
     const [generating, setGenerating] = useState(false);
     const [clearing, setClearing] = useState(false);
@@ -109,7 +128,7 @@ export function Tasks() {
                                 <option key={m.id} value={m.id}>{m.name}</option>
                             ))}
                         </select>
-                        • Date: <strong>{new Date().toLocaleDateString()}</strong>
+                        • Queue Date: <strong>{queueDateLabel}</strong>
                     </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
