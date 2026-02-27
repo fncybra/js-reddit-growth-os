@@ -4,6 +4,7 @@ import { CloudSyncService } from '../services/growthEngine';
 export function CloudSyncHandler() {
     const hasRun = useRef(false);
     const syncingRef = useRef(false);
+    const pushingRef = useRef(false);
 
     useEffect(() => {
         if (hasRun.current) return;
@@ -22,6 +23,20 @@ export function CloudSyncHandler() {
             syncingRef.current = false;
         }
 
+        async function push() {
+            if (pushingRef.current) return;
+            pushingRef.current = true;
+            const enabled = await CloudSyncService.isEnabled();
+            if (enabled) {
+                try {
+                    await CloudSyncService.pushLocalToCloud();
+                } catch (err) {
+                    console.error('[CloudSync] Background push failed:', err);
+                }
+            }
+            pushingRef.current = false;
+        }
+
         const safeSync = async () => {
             try {
                 await sync();
@@ -32,6 +47,7 @@ export function CloudSyncHandler() {
         };
 
         safeSync();
+        push();
 
         const onFocus = () => safeSync();
         const onVisible = () => {
@@ -40,10 +56,12 @@ export function CloudSyncHandler() {
         window.addEventListener('focus', onFocus);
         document.addEventListener('visibilitychange', onVisible);
 
-        const intervalId = setInterval(safeSync, 30000);
+        const pullIntervalId = setInterval(safeSync, 30000);
+        const pushIntervalId = setInterval(push, 45000);
 
         return () => {
-            clearInterval(intervalId);
+            clearInterval(pullIntervalId);
+            clearInterval(pushIntervalId);
             window.removeEventListener('focus', onFocus);
             document.removeEventListener('visibilitychange', onVisible);
         };
