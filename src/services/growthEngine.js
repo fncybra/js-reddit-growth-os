@@ -758,9 +758,12 @@ export const DailyPlanGenerator = {
             if (tasksToGenerate <= 0) continue;
 
             let selectedSubsForAccount = [];
+            const accountTestingSubs = testingSubs.filter(s => !s.accountId || Number(s.accountId) === Number(account.id));
+            const accountFallbackSubs = fallbackSubs.filter(s => !s.accountId || Number(s.accountId) === Number(account.id));
+            const accountProvenSubs = provenSubs.filter(s => !s.accountId || Number(s.accountId) === Number(account.id));
 
             // Try to pick Testing Subs first if global limit allows
-            for (const sub of testingSubs) {
+            for (const sub of accountTestingSubs) {
                 if (selectedSubsForAccount.length < tasksToGenerate && testsRemaining > 0 && !usedSubredditIds.has(sub.id)) {
                     selectedSubsForAccount.push(sub);
                     usedSubredditIds.add(sub.id);
@@ -768,8 +771,8 @@ export const DailyPlanGenerator = {
                 }
             }
             // If still need more subs and we have a fallback list, use it
-            if (selectedSubsForAccount.length < tasksToGenerate && fallbackSubs.length > 0) {
-                for (const sub of fallbackSubs) {
+            if (selectedSubsForAccount.length < tasksToGenerate && accountFallbackSubs.length > 0) {
+                for (const sub of accountFallbackSubs) {
                     if (selectedSubsForAccount.length >= tasksToGenerate) break;
                     if (!usedSubredditIds.has(sub.id)) {
                         selectedSubsForAccount.push(sub);
@@ -779,7 +782,7 @@ export const DailyPlanGenerator = {
             }
 
             // Fill remainder with Proven Subs
-            for (const sub of provenSubs) {
+            for (const sub of accountProvenSubs) {
                 if (selectedSubsForAccount.length < tasksToGenerate && !usedSubredditIds.has(sub.id)) {
                     selectedSubsForAccount.push(sub);
                     usedSubredditIds.add(sub.id);
