@@ -71,7 +71,7 @@ export function Subreddits() {
         .filter(sub => !tableModelFilter || String(sub.modelId) === String(tableModelFilter))
         .filter(sub => {
             if (!tableAccountFilter || tableAccountFilter === 'all') return true;
-            return String(sub.accountId || '') === String(tableAccountFilter);
+            return !sub.accountId || String(sub.accountId) === String(tableAccountFilter);
         })
         .filter(sub => {
             if (!searchText.trim()) return true;
@@ -397,6 +397,22 @@ export function Subreddits() {
                                                     </select>
                                                 </td>
                                                 <td>
+                                                    <select
+                                                        className="input-field"
+                                                        value={sub.accountId ? String(sub.accountId) : 'all'}
+                                                        style={{ padding: '4px 8px', fontSize: '0.8rem', width: '170px' }}
+                                                        onChange={async (e) => {
+                                                            const nextAccountId = e.target.value === 'all' ? null : Number(e.target.value);
+                                                            await db.subreddits.update(sub.id, { accountId: nextAccountId });
+                                                        }}
+                                                    >
+                                                        <option value="all">All model accounts</option>
+                                                        {(accounts || []).filter(a => a.modelId === sub.modelId).map(acc => (
+                                                            <option key={acc.id} value={String(acc.id)}>{acc.handle}</option>
+                                                        ))}
+                                                    </select>
+                                                </td>
+                                                <td>
                                                     <span className={`badge ${sub.status === 'proven' ? 'badge-success' :
                                                         sub.status === 'testing' ? 'badge-info' :
                                                             sub.status === 'rejected' ? 'badge-danger' : 'badge-warning'
@@ -433,22 +449,6 @@ export function Subreddits() {
                                                             {!sub.minRequiredKarma && !sub.minAccountAgeDays ? 'Open' : ''}
                                                         </span>
                                                     )}
-                                                </td>
-                                                <td>
-                                                    <select
-                                                        className="input-field"
-                                                        value={sub.accountId ? String(sub.accountId) : 'all'}
-                                                        style={{ padding: '4px 8px', fontSize: '0.8rem', width: '170px' }}
-                                                        onChange={async (e) => {
-                                                            const nextAccountId = e.target.value === 'all' ? null : Number(e.target.value);
-                                                            await db.subreddits.update(sub.id, { accountId: nextAccountId });
-                                                        }}
-                                                    >
-                                                        <option value="all">All model accounts</option>
-                                                        {(accounts || []).filter(a => a.modelId === sub.modelId).map(acc => (
-                                                            <option key={acc.id} value={String(acc.id)}>{acc.handle}</option>
-                                                        ))}
-                                                    </select>
                                                 </td>
                                                 <td>
                                                     <button
