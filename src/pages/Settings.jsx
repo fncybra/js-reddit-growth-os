@@ -159,6 +159,14 @@ export function Settings() {
                             />
                             <small style={{ color: 'var(--text-secondary)' }}>You can change the brain here.</small>
                         </div>
+                        <div className="input-group" style={{ marginTop: '12px' }}>
+                            <label className="input-label">Use Model Voice Profile</label>
+                            <select className="input-field" value={String(settings.useVoiceProfile ?? 1)} onChange={e => setSettings({ ...settings, useVoiceProfile: Number(e.target.value) })}>
+                                <option value="1">On (recommended)</option>
+                                <option value="0">Off (legacy behavior)</option>
+                            </select>
+                            <small style={{ color: 'var(--text-secondary)' }}>When ON, AI titles follow model persona builder inputs.</small>
+                        </div>
                         <button onClick={handleSave} className="btn btn-outline" style={{ width: '100%', marginTop: '16px' }}>Save AI Settings</button>
                     </div>
 

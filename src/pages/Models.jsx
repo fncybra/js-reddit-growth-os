@@ -3,9 +3,23 @@ import { db } from '../db/db';
 import { useLiveQuery } from 'dexie-react-hooks';
 
 export function Models() {
+    const buildVoiceSummary = (input = {}) => {
+        const archetype = input.voiceArchetype || 'general';
+        const tone = input.voiceTone || 'teasing';
+        const energy = input.voiceEnergy || 'medium';
+        const ageBand = input.voiceAgeBand || '25-34';
+        const state = input.voiceState || 'not-pregnant';
+        const noGo = input.voiceNoGo || 'no-cta';
+        const note = String(input.voiceNotes || '').trim();
+
+        const line = `Archetype: ${archetype}; Tone: ${tone}; Energy: ${energy}; Age band: ${ageBand}; State: ${state}; No-go: ${noGo}.`;
+        return note ? `${line} Note: ${note}` : line;
+    };
+
     const models = useLiveQuery(() => db.models.toArray());
     const [formData, setFormData] = useState({
-        name: '', primaryNiche: '', weeklyViewTarget: 50000, weeklyPostTarget: 50, driveFolderId: '', usedFolderId: '', redgifsProfile: '', redgifsUploadEndpoint: '', redgifsApiToken: '', proxyInfo: '', vaPin: ''
+        name: '', primaryNiche: '', weeklyViewTarget: 50000, weeklyPostTarget: 50, driveFolderId: '', usedFolderId: '', redgifsProfile: '', redgifsUploadEndpoint: '', redgifsApiToken: '', proxyInfo: '', vaPin: '',
+        voiceArchetype: 'general', voiceTone: 'teasing', voiceEnergy: 'medium', voiceAgeBand: '25-34', voiceState: 'not-pregnant', voiceNoGo: 'no-cta', voiceNotes: ''
     });
     const [editingModel, setEditingModel] = useState(null); // { id, name, primaryNiche, driveFolderId, usedFolderId, redgifsProfile, proxyInfo, vaPin }
 
@@ -15,6 +29,7 @@ export function Models() {
 
         const newModelId = await db.models.add({
             ...formData,
+            voiceProfile: buildVoiceSummary(formData),
             weeklyViewTarget: Number(formData.weeklyViewTarget),
             weeklyPostTarget: Number(formData.weeklyPostTarget),
             status: 'active'
@@ -40,7 +55,10 @@ export function Models() {
             }
         }
 
-        setFormData({ name: '', primaryNiche: '', weeklyViewTarget: 50000, weeklyPostTarget: 50, driveFolderId: '', usedFolderId: '', redgifsProfile: '', redgifsUploadEndpoint: '', redgifsApiToken: '', proxyInfo: '', vaPin: '' });
+        setFormData({
+            name: '', primaryNiche: '', weeklyViewTarget: 50000, weeklyPostTarget: 50, driveFolderId: '', usedFolderId: '', redgifsProfile: '', redgifsUploadEndpoint: '', redgifsApiToken: '', proxyInfo: '', vaPin: '',
+            voiceArchetype: 'general', voiceTone: 'teasing', voiceEnergy: 'medium', voiceAgeBand: '25-34', voiceState: 'not-pregnant', voiceNoGo: 'no-cta', voiceNotes: ''
+        });
     }
 
     async function toggleStatus(id, currentStatus) {
@@ -63,7 +81,14 @@ export function Models() {
             redgifsUploadEndpoint: model.redgifsUploadEndpoint || '',
             redgifsApiToken: model.redgifsApiToken || '',
             proxyInfo: model.proxyInfo || '',
-            vaPin: model.vaPin || ''
+            vaPin: model.vaPin || '',
+            voiceArchetype: model.voiceArchetype || 'general',
+            voiceTone: model.voiceTone || 'teasing',
+            voiceEnergy: model.voiceEnergy || 'medium',
+            voiceAgeBand: model.voiceAgeBand || '25-34',
+            voiceState: model.voiceState || 'not-pregnant',
+            voiceNoGo: model.voiceNoGo || 'no-cta',
+            voiceNotes: model.voiceNotes || ''
         });
     }
 
@@ -78,7 +103,15 @@ export function Models() {
             redgifsUploadEndpoint: editingModel.redgifsUploadEndpoint,
             redgifsApiToken: editingModel.redgifsApiToken,
             proxyInfo: editingModel.proxyInfo,
-            vaPin: editingModel.vaPin
+            vaPin: editingModel.vaPin,
+            voiceArchetype: editingModel.voiceArchetype,
+            voiceTone: editingModel.voiceTone,
+            voiceEnergy: editingModel.voiceEnergy,
+            voiceAgeBand: editingModel.voiceAgeBand,
+            voiceState: editingModel.voiceState,
+            voiceNoGo: editingModel.voiceNoGo,
+            voiceNotes: editingModel.voiceNotes,
+            voiceProfile: buildVoiceSummary(editingModel)
         });
         // Push edit to cloud immediately
         try {
@@ -214,6 +247,22 @@ export function Models() {
                                 </div>
                             </div>
 
+                            <div style={{ borderTop: '1px solid var(--border-color)', margin: '16px 0', paddingTop: '16px' }}>
+                                <h3 style={{ fontSize: '0.9rem', marginBottom: '12px', color: 'var(--text-secondary)' }}>AI Persona Builder (Brain-Dead Inputs)</h3>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                                    <div className="input-group"><label className="input-label">Archetype</label><select className="input-field" value={formData.voiceArchetype} onChange={e => setFormData({ ...formData, voiceArchetype: e.target.value })}><option value="general">General</option><option value="milf">MILF</option><option value="pregnant">Pregnant</option><option value="girl-next-door">Girl Next Door</option><option value="alt">Alt</option></select></div>
+                                    <div className="input-group"><label className="input-label">Tone</label><select className="input-field" value={formData.voiceTone} onChange={e => setFormData({ ...formData, voiceTone: e.target.value })}><option value="teasing">Teasing</option><option value="sweet">Sweet</option><option value="bratty">Bratty</option><option value="dominant">Dominant</option></select></div>
+                                    <div className="input-group"><label className="input-label">Energy</label><select className="input-field" value={formData.voiceEnergy} onChange={e => setFormData({ ...formData, voiceEnergy: e.target.value })}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></div>
+                                    <div className="input-group"><label className="input-label">Age Band</label><select className="input-field" value={formData.voiceAgeBand} onChange={e => setFormData({ ...formData, voiceAgeBand: e.target.value })}><option value="25-34">25-34</option><option value="35-44">35-44</option><option value="45+">45+</option></select></div>
+                                    <div className="input-group"><label className="input-label">Current State</label><select className="input-field" value={formData.voiceState} onChange={e => setFormData({ ...formData, voiceState: e.target.value })}><option value="not-pregnant">Not Pregnant</option><option value="preg-trimester-1">Pregnant Trimester 1</option><option value="preg-trimester-2">Pregnant Trimester 2</option><option value="preg-trimester-3">Pregnant Trimester 3</option><option value="preg-38-weeks">Pregnant 38 Weeks</option></select></div>
+                                    <div className="input-group"><label className="input-label">Hard No Style</label><select className="input-field" value={formData.voiceNoGo} onChange={e => setFormData({ ...formData, voiceNoGo: e.target.value })}><option value="no-cta">No CTA bait</option><option value="no-swipe">No swipe/carousel text</option><option value="no-promo">No promo wording</option></select></div>
+                                </div>
+                                <div className="input-group">
+                                    <label className="input-label">Optional One-Line Note</label>
+                                    <input className="input-field" value={formData.voiceNotes} onChange={e => setFormData({ ...formData, voiceNotes: e.target.value })} placeholder="e.g. keep titles short and playful" />
+                                </div>
+                            </div>
+
                             <button type="submit" className="btn btn-primary" style={{ marginTop: '8px' }}>Create Model</button>
                         </form>
                     </div>
@@ -304,6 +353,21 @@ export function Models() {
                                                             <div className="input-group">
                                                                 <label className="input-label" style={{ fontSize: '0.8rem' }}>🔑 RedGifs API Token</label>
                                                                 <input type="password" className="input-field" value={editingModel.redgifsApiToken || ''} onChange={e => setEditingModel({ ...editingModel, redgifsApiToken: e.target.value })} placeholder="Model-specific token" />
+                                                            </div>
+                                                        </div>
+                                                        <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '12px', marginTop: '12px' }}>
+                                                            <h4 style={{ fontSize: '0.85rem', marginBottom: '8px', color: 'var(--text-secondary)' }}>AI Persona Builder</h4>
+                                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                                                                <div className="input-group"><label className="input-label" style={{ fontSize: '0.8rem' }}>Archetype</label><select className="input-field" value={editingModel.voiceArchetype} onChange={e => setEditingModel({ ...editingModel, voiceArchetype: e.target.value })}><option value="general">General</option><option value="milf">MILF</option><option value="pregnant">Pregnant</option><option value="girl-next-door">Girl Next Door</option><option value="alt">Alt</option></select></div>
+                                                                <div className="input-group"><label className="input-label" style={{ fontSize: '0.8rem' }}>Tone</label><select className="input-field" value={editingModel.voiceTone} onChange={e => setEditingModel({ ...editingModel, voiceTone: e.target.value })}><option value="teasing">Teasing</option><option value="sweet">Sweet</option><option value="bratty">Bratty</option><option value="dominant">Dominant</option></select></div>
+                                                                <div className="input-group"><label className="input-label" style={{ fontSize: '0.8rem' }}>Energy</label><select className="input-field" value={editingModel.voiceEnergy} onChange={e => setEditingModel({ ...editingModel, voiceEnergy: e.target.value })}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></div>
+                                                                <div className="input-group"><label className="input-label" style={{ fontSize: '0.8rem' }}>Age Band</label><select className="input-field" value={editingModel.voiceAgeBand} onChange={e => setEditingModel({ ...editingModel, voiceAgeBand: e.target.value })}><option value="25-34">25-34</option><option value="35-44">35-44</option><option value="45+">45+</option></select></div>
+                                                                <div className="input-group"><label className="input-label" style={{ fontSize: '0.8rem' }}>Current State</label><select className="input-field" value={editingModel.voiceState} onChange={e => setEditingModel({ ...editingModel, voiceState: e.target.value })}><option value="not-pregnant">Not Pregnant</option><option value="preg-trimester-1">Pregnant Trimester 1</option><option value="preg-trimester-2">Pregnant Trimester 2</option><option value="preg-trimester-3">Pregnant Trimester 3</option><option value="preg-38-weeks">Pregnant 38 Weeks</option></select></div>
+                                                                <div className="input-group"><label className="input-label" style={{ fontSize: '0.8rem' }}>Hard No Style</label><select className="input-field" value={editingModel.voiceNoGo} onChange={e => setEditingModel({ ...editingModel, voiceNoGo: e.target.value })}><option value="no-cta">No CTA bait</option><option value="no-swipe">No swipe/carousel text</option><option value="no-promo">No promo wording</option></select></div>
+                                                            </div>
+                                                            <div className="input-group">
+                                                                <label className="input-label" style={{ fontSize: '0.8rem' }}>Optional One-Line Note</label>
+                                                                <input className="input-field" value={editingModel.voiceNotes || ''} onChange={e => setEditingModel({ ...editingModel, voiceNotes: e.target.value })} placeholder="e.g. playful but not spammy" />
                                                             </div>
                                                         </div>
                                                         <div style={{ display: 'flex', gap: '8px' }}>

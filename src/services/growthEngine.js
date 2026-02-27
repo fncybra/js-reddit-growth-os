@@ -66,7 +66,8 @@ export const SettingsService = {
             supabaseAnonKey: 'sb_publishable_zJdDCrJNoZNGU5arum893A_mxmdvoCH',
             proxyUrl: 'https://js-reddit-proxy-production.up.railway.app',
             openRouterApiKey: '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',
-            openRouterModel: 'z-ai/glm-5'
+            openRouterModel: 'z-ai/glm-5',
+            useVoiceProfile: 1
         };
         const settingsArr = await db.settings.toArray();
         const settings = { ...defaultSettings };
@@ -101,6 +102,8 @@ export const TitleGeneratorService = {
             let topTitles = [];
             const assetType = String(context?.assetType || 'image').toLowerCase();
             const angleTag = String(context?.angleTag || '').trim();
+            const modelVoiceProfile = String(context?.modelVoiceProfile || '').trim();
+            const accountVoiceOverride = String(context?.accountVoiceOverride || '').trim();
             const sanitizeFinalTitle = (title) => {
                 let clean = String(title || '').replace(/[\r\n]+/g, ' ').trim();
                 try {
@@ -161,6 +164,7 @@ export const TitleGeneratorService = {
 
             // Call OpenRouter if the key is available
             const settings = await SettingsService.getSettings();
+            const includeVoiceProfile = Number(settings.useVoiceProfile || 0) === 1;
             if (settings.openRouterApiKey) {
                 try {
                     // Randomizer DNA - prevents the LLM from using the same sentence structures repeatedly
@@ -190,6 +194,8 @@ ${rulesSummary || 'No specific formatting rules found.'}
 ${requiredFlair ? `- Required Flair/Tag: You MUST include [${requiredFlair}] at the start or inside your title.` : ''}
 - Asset context: single ${assetType} post (not a carousel). Never mention swipe/slides/first pic/second pic/gallery/carousel/before-after.
 ${angleTag ? `- Visual angle/theme hint for this asset: ${angleTag}` : ''}
+${includeVoiceProfile && modelVoiceProfile ? `- Model Voice Profile (must match): ${modelVoiceProfile}` : ''}
+${includeVoiceProfile && accountVoiceOverride ? `- Account Voice Override (must match): ${accountVoiceOverride}` : ''}
 
 - Top 50 Viral Titles from this exact subreddit (Your Tone DNA):
 ${JSON.stringify(topTitles)}
@@ -973,7 +979,12 @@ export const DailyPlanGenerator = {
                             currentRules,
                             sub.requiredFlair,
                             previousTitles,
-                            { assetType: selectedAsset.assetType, angleTag: selectedAsset.angleTag }
+                            {
+                                assetType: selectedAsset.assetType,
+                                angleTag: selectedAsset.angleTag,
+                                modelVoiceProfile: model?.voiceProfile || '',
+                                accountVoiceOverride: account?.voiceOverride || ''
+                            }
                         );
 
                         // Hard guard: avoid duplicates and low-quality CTA/error style titles.
@@ -991,7 +1002,12 @@ export const DailyPlanGenerator = {
                                 currentRules,
                                 sub.requiredFlair,
                                 [...previousTitles, ...postedTitles, aiTitle],
-                                { assetType: selectedAsset.assetType, angleTag: selectedAsset.angleTag }
+                                {
+                                    assetType: selectedAsset.assetType,
+                                    angleTag: selectedAsset.angleTag,
+                                    modelVoiceProfile: model?.voiceProfile || '',
+                                    accountVoiceOverride: account?.voiceOverride || ''
+                                }
                             );
                         }
 
