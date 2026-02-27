@@ -164,11 +164,54 @@ export function Subreddits() {
 
         try {
             await db.subreddits.bulkPut(unassigned.map(s => ({ ...s, accountId: Number(tableAccountFilter) })));
+        } catch (err) {
+            alert('Failed to attach subreddits locally: ' + err.message);
+            return;
+        }
+
+        try {
             const { CloudSyncService } = await import('../services/growthEngine');
             await CloudSyncService.autoPush(['subreddits']);
-            alert(`Attached ${unassigned.length} subreddits to ${account?.handle || tableAccountFilter}.`);
         } catch (err) {
-            alert('Failed to attach subreddits: ' + err.message);
+            console.warn('[Subreddits] Cloud push failed after local attach:', err.message);
+        }
+
+        alert(`Attached ${unassigned.length} subreddits to ${account?.handle || tableAccountFilter}.`);
+    }
+
+    async function handleDeleteSubreddit(sub) {
+        if (!window.confirm(`Delete r/${sub.name}?`)) return;
+
+        try {
+            const tasksForSub = await db.tasks.where('subredditId').equals(sub.id).toArray();
+            const taskIds = tasksForSub.map(t => t.id);
+            const linkedPerformances = taskIds.length > 0
+                ? await db.performances.where('taskId').anyOf(taskIds).toArray()
+                : [];
+            const performanceIds = linkedPerformances.map(p => p.id);
+
+            await db.transaction('rw', db.performances, db.tasks, db.subreddits, async () => {
+                if (performanceIds.length > 0) await db.performances.bulkDelete(performanceIds);
+                if (taskIds.length > 0) await db.tasks.bulkDelete(taskIds);
+                await db.subreddits.delete(sub.id);
+            });
+
+            try {
+                const { CloudSyncService } = await import('../services/growthEngine');
+                const CHUNK_SIZE = 200;
+                for (let i = 0; i < performanceIds.length; i += CHUNK_SIZE) {
+                    await CloudSyncService.deleteMultipleFromCloud('performances', performanceIds.slice(i, i + CHUNK_SIZE));
+                }
+                for (let i = 0; i < taskIds.length; i += CHUNK_SIZE) {
+                    await CloudSyncService.deleteMultipleFromCloud('tasks', taskIds.slice(i, i + CHUNK_SIZE));
+                }
+                await CloudSyncService.deleteFromCloud('subreddits', sub.id);
+            } catch (cloudErr) {
+                console.warn('[Subreddits] Cloud delete failed:', cloudErr.message);
+            }
+        } catch (err) {
+            console.error('Failed to delete subreddit', err);
+            alert('Delete failed: ' + err.message);
         }
     }
 
@@ -457,16 +500,9 @@ export function Subreddits() {
                                                         type="button"
                                                         className="btn btn-outline"
                                                         style={{ padding: '2px 8px', fontSize: '0.8rem', color: 'var(--status-danger)', borderColor: 'var(--status-danger)' }}
-                                                        onClick={async (e) => {
+                                                        onClick={(e) => {
                                                             e.stopPropagation();
-                                                            if (window.confirm(`Delete r/${sub.name}?`)) {
-                                                                try {
-                                                                    await db.subreddits.delete(sub.id);
-                                                                } catch (err) {
-                                                                    console.error("Failed to delete", err);
-                                                                    alert("Delete failed: " + err.message);
-                                                                }
-                                                            }
+                                                            handleDeleteSubreddit(sub);
                                                         }}
                                                     >
                                                         🗑️

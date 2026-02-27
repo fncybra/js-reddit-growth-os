@@ -14,3 +14,12 @@ The React Compiler is not enabled on this template because of its impact on dev 
 ## Expanding the ESLint configuration
 
 If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+
+## Project Rule: VA/Manager Parity
+
+Every behavior change must be validated for both manager and VA flows.
+
+- If manager can create, edit, clear, or delete an item, VA flow must remain consistent after sync.
+- Deletes/clears must be durable (local + cloud), not local-only.
+- Account and model scoping must match between Discovery, Subreddits, Tasks, and VA queue.
+- Any cloud schema mismatch should fail soft (keep local success) and show a clear warning.
