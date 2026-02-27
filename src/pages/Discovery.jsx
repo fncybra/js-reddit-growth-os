@@ -214,12 +214,19 @@ export function Discovery() {
 
         try {
             await db.subreddits.bulkPut(scoped.map(s => ({ ...s, accountId: Number(selectedAccountId) })));
+        } catch (err) {
+            alert('Failed to assign existing subreddits locally: ' + err.message);
+            return;
+        }
+
+        try {
             const { CloudSyncService } = await import('../services/growthEngine');
             await CloudSyncService.autoPush(['subreddits']);
-            alert(`Assigned ${scoped.length} subreddits to ${account?.handle || selectedAccountId}.`);
         } catch (err) {
-            alert('Failed to assign existing subreddits: ' + err.message);
+            console.warn('[Discovery] Cloud push failed after local assignment:', err.message);
         }
+
+        alert(`Assigned ${scoped.length} subreddits to ${account?.handle || selectedAccountId}.`);
     }
 
     const validResults = filterValidResults(results);
