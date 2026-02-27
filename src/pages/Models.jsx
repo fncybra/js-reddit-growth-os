@@ -90,10 +90,52 @@ export function Models() {
 
     async function handleDelete(id, name) {
         if (window.confirm(`Delete model "${name}"? This cannot be undone.`)) {
-            await db.models.delete(id);
             try {
                 const { CloudSyncService } = await import('../services/growthEngine');
-                await CloudSyncService.deleteFromCloud('models', id);
+                const modelId = Number(id);
+                const [accounts, subreddits, assets, tasks] = await Promise.all([
+                    db.accounts.where('modelId').equals(modelId).toArray(),
+                    db.subreddits.where('modelId').equals(modelId).toArray(),
+                    db.assets.where('modelId').equals(modelId).toArray(),
+                    db.tasks.where('modelId').equals(modelId).toArray(),
+                ]);
+
+                const taskIds = tasks.map(t => t.id);
+                const performances = taskIds.length > 0
+                    ? await db.performances.where('taskId').anyOf(taskIds).toArray()
+                    : [];
+
+                const performanceIds = performances.map(p => p.id);
+                const accountIds = accounts.map(a => a.id);
+                const subredditIds = subreddits.map(s => s.id);
+                const assetIds = assets.map(a => a.id);
+
+                await db.transaction('rw', db.performances, db.tasks, db.assets, db.subreddits, db.accounts, db.models, async () => {
+                    if (performanceIds.length > 0) await db.performances.bulkDelete(performanceIds);
+                    if (taskIds.length > 0) await db.tasks.bulkDelete(taskIds);
+                    if (assetIds.length > 0) await db.assets.bulkDelete(assetIds);
+                    if (subredditIds.length > 0) await db.subreddits.bulkDelete(subredditIds);
+                    if (accountIds.length > 0) await db.accounts.bulkDelete(accountIds);
+                    await db.models.delete(modelId);
+                });
+
+                const CHUNK_SIZE = 200;
+                for (let i = 0; i < performanceIds.length; i += CHUNK_SIZE) {
+                    await CloudSyncService.deleteMultipleFromCloud('performances', performanceIds.slice(i, i + CHUNK_SIZE));
+                }
+                for (let i = 0; i < taskIds.length; i += CHUNK_SIZE) {
+                    await CloudSyncService.deleteMultipleFromCloud('tasks', taskIds.slice(i, i + CHUNK_SIZE));
+                }
+                for (let i = 0; i < assetIds.length; i += CHUNK_SIZE) {
+                    await CloudSyncService.deleteMultipleFromCloud('assets', assetIds.slice(i, i + CHUNK_SIZE));
+                }
+                for (let i = 0; i < subredditIds.length; i += CHUNK_SIZE) {
+                    await CloudSyncService.deleteMultipleFromCloud('subreddits', subredditIds.slice(i, i + CHUNK_SIZE));
+                }
+                for (let i = 0; i < accountIds.length; i += CHUNK_SIZE) {
+                    await CloudSyncService.deleteMultipleFromCloud('accounts', accountIds.slice(i, i + CHUNK_SIZE));
+                }
+                await CloudSyncService.deleteFromCloud('models', modelId);
             } catch (e) { console.error('Cloud delete failed:', e); }
         }
     }
