@@ -179,6 +179,13 @@ export function Library() {
             setRedgifsUploadingId(asset.id);
             const { SettingsService, CloudSyncService } = await import('../services/growthEngine');
             const proxyUrl = await SettingsService.getProxyUrl();
+            const model = models?.find(m => Number(m.id) === Number(asset.modelId));
+            const modelEndpoint = String(model?.redgifsUploadEndpoint || '').trim();
+            const modelToken = String(model?.redgifsApiToken || '').trim();
+
+            if (!modelEndpoint || !modelToken) {
+                throw new Error(`RedGifs is not configured for model ${model?.name || asset.modelId}. Add endpoint + token in Models.`);
+            }
 
             const response = await fetch(`/api/redgifs/upload-from-asset`, {
                 method: 'POST',
@@ -190,6 +197,8 @@ export function Library() {
                     fileName: asset.fileName || `asset-${asset.id}.mp4`,
                     title: '',
                     tags: [asset.angleTag, 'growthos'].filter(Boolean),
+                    redgifsUploadEndpoint: modelEndpoint,
+                    redgifsApiToken: modelToken,
                 })
             });
 

@@ -13,6 +13,8 @@ export default {
                 const fileName = String(body?.fileName || 'upload.mp4');
                 const title = String(body?.title || '').trim();
                 const tags = Array.isArray(body?.tags) ? body.tags.filter(Boolean).map(String) : [];
+                const bodyUploadEndpoint = String(body?.redgifsUploadEndpoint || '').trim();
+                const bodyApiToken = String(body?.redgifsApiToken || '').trim();
 
                 let resolvedSource = sourceUrl;
                 if (!resolvedSource && driveFileId && proxyUrl) {
@@ -37,10 +39,10 @@ export default {
                     });
                 }
 
-                const uploadEndpoint = String(env.REDGIFS_UPLOAD_ENDPOINT || '').trim();
-                const apiToken = String(env.REDGIFS_API_TOKEN || '').trim();
+                const uploadEndpoint = bodyUploadEndpoint || String(env.REDGIFS_UPLOAD_ENDPOINT || '').trim();
+                const apiToken = bodyApiToken || String(env.REDGIFS_API_TOKEN || '').trim();
                 if (!uploadEndpoint || !apiToken) {
-                    return Response.json({ error: 'RedGifs not configured in worker env' }, { status: 400 });
+                    return Response.json({ error: 'RedGifs not configured for this model (or worker fallback)' }, { status: 400 });
                 }
 
                 const form = new FormData();

@@ -5,7 +5,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 export function Models() {
     const models = useLiveQuery(() => db.models.toArray());
     const [formData, setFormData] = useState({
-        name: '', primaryNiche: '', weeklyViewTarget: 50000, weeklyPostTarget: 50, driveFolderId: '', usedFolderId: '', redgifsProfile: '', proxyInfo: '', vaPin: ''
+        name: '', primaryNiche: '', weeklyViewTarget: 50000, weeklyPostTarget: 50, driveFolderId: '', usedFolderId: '', redgifsProfile: '', redgifsUploadEndpoint: '', redgifsApiToken: '', proxyInfo: '', vaPin: ''
     });
     const [editingModel, setEditingModel] = useState(null); // { id, name, primaryNiche, driveFolderId, usedFolderId, redgifsProfile, proxyInfo, vaPin }
 
@@ -40,7 +40,7 @@ export function Models() {
             }
         }
 
-        setFormData({ name: '', primaryNiche: '', weeklyViewTarget: 50000, weeklyPostTarget: 50, driveFolderId: '', usedFolderId: '', redgifsProfile: '', proxyInfo: '', vaPin: '' });
+        setFormData({ name: '', primaryNiche: '', weeklyViewTarget: 50000, weeklyPostTarget: 50, driveFolderId: '', usedFolderId: '', redgifsProfile: '', redgifsUploadEndpoint: '', redgifsApiToken: '', proxyInfo: '', vaPin: '' });
     }
 
     async function toggleStatus(id, currentStatus) {
@@ -60,6 +60,8 @@ export function Models() {
             driveFolderId: model.driveFolderId || '',
             usedFolderId: model.usedFolderId || '',
             redgifsProfile: model.redgifsProfile || '',
+            redgifsUploadEndpoint: model.redgifsUploadEndpoint || '',
+            redgifsApiToken: model.redgifsApiToken || '',
             proxyInfo: model.proxyInfo || '',
             vaPin: model.vaPin || ''
         });
@@ -73,6 +75,8 @@ export function Models() {
             driveFolderId: editingModel.driveFolderId,
             usedFolderId: editingModel.usedFolderId,
             redgifsProfile: editingModel.redgifsProfile,
+            redgifsUploadEndpoint: editingModel.redgifsUploadEndpoint,
+            redgifsApiToken: editingModel.redgifsApiToken,
             proxyInfo: editingModel.proxyInfo,
             vaPin: editingModel.vaPin
         });
@@ -154,6 +158,16 @@ export function Models() {
                                     <div className="input-group">
                                         <label className="input-label">Default Proxy (IP:Port:User:Pass)</label>
                                         <input className="input-field" value={formData.proxyInfo} onChange={e => setFormData({ ...formData, proxyInfo: e.target.value })} placeholder="Optional defaults for VA" />
+                                    </div>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                    <div className="input-group">
+                                        <label className="input-label">RedGifs Upload Endpoint</label>
+                                        <input className="input-field" value={formData.redgifsUploadEndpoint} onChange={e => setFormData({ ...formData, redgifsUploadEndpoint: e.target.value })} placeholder="https://.../redgifs/upload" />
+                                    </div>
+                                    <div className="input-group">
+                                        <label className="input-label">RedGifs API Token</label>
+                                        <input type="password" className="input-field" value={formData.redgifsApiToken} onChange={e => setFormData({ ...formData, redgifsApiToken: e.target.value })} placeholder="Model-specific token" />
                                     </div>
                                 </div>
                             </div>
@@ -238,6 +252,16 @@ export function Models() {
                                                             <div className="input-group">
                                                                 <label className="input-label" style={{ fontSize: '0.8rem' }}>🌐 Default Proxy</label>
                                                                 <input className="input-field" value={editingModel.proxyInfo} onChange={e => setEditingModel({ ...editingModel, proxyInfo: e.target.value })} />
+                                                            </div>
+                                                        </div>
+                                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                                                            <div className="input-group">
+                                                                <label className="input-label" style={{ fontSize: '0.8rem' }}>📡 RedGifs Upload Endpoint</label>
+                                                                <input className="input-field" value={editingModel.redgifsUploadEndpoint || ''} onChange={e => setEditingModel({ ...editingModel, redgifsUploadEndpoint: e.target.value })} placeholder="https://.../redgifs/upload" />
+                                                            </div>
+                                                            <div className="input-group">
+                                                                <label className="input-label" style={{ fontSize: '0.8rem' }}>🔑 RedGifs API Token</label>
+                                                                <input type="password" className="input-field" value={editingModel.redgifsApiToken || ''} onChange={e => setEditingModel({ ...editingModel, redgifsApiToken: e.target.value })} placeholder="Model-specific token" />
                                                             </div>
                                                         </div>
                                                         <div style={{ display: 'flex', gap: '8px' }}>
