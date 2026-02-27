@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../db/db';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { CloudSyncService, DailyPlanGenerator, SettingsService, SubredditLifecycleService } from '../services/growthEngine';
+import { CloudSyncService, DailyPlanGenerator, SettingsService, SubredditLifecycleService, TitleGeneratorService } from '../services/growthEngine';
 
 export function Tasks() {
     const models = useLiveQuery(() => db.models.toArray());
@@ -52,6 +52,12 @@ export function Tasks() {
 
     const [generating, setGenerating] = useState(false);
     const [clearing, setClearing] = useState(false);
+    const [fixingTitles, setFixingTitles] = useState(false);
+
+    const isBadTitle = (title) => {
+        const t = String(title || '').toLowerCase();
+        return t.includes('[api error]') || t.includes('api error') || t.includes('user not found') || t.includes('generated title failed');
+    };
 
     async function handleGenerate() {
         if (!activeModelId) return;
@@ -107,6 +113,56 @@ export function Tasks() {
         }
     }
 
+    async function handleFixBadTitles() {
+        const badTasks = (tasks || []).filter(t => isBadTitle(t.title));
+        if (badTasks.length === 0) {
+            alert('No API-error titles found in this queue.');
+            return;
+        }
+
+        try {
+            setFixingTitles(true);
+            for (const task of badTasks) {
+                const [subreddit, asset, siblingTasks] = await Promise.all([
+                    db.subreddits.get(task.subredditId),
+                    db.assets.get(task.assetId),
+                    db.tasks.where('modelId').equals(task.modelId).toArray(),
+                ]);
+
+                if (!subreddit?.name) continue;
+                const previousTitles = siblingTasks
+                    .filter(t => t.subredditId === task.subredditId && t.id !== task.id && !!t.title)
+                    .map(t => t.title);
+
+                let newTitle = await TitleGeneratorService.generateTitle(
+                    subreddit.name,
+                    subreddit.rulesSummary || '',
+                    subreddit.requiredFlair || '',
+                    previousTitles,
+                    { assetType: asset?.assetType || 'image', angleTag: asset?.angleTag || '' }
+                );
+
+                if (isBadTitle(newTitle) || !newTitle) {
+                    newTitle = 'honest opinion on this one?';
+                }
+
+                await db.tasks.update(task.id, { title: newTitle });
+            }
+
+            try {
+                await CloudSyncService.autoPush(['tasks']);
+            } catch (err) {
+                console.warn('[Tasks] Cloud sync after title fix failed:', err.message);
+            }
+
+            alert(`Regenerated ${badTasks.length} bad title(s).`);
+        } catch (err) {
+            alert('Failed to regenerate titles: ' + err.message);
+        } finally {
+            setFixingTitles(false);
+        }
+    }
+
     if (!models || models.length === 0) {
         return <div className="page-content"><div className="card">Please create a Model first.</div></div>;
     }
@@ -132,6 +188,14 @@ export function Tasks() {
                     </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <button
+                        className="btn btn-outline"
+                        onClick={handleFixBadTitles}
+                        disabled={generating || clearing || fixingTitles || !tasks || tasks.length === 0}
+                        style={{ color: '#fbbf24', borderColor: '#fbbf24' }}
+                    >
+                        {fixingTitles ? 'Fixing Titles...' : 'Fix API Titles'}
+                    </button>
                     <button
                         className="btn btn-outline"
                         onClick={handleClearTodayTasks}
