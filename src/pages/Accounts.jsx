@@ -80,6 +80,13 @@ export function Accounts() {
             dailyCap: Number(formData.dailyCap)
         });
 
+        try {
+            const { CloudSyncService } = await import('../services/growthEngine');
+            await CloudSyncService.autoPush(['accounts']);
+        } catch (e) {
+            console.error('Auto-push after account add failed:', e);
+        }
+
         setFormData({ handle: '', dailyCap: 10, status: 'active', cqsStatus: 'High', removalRate: 0, notes: '', proxyInfo: '' });
     }
 
