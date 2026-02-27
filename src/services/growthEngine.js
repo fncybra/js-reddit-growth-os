@@ -94,10 +94,12 @@ export const SettingsService = {
 
 export const TitleGeneratorService = {
     // Scrapes top 50 titles from a subreddit and regenerates a high-quality title conforming to rules
-    async generateTitle(subredditName, rulesSummary, requiredFlair, previousTitles = []) {
+    async generateTitle(subredditName, rulesSummary, requiredFlair, previousTitles = [], context = {}) {
         try {
             const proxyUrl = await SettingsService.getProxyUrl();
             let topTitles = [];
+            const assetType = String(context?.assetType || 'image').toLowerCase();
+            const angleTag = String(context?.angleTag || '').trim();
             const sanitizeFinalTitle = (title) => {
                 let clean = String(title || '').replace(/[\r\n]+/g, ' ').trim();
                 try {
@@ -185,6 +187,8 @@ Inputs for this task:
 - Subreddit Rules & Formatting Requirements: 
 ${rulesSummary || 'No specific formatting rules found.'}
 ${requiredFlair ? `- Required Flair/Tag: You MUST include [${requiredFlair}] at the start or inside your title.` : ''}
+- Asset context: single ${assetType} post (not a carousel). Never mention swipe/slides/first pic/second pic/gallery/carousel/before-after.
+${angleTag ? `- Visual angle/theme hint for this asset: ${angleTag}` : ''}
 
 - Top 50 Viral Titles from this exact subreddit (Your Tone DNA):
 ${JSON.stringify(topTitles)}
@@ -419,6 +423,12 @@ export const TitleGuardService = {
             /\bcomment\s+["']?[a-z0-9]{2,12}["']?\b/i,
             /\bunlock\b.*\bgallery\b/i,
             /\bfull\s+gallery\b/i,
+            /\bswipe\b/i,
+            /\bslides?\b/i,
+            /\bcarousel\b/i,
+            /\bfirst\s+pic\b/i,
+            /\bsecond\s+pic\b/i,
+            /\bbefore\s*(and|&)\s*after\b/i,
             /\b(first|next)\s+\d{2,4}\b/i,
             /\bdm\s+me\b/i,
             /\bonlyfans\b/i,
@@ -437,6 +447,30 @@ export const TitleGuardService = {
         if (words.length > 18) return true;
 
         return false;
+    },
+
+    isContextMismatch(candidate = '', context = {}) {
+        const lower = String(candidate || '').toLowerCase();
+        if (!lower) return true;
+
+        if (/\bswipe\b|\bslides?\b|\bcarousel\b|\bfirst\s+pic\b|\bsecond\s+pic\b|\bbefore\s*(and|&)\s*after\b/.test(lower)) {
+            return true;
+        }
+
+        const assetType = String(context?.assetType || 'image').toLowerCase();
+        if (assetType === 'image' && /\bvideo\b|\bclip\b|\bwatch\b/.test(lower)) {
+            return true;
+        }
+
+        return false;
+    },
+
+    buildSafeFallback(context = {}) {
+        const angle = String(context?.angleTag || '').toLowerCase();
+        if (angle.includes('preg')) return 'honest opinion on my pregnant body?';
+        if (angle.includes('petite')) return 'do petite girls do it for you?';
+        if (angle.includes('milf')) return 'would you pick a milf like me?';
+        return 'honest opinion on this one?';
     },
 
     async getRecentPostedTitles(modelId, subredditId, lookbackDays = 90) {
@@ -891,7 +925,8 @@ export const DailyPlanGenerator = {
                             sub.name,
                             currentRules,
                             sub.requiredFlair,
-                            previousTitles
+                            previousTitles,
+                            { assetType: selectedAsset.assetType, angleTag: selectedAsset.angleTag }
                         );
 
                         // Hard guard: avoid duplicates and low-quality CTA/error style titles.
@@ -900,6 +935,7 @@ export const DailyPlanGenerator = {
                             attempt < 4 && (
                                 postedTitles.some(t => TitleGuardService.isTooClose(aiTitle, t))
                                 || TitleGuardService.isLowQuality(aiTitle)
+                                || TitleGuardService.isContextMismatch(aiTitle, { assetType: selectedAsset.assetType, angleTag: selectedAsset.angleTag })
                             )
                         ) {
                             attempt++;
@@ -907,12 +943,16 @@ export const DailyPlanGenerator = {
                                 sub.name,
                                 currentRules,
                                 sub.requiredFlair,
-                                [...previousTitles, ...postedTitles, aiTitle]
+                                [...previousTitles, ...postedTitles, aiTitle],
+                                { assetType: selectedAsset.assetType, angleTag: selectedAsset.angleTag }
                             );
                         }
 
-                        if (TitleGuardService.isLowQuality(aiTitle)) {
-                            aiTitle = 'honest opinion on this one?';
+                        if (
+                            TitleGuardService.isLowQuality(aiTitle)
+                            || TitleGuardService.isContextMismatch(aiTitle, { assetType: selectedAsset.assetType, angleTag: selectedAsset.angleTag })
+                        ) {
+                            aiTitle = TitleGuardService.buildSafeFallback({ angleTag: selectedAsset.angleTag });
                         }
 
                         postedTitles.push(aiTitle);
