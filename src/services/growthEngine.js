@@ -1378,8 +1378,16 @@ export const AnalyticsEngine = {
         const agencyRemovalRate = agencyTasksCompleted > 0 ? ((agencyRemovedCount / agencyTasksCompleted) * 100).toFixed(1) : 0;
 
         // Today's Global Progress
-        const todayStr = new Date().toISOString().split('T')[0];
-        const tasksToday = await db.tasks.where('date').equals(todayStr).toArray();
+        const start = new Date();
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(start);
+        end.setDate(end.getDate() + 1);
+        const startIso = start.toISOString();
+        const endIso = end.toISOString();
+        const tasksToday = await db.tasks.filter(t => {
+            if (!t?.date) return false;
+            return t.date >= startIso && t.date < endIso;
+        }).toArray();
         const completedToday = tasksToday.filter(t => t.status === 'closed').length;
 
         // Sort leaderboard by total views
@@ -1432,13 +1440,22 @@ export const CloudSyncService = {
             const BATCH_SIZE = 500;
             for (let i = 0; i < cleanData.length; i += BATCH_SIZE) {
                 const batch = cleanData.slice(i, i + BATCH_SIZE);
-                let { error } = await supabase.from(table).upsert(batch);
-                if (error && table === 'subreddits' && String(error.message || '').includes('accountId')) {
-                    const fallbackBatch = batch.map(({ accountId, ...rest }) => rest);
-                    const retry = await supabase.from(table).upsert(fallbackBatch);
+                let payload = batch;
+                let { error } = await supabase.from(table).upsert(payload);
+                let guard = 0;
+                while (error && /Could not find the '([^']+)' column/i.test(String(error.message || '')) && guard < 10) {
+                    const match = String(error.message || '').match(/Could not find the '([^']+)' column/i);
+                    const missingCol = match?.[1];
+                    if (!missingCol) break;
+                    payload = payload.map(row => {
+                        const { [missingCol]: _drop, ...rest } = row;
+                        return rest;
+                    });
+                    const retry = await supabase.from(table).upsert(payload);
                     error = retry.error;
+                    guard += 1;
                     if (!error) {
-                        console.warn('[CloudSync] subreddits.accountId missing in cloud schema, pushed without accountId');
+                        console.warn(`[CloudSync] ${table}.${missingCol} missing in cloud schema, pushed without column`);
                     }
                 }
                 if (error) {
@@ -1456,63 +1473,59 @@ export const CloudSyncService = {
         if (!supabase) return;
 
         const tables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'settings'];
+        const fetched = {};
 
-        // Pull all tables in parallel for speed
-        const pullPromises = tables.map(async (table) => {
-            try {
-                const { data, error } = await supabase.from(table).select('*');
-                if (error) {
-                    console.error(`Pull Error(${table}): `, error.message);
-                    return; // SKIP — do NOT clear local data if cloud pull errored
-                }
-
-                let cloudData = data;
-
-                // Only replace local data if we actually got valid data back
-                if (cloudData && cloudData.length > 0) {
-                    if (table === 'assets') {
-                        const localAssets = await db.assets.toArray();
-                        const byId = new Map(localAssets.map(a => [a.id, a]));
-                        const byDriveId = new Map(localAssets.filter(a => a.driveFileId).map(a => [a.driveFileId, a]));
-                        const byModelAndName = new Map(localAssets.filter(a => a.modelId && a.fileName).map(a => [`${a.modelId}::${a.fileName}`, a]));
-
-                        cloudData = cloudData.map(remote => {
-                            const localMatch = byId.get(remote.id)
-                                || (remote.driveFileId ? byDriveId.get(remote.driveFileId) : null)
-                                || ((remote.modelId && remote.fileName) ? byModelAndName.get(`${remote.modelId}::${remote.fileName}`) : null);
-
-                            if (!remote.fileBlob && localMatch?.fileBlob) {
-                                return { ...remote, fileBlob: localMatch.fileBlob };
-                            }
-                            return remote;
-                        });
-                    }
-
-                    if (table === 'subreddits') {
-                        const localSubs = await db.subreddits.toArray();
-                        const localById = new Map(localSubs.map(s => [s.id, s]));
-                        cloudData = cloudData.map(remote => {
-                            if (remote.accountId !== undefined) return remote;
-                            const local = localById.get(remote.id);
-                            if (local && local.accountId !== undefined) {
-                                return { ...remote, accountId: local.accountId };
-                            }
-                            return remote;
-                        });
-                    }
-
-                    await db[table].clear();
-                    await db[table].bulkPut(cloudData);
-                    console.log(`[CloudSync] Pulled ${cloudData.length} rows for ${table}`);
-                } else {
-                    console.log(`[CloudSync] Cloud table '${table}' is empty — keeping local data`);
-                }
-            } catch (pullErr) {
-                console.error(`[CloudSync] Critical pull error for ${table} — local data preserved:`, pullErr.message);
+        // Phase 1: fetch every table first; fail without mutating local if any fetch fails
+        for (const table of tables) {
+            const { data, error } = await supabase.from(table).select('*');
+            if (error) {
+                console.error(`Pull Error(${table}): `, error.message);
+                throw new Error(`Cloud pull failed on ${table}: ${error.message}`);
             }
-        });
+            fetched[table] = data || [];
+        }
 
-        await Promise.all(pullPromises);
+        // Phase 2: transform and apply locally only after full fetch succeeded
+        for (const table of tables) {
+            let cloudData = fetched[table] || [];
+
+            if (table === 'assets' && cloudData.length > 0) {
+                const localAssets = await db.assets.toArray();
+                const byId = new Map(localAssets.map(a => [a.id, a]));
+                const byDriveId = new Map(localAssets.filter(a => a.driveFileId).map(a => [a.driveFileId, a]));
+                const byModelAndName = new Map(localAssets.filter(a => a.modelId && a.fileName).map(a => [`${a.modelId}::${a.fileName}`, a]));
+
+                cloudData = cloudData.map(remote => {
+                    const localMatch = byId.get(remote.id)
+                        || (remote.driveFileId ? byDriveId.get(remote.driveFileId) : null)
+                        || ((remote.modelId && remote.fileName) ? byModelAndName.get(`${remote.modelId}::${remote.fileName}`) : null);
+
+                    if (!remote.fileBlob && localMatch?.fileBlob) {
+                        return { ...remote, fileBlob: localMatch.fileBlob };
+                    }
+                    return remote;
+                });
+            }
+
+            if (table === 'subreddits' && cloudData.length > 0) {
+                const localSubs = await db.subreddits.toArray();
+                const localById = new Map(localSubs.map(s => [s.id, s]));
+                cloudData = cloudData.map(remote => {
+                    if (remote.accountId !== undefined) return remote;
+                    const local = localById.get(remote.id);
+                    if (local && local.accountId !== undefined) {
+                        return { ...remote, accountId: local.accountId };
+                    }
+                    return remote;
+                });
+            }
+
+            await db[table].clear();
+            if (cloudData.length > 0) {
+                await db[table].bulkPut(cloudData);
+            }
+            console.log(`[CloudSync] Pulled ${cloudData.length} rows for ${table}`);
+        }
     },
 
     async autoPush(onlyTables = null) {
@@ -1545,6 +1558,21 @@ export const CloudSyncService = {
         if (supabase) {
             const { error } = await supabase.from(table).delete().in('id', ids);
             if (error) console.error(`[CloudSync] Error bulk deleting from ${table}:`, error.message);
+        }
+    },
+
+    async clearAllCloudData() {
+        if (!await this.isEnabled()) return;
+        const { getSupabaseClient } = await import('../db/supabase.js');
+        const supabase = await getSupabaseClient();
+        if (!supabase) return;
+
+        const tables = ['performances', 'tasks', 'assets', 'subreddits', 'accounts', 'models', 'settings'];
+        for (const table of tables) {
+            const { error } = await supabase.from(table).delete().neq('id', -1);
+            if (error) {
+                throw new Error(`Failed to clear cloud table ${table}: ${error.message}`);
+            }
         }
     }
 };

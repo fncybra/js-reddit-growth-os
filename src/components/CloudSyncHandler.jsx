@@ -3,65 +3,41 @@ import { CloudSyncService } from '../services/growthEngine';
 
 export function CloudSyncHandler() {
     const hasRun = useRef(false);
-    const syncingRef = useRef(false);
-    const pushingRef = useRef(false);
+    const cycleRef = useRef(false);
 
     useEffect(() => {
         if (hasRun.current) return;
         hasRun.current = true;
 
-        async function sync() {
-            if (syncingRef.current) return;
-            syncingRef.current = true;
-            const enabled = await CloudSyncService.isEnabled();
-            if (enabled) {
-                console.log("[CloudSync] Background sync starting...");
-                // Start with a pull to get latest from other team members
-                await CloudSyncService.pullCloudToLocal();
-                console.log("[CloudSync] Data ready.");
-            }
-            syncingRef.current = false;
-        }
-
-        async function push() {
-            if (pushingRef.current) return;
-            pushingRef.current = true;
-            const enabled = await CloudSyncService.isEnabled();
-            if (enabled) {
-                try {
-                    await CloudSyncService.pushLocalToCloud();
-                } catch (err) {
-                    console.error('[CloudSync] Background push failed:', err);
-                }
-            }
-            pushingRef.current = false;
-        }
-
-        const safeSync = async () => {
+        const runCycle = async () => {
+            if (cycleRef.current) return;
+            cycleRef.current = true;
             try {
-                await sync();
+                const enabled = await CloudSyncService.isEnabled();
+                if (!enabled) return;
+                console.log('[CloudSync] Running ordered pull->push cycle...');
+                await CloudSyncService.pullCloudToLocal();
+                await CloudSyncService.pushLocalToCloud();
             } catch (err) {
-                syncingRef.current = false;
-                console.error('[CloudSync] Pull failed:', err);
+                console.error('[CloudSync] Cycle failed:', err);
+            } finally {
+                cycleRef.current = false;
             }
         };
 
-        safeSync();
-        push();
+        runCycle();
 
-        const onFocus = () => safeSync();
+        const onFocus = () => runCycle();
         const onVisible = () => {
-            if (document.visibilityState === 'visible') safeSync();
+            if (document.visibilityState === 'visible') runCycle();
         };
         window.addEventListener('focus', onFocus);
         document.addEventListener('visibilitychange', onVisible);
 
-        const pullIntervalId = setInterval(safeSync, 30000);
-        const pushIntervalId = setInterval(push, 45000);
+        const cycleIntervalId = setInterval(runCycle, 30000);
 
         return () => {
-            clearInterval(pullIntervalId);
-            clearInterval(pushIntervalId);
+            clearInterval(cycleIntervalId);
             window.removeEventListener('focus', onFocus);
             document.removeEventListener('visibilitychange', onVisible);
         };

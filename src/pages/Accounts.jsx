@@ -19,7 +19,7 @@ export function Accounts() {
     }, [models, selectedModelId]);
 
     const [formData, setFormData] = useState({
-        handle: '', dailyCap: 10, status: 'active', cqsStatus: 'High', removalRate: 0, notes: '', proxyInfo: ''
+        handle: '', dailyCap: 10, status: 'active', cqsStatus: 'High', removalRate: 0, notes: '', proxyInfo: '', vaPin: ''
     });
 
     async function handleRefreshAll() {
@@ -87,7 +87,7 @@ export function Accounts() {
             console.error('Auto-push after account add failed:', e);
         }
 
-        setFormData({ handle: '', dailyCap: 10, status: 'active', cqsStatus: 'High', removalRate: 0, notes: '', proxyInfo: '' });
+        setFormData({ handle: '', dailyCap: 10, status: 'active', cqsStatus: 'High', removalRate: 0, notes: '', proxyInfo: '', vaPin: '' });
     }
 
     return (
@@ -158,10 +158,14 @@ export function Accounts() {
                                     </select>
                                 </div>
                             </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                                 <div className="input-group" style={{ marginBottom: 0 }}>
                                     <label className="input-label">Proxy Info (Override)</label>
                                     <input className="input-field" value={formData.proxyInfo} onChange={e => setFormData({ ...formData, proxyInfo: e.target.value })} placeholder="IP:Port:User:Pass" />
+                                </div>
+                                <div className="input-group" style={{ marginBottom: 0 }}>
+                                    <label className="input-label">VA PIN (Account-Only, Optional)</label>
+                                    <input className="input-field" value={formData.vaPin} onChange={e => setFormData({ ...formData, vaPin: e.target.value })} placeholder="e.g. 7788" />
                                 </div>
                                 <div className="input-group" style={{ marginBottom: 0 }}>
                                     <label className="input-label">Notes (Optional)</label>
@@ -188,6 +192,7 @@ export function Accounts() {
                                         <th>Account Health</th>
                                         <th>Status</th>
                                         <th>CQS</th>
+                                        <th>VA PIN</th>
                                         <th>Proxy</th>
                                         <th>Last Sync</th>
                                     </tr>
@@ -232,6 +237,7 @@ export function Accounts() {
                                                     </span>
                                                 </td>
                                                 <td>{acc.cqsStatus}</td>
+                                                <td style={{ fontSize: '0.8rem' }}>{acc.vaPin || '-'}</td>
                                                 <td style={{ fontSize: '0.8rem', color: acc.proxyInfo ? 'var(--status-warning)' : 'inherit' }}>
                                                     {acc.proxyInfo || 'Model Default'}
                                                 </td>
