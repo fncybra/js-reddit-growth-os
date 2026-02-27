@@ -61,6 +61,7 @@ export const SettingsService = {
             removalThresholdPct: 20,
             assetReuseCooldownDays: 30,
             dailyPostCap: 10,
+            maxPostsPerSubPerDay: 5,
             supabaseUrl: 'https://bwckevjsjlvsfwfbnske.supabase.co',
             supabaseAnonKey: 'sb_publishable_zJdDCrJNoZNGU5arum893A_mxmdvoCH',
             proxyUrl: 'https://js-reddit-proxy-production.up.railway.app',
@@ -668,6 +669,21 @@ export const DailyPlanGenerator = {
         // Load existing tasks for today to avoid collisions
         const allModelTasksToday = await db.tasks.where('modelId').equals(modelId).filter(t => t.date === todayStr).toArray();
         const usedSubredditIds = new Set(allModelTasksToday.map(t => t.subredditId));
+        const subUsageCount = new Map();
+        for (const t of allModelTasksToday) {
+            subUsageCount.set(t.subredditId, (subUsageCount.get(t.subredditId) || 0) + 1);
+        }
+        const maxPostsPerSubPerDay = Math.max(1, Number(settings.maxPostsPerSubPerDay || 5));
+
+        const canUseSubreddit = (subId, allowReuse = false) => {
+            if (!allowReuse && usedSubredditIds.has(subId)) return false;
+            const used = subUsageCount.get(subId) || 0;
+            return used < maxPostsPerSubPerDay;
+        };
+        const markSubredditUsed = (subId) => {
+            usedSubredditIds.add(subId);
+            subUsageCount.set(subId, (subUsageCount.get(subId) || 0) + 1);
+        };
 
         // Get available subreddits for this model (excluding temporary cooldown blocks)
         const provenSubsRaw = await db.subreddits.where('modelId').equals(modelId).filter(s => s.status === 'proven').toArray();
@@ -775,9 +791,9 @@ export const DailyPlanGenerator = {
 
             // Try to pick Testing Subs first if global limit allows
             for (const sub of accountTestingSubs) {
-                if (selectedSubsForAccount.length < tasksToGenerate && testsRemaining > 0 && !usedSubredditIds.has(sub.id)) {
+                if (selectedSubsForAccount.length < tasksToGenerate && testsRemaining > 0 && canUseSubreddit(sub.id, false)) {
                     selectedSubsForAccount.push(sub);
-                    usedSubredditIds.add(sub.id);
+                    markSubredditUsed(sub.id);
                     testsRemaining--;
                 }
             }
@@ -785,18 +801,35 @@ export const DailyPlanGenerator = {
             if (selectedSubsForAccount.length < tasksToGenerate && accountFallbackSubs.length > 0) {
                 for (const sub of accountFallbackSubs) {
                     if (selectedSubsForAccount.length >= tasksToGenerate) break;
-                    if (!usedSubredditIds.has(sub.id)) {
+                    if (canUseSubreddit(sub.id, false)) {
                         selectedSubsForAccount.push(sub);
-                        usedSubredditIds.add(sub.id);
+                        markSubredditUsed(sub.id);
                     }
                 }
             }
 
             // Fill remainder with Proven Subs
             for (const sub of accountProvenSubs) {
-                if (selectedSubsForAccount.length < tasksToGenerate && !usedSubredditIds.has(sub.id)) {
+                if (selectedSubsForAccount.length < tasksToGenerate && canUseSubreddit(sub.id, false)) {
                     selectedSubsForAccount.push(sub);
-                    usedSubredditIds.add(sub.id);
+                    markSubredditUsed(sub.id);
+                }
+            }
+
+            // Backfill quota when unique subreddits are exhausted
+            if (selectedSubsForAccount.length < tasksToGenerate) {
+                const canBackfillFromTesting = accountProvenSubs.length === 0 && accountFallbackSubs.length === 0;
+                const reusablePool = [
+                    ...accountProvenSubs,
+                    ...accountFallbackSubs,
+                    ...(canBackfillFromTesting ? accountTestingSubs : []),
+                ];
+
+                for (const sub of reusablePool) {
+                    if (selectedSubsForAccount.length >= tasksToGenerate) break;
+                    if (!canUseSubreddit(sub.id, true)) continue;
+                    selectedSubsForAccount.push(sub);
+                    markSubredditUsed(sub.id);
                 }
             }
 
