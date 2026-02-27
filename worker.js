@@ -85,6 +85,7 @@ export default {
             const navResponse = await env.ASSETS.fetch(new Request(rootUrl, request));
             const taggedResponse = new Response(navResponse.body, navResponse);
             taggedResponse.headers.set('x-growthos-worker', workerVersion);
+            taggedResponse.headers.set('cache-control', 'no-store, no-cache, must-revalidate');
             return taggedResponse;
         }
 
@@ -99,6 +100,9 @@ export default {
 
         const taggedResponse = new Response(response.body, response);
         taggedResponse.headers.set('x-growthos-worker', workerVersion);
+        if (url.pathname === '/' || url.pathname === '/index.html') {
+            taggedResponse.headers.set('cache-control', 'no-store, no-cache, must-revalidate');
+        }
         return taggedResponse;
     }
 };
