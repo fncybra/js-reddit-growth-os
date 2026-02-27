@@ -153,9 +153,11 @@ export function VADashboard() {
     const [cooldownUntil, setCooldownUntil] = useState(0);
     const [timeLeft, setTimeLeft] = useState(0);
     const [authorizedModels, setAuthorizedModels] = useState([]);
+    const [authorizedAccountIds, setAuthorizedAccountIds] = useState([]);
     const [selectedAccountId, setSelectedAccountId] = useState('ALL');
 
     const models = useLiveQuery(() => db.models.toArray());
+    const allAccounts = useLiveQuery(() => db.accounts.toArray());
     const postInterval = useLiveQuery(async () => {
         const s = await db.settings.where({ key: 'postInterval' }).first();
         return s ? Number(s.value) : 3; // Default 3 minutes
@@ -210,10 +212,55 @@ export function VADashboard() {
 
     const activeModelId = selectedModelId ? Number(selectedModelId) : null;
 
+    useEffect(() => {
+        if (!authenticated || !activeModelId) return;
+        const key = `vaCooldownUntil:${activeModelId}`;
+        const saved = Number(localStorage.getItem(key) || 0);
+        if (saved > Date.now()) {
+            setCooldownUntil(saved);
+        }
+    }, [authenticated, activeModelId]);
+
+    useEffect(() => {
+        if (!activeModelId) return;
+        const key = `vaCooldownUntil:${activeModelId}`;
+        if (cooldownUntil > Date.now()) {
+            localStorage.setItem(key, String(cooldownUntil));
+        } else {
+            localStorage.removeItem(key);
+        }
+    }, [activeModelId, cooldownUntil]);
+
     const accounts = useLiveQuery(
         () => activeModelId ? db.accounts.where('modelId').equals(activeModelId).toArray() : [],
         [activeModelId]
     );
+
+    const visibleAccounts = useMemo(() => {
+        if (!accounts) return [];
+        if (!authorizedAccountIds || authorizedAccountIds.length === 0) return accounts;
+        const allowed = new Set(authorizedAccountIds.map(Number));
+        return accounts.filter(a => allowed.has(Number(a.id)));
+    }, [accounts, authorizedAccountIds]);
+
+    useEffect(() => {
+        if (!visibleAccounts || visibleAccounts.length === 0) {
+            setSelectedAccountId('ALL');
+            return;
+        }
+
+        const exists = selectedAccountId === 'ALL'
+            ? authorizedAccountIds.length === 0
+            : visibleAccounts.some(a => String(a.id) === String(selectedAccountId));
+
+        if (!exists) {
+            if (authorizedAccountIds.length > 0) {
+                setSelectedAccountId(String(visibleAccounts[0].id));
+            } else {
+                setSelectedAccountId('ALL');
+            }
+        }
+    }, [visibleAccounts, selectedAccountId, authorizedAccountIds]);
 
     // Fetch all pending tasks to avoid Timezone strict-equality blocking overseas VAs
     // Added filter by selected account if not ALL
@@ -221,6 +268,10 @@ export function VADashboard() {
         () => {
             if (!activeModelId) return [];
             let query = db.tasks.where('modelId').equals(activeModelId).filter(t => t.status !== 'closed' && t.status !== 'failed');
+            if (authorizedAccountIds && authorizedAccountIds.length > 0) {
+                const allowed = new Set(authorizedAccountIds.map(Number));
+                query = query.filter(t => allowed.has(Number(t.accountId)));
+            }
             if (selectedAccountId !== 'ALL') {
                 const acctId = Number(selectedAccountId);
                 query = query.filter(t => t.accountId === acctId);
@@ -239,7 +290,7 @@ export function VADashboard() {
                 return rows.filter(r => !r.date || r.date === latestDate);
             });
         },
-        [activeModelId, selectedAccountId]
+        [activeModelId, selectedAccountId, authorizedAccountIds]
     );
 
     function handleAuth() {
@@ -248,18 +299,36 @@ export function VADashboard() {
         // 1. Master/Manager PIN (Global Setting)
         if (pinInput === vaPin) {
             setAuthorizedModels(models);
+            setAuthorizedAccountIds([]);
             if (models.length > 0) setSelectedModelId(models[0].id);
+            setSelectedAccountId('ALL');
             setAuthenticated(true);
             setError('');
             return;
         }
 
-        // 2. VA-Specific PIN (Assigned to one or more Models)
+        // 2. Account-Specific PIN (Most restrictive)
+        const matchingAccounts = (allAccounts || []).filter(a => a.vaPin && a.vaPin.trim() === pinInput);
+        if (matchingAccounts.length > 0) {
+            const modelIdSet = new Set(matchingAccounts.map(a => Number(a.modelId)));
+            const matchingModels = (models || []).filter(m => modelIdSet.has(Number(m.id)));
+            setAuthorizedModels(matchingModels);
+            setAuthorizedAccountIds(matchingAccounts.map(a => Number(a.id)));
+            if (matchingModels.length > 0) setSelectedModelId(matchingModels[0].id);
+            setSelectedAccountId(String(matchingAccounts[0].id));
+            setAuthenticated(true);
+            setError('');
+            return;
+        }
+
+        // 3. VA-Specific PIN (Assigned to one or more Models)
         const matchingModels = models.filter(m => m.vaPin && m.vaPin.trim() === pinInput);
 
         if (matchingModels.length > 0) {
             setAuthorizedModels(matchingModels);
+            setAuthorizedAccountIds([]);
             setSelectedModelId(matchingModels[0].id);
+            setSelectedAccountId('ALL');
             setAuthenticated(true);
             setError('');
         } else {
@@ -369,8 +438,8 @@ export function VADashboard() {
                         value={selectedAccountId}
                         onChange={e => setSelectedAccountId(e.target.value)}
                     >
-                        <option value="ALL">All Accounts Queue</option>
-                        {accounts?.map(a => (
+                        {authorizedAccountIds.length === 0 && <option value="ALL">All Accounts Queue</option>}
+                        {visibleAccounts?.map(a => (
                             <option key={a.id} value={a.id}>u/{a.handle}</option>
                         ))}
                     </select>
@@ -408,7 +477,7 @@ export function VADashboard() {
                     >
                         🔄 Refresh
                     </button>
-                    <button onClick={() => { setAuthenticated(false); setAuthorizedModels([]); setSelectedModelId(''); setPinInput(''); }} style={{ backgroundColor: 'transparent', color: '#9ca3af', border: '1px solid #2d313a', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}>Lock</button>
+                    <button onClick={() => { setAuthenticated(false); setAuthorizedModels([]); setAuthorizedAccountIds([]); setSelectedModelId(''); setSelectedAccountId('ALL'); setPinInput(''); }} style={{ backgroundColor: 'transparent', color: '#9ca3af', border: '1px solid #2d313a', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}>Lock</button>
                 </div>
             </header>
 
@@ -425,7 +494,7 @@ export function VADashboard() {
                 ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                         {tasks?.map((task, index) => (
-                            <VATaskCard key={task.id} task={task} index={index + 1} onPosted={() => setCooldownUntil(0)} cooldownActive={false} />
+                            <VATaskCard key={task.id} task={task} index={index + 1} onPosted={() => setCooldownUntil(Date.now() + (Number(postInterval || 3) * 60 * 1000))} cooldownActive={timeLeft > 0} />
                         ))}
                     </div>
                 )}

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { SettingsService, PerformanceSyncService, AccountSyncService } from '../services/growthEngine';
+import { db } from '../db/db';
 
 export function Settings() {
     const [settings, setSettings] = useState(null);
@@ -280,8 +281,22 @@ export function Settings() {
                                 onClick={async () => {
                                     if (window.confirm("Are you absolutely sure you want to completely erase the JS Reddit Growth OS Database? This cannot be undone.")) {
                                         try {
+                                            const { CloudSyncService } = await import('../services/growthEngine');
+                                            const cloudEnabled = await CloudSyncService.isEnabled();
+                                            if (cloudEnabled) {
+                                                const wipeCloud = window.confirm('Cloud sync is enabled. Also wipe ALL cloud data for all users?');
+                                                if (wipeCloud) {
+                                                    await CloudSyncService.clearAllCloudData();
+                                                }
+                                            }
+
                                             db.close();
-                                            await window.indexedDB.deleteDatabase('JSRedditGrowthOS');
+                                            await new Promise((resolve, reject) => {
+                                                const req = window.indexedDB.deleteDatabase('JSRedditGrowthOS');
+                                                req.onsuccess = () => resolve();
+                                                req.onerror = () => reject(req.error || new Error('Delete database failed'));
+                                                req.onblocked = () => reject(new Error('Database delete blocked by another open tab'));
+                                            });
                                             alert("Database wiped. The app will now reload.");
                                             window.location.reload();
                                         } catch (e) {
