@@ -409,6 +409,36 @@ export const TitleGuardService = {
         return false;
     },
 
+    isLowQuality(candidate = '') {
+        const raw = String(candidate || '').trim();
+        if (!raw) return true;
+
+        const lower = raw.toLowerCase();
+        const bannedPatterns = [
+            /\btype\s+["']?[a-z0-9]{2,12}["']?\b/i,
+            /\bcomment\s+["']?[a-z0-9]{2,12}["']?\b/i,
+            /\bunlock\b.*\bgallery\b/i,
+            /\bfull\s+gallery\b/i,
+            /\b(first|next)\s+\d{2,4}\b/i,
+            /\bdm\s+me\b/i,
+            /\bonlyfans\b/i,
+            /\btelegram\b/i,
+            /\bsnap(chat)?\b/i,
+            /\blink\s+in\s+bio\b/i,
+            /\bsubscribe\b/i,
+            /\bapi\s*error\b/i,
+            /\berror\s*\d{2,4}\b/i,
+        ];
+
+        if (bannedPatterns.some(rx => rx.test(lower))) return true;
+
+        const words = lower.split(/\s+/).filter(Boolean);
+        if (words.length < 3) return true;
+        if (words.length > 18) return true;
+
+        return false;
+    },
+
     async getRecentPostedTitles(modelId, subredditId, lookbackDays = 90) {
         const cutoffIso = subDays(new Date(), lookbackDays).toISOString();
         const tasks = await db.tasks
@@ -864,10 +894,14 @@ export const DailyPlanGenerator = {
                             previousTitles
                         );
 
-                        // Hard guard: avoid titles too close to already posted ones in this subreddit/model.
-                        // Keep title-gen logic untouched; only regenerate if too similar.
+                        // Hard guard: avoid duplicates and low-quality CTA/error style titles.
                         let attempt = 0;
-                        while (attempt < 2 && postedTitles.some(t => TitleGuardService.isTooClose(aiTitle, t))) {
+                        while (
+                            attempt < 4 && (
+                                postedTitles.some(t => TitleGuardService.isTooClose(aiTitle, t))
+                                || TitleGuardService.isLowQuality(aiTitle)
+                            )
+                        ) {
                             attempt++;
                             aiTitle = await TitleGeneratorService.generateTitle(
                                 sub.name,
@@ -875,6 +909,10 @@ export const DailyPlanGenerator = {
                                 sub.requiredFlair,
                                 [...previousTitles, ...postedTitles, aiTitle]
                             );
+                        }
+
+                        if (TitleGuardService.isLowQuality(aiTitle)) {
+                            aiTitle = 'honest opinion on this one?';
                         }
 
                         postedTitles.push(aiTitle);
