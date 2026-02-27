@@ -1421,7 +1421,15 @@ export const CloudSyncService = {
             const BATCH_SIZE = 500;
             for (let i = 0; i < cleanData.length; i += BATCH_SIZE) {
                 const batch = cleanData.slice(i, i + BATCH_SIZE);
-                const { error } = await supabase.from(table).upsert(batch);
+                let { error } = await supabase.from(table).upsert(batch);
+                if (error && table === 'subreddits' && String(error.message || '').includes('accountId')) {
+                    const fallbackBatch = batch.map(({ accountId, ...rest }) => rest);
+                    const retry = await supabase.from(table).upsert(fallbackBatch);
+                    error = retry.error;
+                    if (!error) {
+                        console.warn('[CloudSync] subreddits.accountId missing in cloud schema, pushed without accountId');
+                    }
+                }
                 if (error) {
                     console.error(`Sync Error(${table}): `, error.message);
                     throw new Error(`Failed to push to ${table}: ${error.message}`);
@@ -1464,6 +1472,19 @@ export const CloudSyncService = {
 
                             if (!remote.fileBlob && localMatch?.fileBlob) {
                                 return { ...remote, fileBlob: localMatch.fileBlob };
+                            }
+                            return remote;
+                        });
+                    }
+
+                    if (table === 'subreddits') {
+                        const localSubs = await db.subreddits.toArray();
+                        const localById = new Map(localSubs.map(s => [s.id, s]));
+                        cloudData = cloudData.map(remote => {
+                            if (remote.accountId !== undefined) return remote;
+                            const local = localById.get(remote.id);
+                            if (local && local.accountId !== undefined) {
+                                return { ...remote, accountId: local.accountId };
                             }
                             return remote;
                         });
