@@ -339,6 +339,17 @@ Print ONLY the single final title as plain text. No quotes. No numbering. No ext
                         console.error('Failed string cleanup:', cleanupErr);
                     }
 
+                    const lowerFinal = String(finalTitle || '').toLowerCase();
+                    if (
+                        lowerFinal.includes('api error')
+                        || lowerFinal.includes('user not found')
+                        || lowerFinal.includes('unauthorized')
+                        || lowerFinal.includes('401')
+                        || lowerFinal.includes('openrouter')
+                    ) {
+                        return getFallbackTitle();
+                    }
+
                     return sanitizeFinalTitle(finalTitle.trim());
 
                 } catch (err) {
