@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../db/db';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { extractRedditPostIdFromUrl, SubredditGuardService } from '../services/growthEngine';
+import { extractRedditPostIdFromUrl, SubredditGuardService, TitleGeneratorService } from '../services/growthEngine';
 
 const vaResponsiveCss = `
 .va-root {
@@ -445,6 +445,7 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
     const [mediaFailed, setMediaFailed] = useState(false);
     const [heicPreviewUrl, setHeicPreviewUrl] = useState('');
     const [heicLoading, setHeicLoading] = useState(false);
+    const [regeneratingTitle, setRegeneratingTitle] = useState(false);
     const proxyBase = 'https://js-reddit-proxy-production.up.railway.app';
 
     const isDone = task.status === 'closed' || performance;
@@ -679,6 +680,43 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
         alert(`${label} copied to clipboard!`);
     }
 
+    async function handleRegenerateTitle() {
+        if (!subreddit?.name) return;
+        setRegeneratingTitle(true);
+        try {
+            const siblingTasks = await db.tasks.where('modelId').equals(task.modelId).toArray();
+            const previousTitles = siblingTasks
+                .filter(t => t.subredditId === task.subredditId && t.id !== task.id && !!t.title)
+                .map(t => t.title);
+
+            const newTitle = await TitleGeneratorService.generateTitle(
+                subreddit.name,
+                subreddit.rulesSummary || '',
+                subreddit.requiredFlair || '',
+                previousTitles,
+                { assetType: asset?.assetType || 'image', angleTag: asset?.angleTag || '' }
+            );
+
+            if (!newTitle || /\[\s*api\s*error\s*\]/i.test(newTitle)) {
+                alert('Title regeneration failed. Try again in a moment.');
+                return;
+            }
+
+            await db.tasks.update(task.id, { title: newTitle });
+            try {
+                const { CloudSyncService } = await import('../services/growthEngine');
+                await CloudSyncService.autoPush(['tasks']);
+            } catch (err) {
+                console.warn('[VA] Task title cloud sync failed:', err?.message || err);
+            }
+            alert('Title regenerated and synced.');
+        } catch (err) {
+            alert('Failed to regenerate title: ' + err.message);
+        } finally {
+            setRegeneratingTitle(false);
+        }
+    }
+
     useEffect(() => {
         setMediaFailed(false);
     }, [task.id, mediaUrl]);
@@ -814,7 +852,16 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
                                     <div style={{ color: '#e5e7eb', backgroundColor: '#0f1115', padding: '16px', borderRadius: '4px', border: '1px solid #2d313a', fontSize: '1rem', lineHeight: '1.4' }}>
                                         {task.title}
                                     </div>
-                                    <button onClick={() => copyToClipboard(task.title, 'Title')} style={{ position: 'absolute', bottom: '8px', right: '8px', backgroundColor: '#6366f1', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', fontSize: '0.8rem', cursor: 'pointer', fontWeight: 'bold' }}>Copy Title</button>
+                                    <div style={{ position: 'absolute', bottom: '8px', right: '8px', display: 'flex', gap: '8px' }}>
+                                        <button
+                                            onClick={handleRegenerateTitle}
+                                            disabled={regeneratingTitle}
+                                            style={{ backgroundColor: 'transparent', color: '#fbbf24', border: '1px solid #fbbf24', padding: '6px 10px', borderRadius: '4px', fontSize: '0.8rem', cursor: regeneratingTitle ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: regeneratingTitle ? 0.7 : 1 }}
+                                        >
+                                            {regeneratingTitle ? 'Regenerating...' : 'Regen Title'}
+                                        </button>
+                                        <button onClick={() => copyToClipboard(task.title, 'Title')} style={{ backgroundColor: '#6366f1', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', fontSize: '0.8rem', cursor: 'pointer', fontWeight: 'bold' }}>Copy Title</button>
+                                    </div>
                                 </div>
                             </div>
 
