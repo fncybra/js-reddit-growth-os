@@ -54,6 +54,60 @@ export function Tasks() {
     const [clearing, setClearing] = useState(false);
     const [fixingTitles, setFixingTitles] = useState(false);
 
+    const planCapacity = useLiveQuery(
+        async () => {
+            if (!activeModelId) return null;
+
+            const [settings, accounts, subreddits, modelTasks] = await Promise.all([
+                SettingsService.getSettings(),
+                db.accounts.where('modelId').equals(activeModelId).toArray(),
+                db.subreddits.where('modelId').equals(activeModelId).toArray(),
+                db.tasks.where('modelId').equals(activeModelId).toArray(),
+            ]);
+
+            const activeAccounts = accounts.filter(a => a.status === 'active');
+            const start = new Date();
+            start.setHours(0, 0, 0, 0);
+            const todayIso = start.toISOString();
+            const tasksToday = modelTasks.filter(t => t.date === todayIso);
+
+            const desiredRemaining = activeAccounts.reduce((sum, account) => {
+                const already = tasksToday.filter(t => Number(t.accountId) === Number(account.id)).length;
+                const cap = Number(account.dailyCap || settings.dailyPostCap || 0);
+                return sum + Math.max(0, cap - already);
+            }, 0);
+
+            const usedSubIdsToday = new Set(tasksToday.map(t => Number(t.subredditId)).filter(Boolean));
+            const candidateSubs = subreddits.filter(s => {
+                if (s.status === 'rejected') return false;
+                if (s.cooldownUntil && new Date(s.cooldownUntil) > new Date()) return false;
+                if (usedSubIdsToday.has(Number(s.id))) return false;
+
+                const attachedAll = !s.accountId;
+                const attachedToActive = activeAccounts.some(a => Number(a.id) === Number(s.accountId));
+                return attachedAll || attachedToActive;
+            });
+
+            const repeatsEnabled = Number(settings.allowSubredditRepeatsInQueue || 0) === 1;
+            const perSubCap = Math.max(1, Number(settings.maxPostsPerSubPerDay || 5));
+            const uniqueCapacity = candidateSubs.length;
+            const repeatedCapacity = candidateSubs.length * perSubCap;
+            const estimatedMax = repeatsEnabled ? repeatedCapacity : uniqueCapacity;
+
+            return {
+                desiredRemaining,
+                activeAccounts: activeAccounts.length,
+                candidateSubreddits: candidateSubs.length,
+                repeatsEnabled,
+                perSubCap,
+                estimatedMax,
+                willShortfall: desiredRemaining > estimatedMax,
+                shortfallBy: Math.max(0, desiredRemaining - estimatedMax)
+            };
+        },
+        [activeModelId, tasks?.length]
+    );
+
     const isBadTitle = (title) => {
         const t = String(title || '').toLowerCase();
         return t.includes('[api error]') || t.includes('api error') || t.includes('user not found') || t.includes('generated title failed');
@@ -61,6 +115,13 @@ export function Tasks() {
 
     async function handleGenerate() {
         if (!activeModelId) return;
+
+        if (planCapacity?.willShortfall) {
+            const msg = `Warning: requested remaining posts is ${planCapacity.desiredRemaining}, but current attached subreddit capacity is about ${planCapacity.estimatedMax}. Short by ~${planCapacity.shortfallBy}. Generate anyway?`;
+            const ok = window.confirm(msg);
+            if (!ok) return;
+        }
+
         setGenerating(true);
         try {
             await DailyPlanGenerator.generateDailyPlan(activeModelId);
@@ -214,6 +275,24 @@ export function Tasks() {
                 </div>
             </header>
             <div className="page-content">
+                {planCapacity && (
+                    <div className="card" style={{ marginBottom: '16px', borderColor: planCapacity.willShortfall ? 'var(--status-warning)' : 'var(--border-color)' }}>
+                        <div style={{ display: 'flex', gap: '18px', flexWrap: 'wrap', alignItems: 'center' }}>
+                            <div><strong>Plan Capacity Check</strong></div>
+                            <div>Active Accounts: <strong>{planCapacity.activeAccounts}</strong></div>
+                            <div>Remaining Target Posts: <strong>{planCapacity.desiredRemaining}</strong></div>
+                            <div>Usable Subreddits: <strong>{planCapacity.candidateSubreddits}</strong></div>
+                            <div>Estimated Max New Tasks: <strong>{planCapacity.estimatedMax}</strong></div>
+                            {planCapacity.repeatsEnabled && <div>Repeat Mode: <strong>ON</strong> (cap {planCapacity.perSubCap}/sub)</div>}
+                            {!planCapacity.repeatsEnabled && <div>Repeat Mode: <strong>OFF</strong></div>}
+                        </div>
+                        {planCapacity.willShortfall && (
+                            <div style={{ marginTop: '10px', color: 'var(--status-warning)' }}>
+                                Not enough attached subreddit capacity to fill all requested posts. Attach more subreddits or reduce caps.
+                            </div>
+                        )}
+                    </div>
+                )}
                 <div className="card">
                     <h2 style={{ fontSize: '1.1rem', marginBottom: '16px' }}>Today's Tasks ({tasks?.length || 0})</h2>
                     {tasks?.length === 0 ? (
