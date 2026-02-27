@@ -15,9 +15,9 @@ export function CloudSyncHandler() {
             try {
                 const enabled = await CloudSyncService.isEnabled();
                 if (!enabled) return;
-                console.log('[CloudSync] Running ordered pull->push cycle...');
-                await CloudSyncService.pullCloudToLocal();
+                console.log('[CloudSync] Running ordered push->pull cycle...');
                 await CloudSyncService.pushLocalToCloud();
+                await CloudSyncService.pullCloudToLocal();
             } catch (err) {
                 console.error('[CloudSync] Cycle failed:', err);
             } finally {
