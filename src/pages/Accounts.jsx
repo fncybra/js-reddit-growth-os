@@ -90,6 +90,17 @@ export function Accounts() {
         setFormData({ handle: '', dailyCap: 10, status: 'active', cqsStatus: 'High', removalRate: 0, notes: '', proxyInfo: '', vaPin: '' });
     }
 
+    async function updateAccountPatch(accountId, patch) {
+        try {
+            await db.accounts.update(accountId, patch);
+            const { CloudSyncService } = await import('../services/growthEngine');
+            await CloudSyncService.autoPush(['accounts']);
+        } catch (e) {
+            console.error('Account update failed:', e);
+            alert('Failed to update account: ' + e.message);
+        }
+    }
+
     return (
         <>
             <header className="page-header">
@@ -190,6 +201,7 @@ export function Accounts() {
                                         <th>Assigned Model</th>
                                         <th>Karma</th>
                                         <th>Account Health</th>
+                                        <th>Daily Cap</th>
                                         <th>Status</th>
                                         <th>CQS</th>
                                         <th>VA PIN</th>
@@ -232,14 +244,69 @@ export function Accounts() {
                                                     )}
                                                 </td>
                                                 <td>
-                                                    <span className={`badge ${acc.status === 'active' ? 'badge-success' : acc.status === 'warming' ? 'badge-warning' : 'badge-danger'}`}>
-                                                        {acc.status}
-                                                    </span>
+                                                    <input
+                                                        type="number"
+                                                        className="input-field"
+                                                        defaultValue={acc.dailyCap || 10}
+                                                        style={{ width: '88px', padding: '4px 8px', fontSize: '0.8rem' }}
+                                                        onBlur={(e) => {
+                                                            const next = Number(e.target.value || 0);
+                                                            if (!Number.isFinite(next) || next <= 0 || next === Number(acc.dailyCap || 10)) return;
+                                                            updateAccountPatch(acc.id, { dailyCap: next });
+                                                        }}
+                                                    />
                                                 </td>
-                                                <td>{acc.cqsStatus}</td>
-                                                <td style={{ fontSize: '0.8rem' }}>{acc.vaPin || '-'}</td>
-                                                <td style={{ fontSize: '0.8rem', color: acc.proxyInfo ? 'var(--status-warning)' : 'inherit' }}>
-                                                    {acc.proxyInfo || 'Model Default'}
+                                                <td>
+                                                    <select
+                                                        className="input-field"
+                                                        value={acc.status || 'active'}
+                                                        style={{ width: '110px', padding: '4px 8px', fontSize: '0.8rem' }}
+                                                        onChange={(e) => updateAccountPatch(acc.id, { status: e.target.value })}
+                                                    >
+                                                        <option value="warming">warming</option>
+                                                        <option value="active">active</option>
+                                                        <option value="cooldown">cooldown</option>
+                                                    </select>
+                                                </td>
+                                                <td>
+                                                    <select
+                                                        className="input-field"
+                                                        value={acc.cqsStatus || 'High'}
+                                                        style={{ width: '115px', padding: '4px 8px', fontSize: '0.8rem' }}
+                                                        onChange={(e) => updateAccountPatch(acc.id, { cqsStatus: e.target.value })}
+                                                    >
+                                                        <option value="Highest">Highest</option>
+                                                        <option value="High">High</option>
+                                                        <option value="Moderate">Moderate</option>
+                                                        <option value="Low">Low</option>
+                                                        <option value="Lowest">Lowest</option>
+                                                    </select>
+                                                </td>
+                                                <td>
+                                                    <input
+                                                        className="input-field"
+                                                        defaultValue={acc.vaPin || ''}
+                                                        placeholder="-"
+                                                        style={{ width: '92px', padding: '4px 8px', fontSize: '0.8rem' }}
+                                                        onBlur={(e) => {
+                                                            const next = String(e.target.value || '').trim();
+                                                            if (next === String(acc.vaPin || '')) return;
+                                                            updateAccountPatch(acc.id, { vaPin: next });
+                                                        }}
+                                                    />
+                                                </td>
+                                                <td>
+                                                    <input
+                                                        className="input-field"
+                                                        defaultValue={acc.proxyInfo || ''}
+                                                        placeholder="Model Default"
+                                                        style={{ width: '180px', padding: '4px 8px', fontSize: '0.8rem' }}
+                                                        onBlur={(e) => {
+                                                            const next = String(e.target.value || '').trim();
+                                                            if (next === String(acc.proxyInfo || '')) return;
+                                                            updateAccountPatch(acc.id, { proxyInfo: next });
+                                                        }}
+                                                    />
                                                 </td>
                                                 <td style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                                                     {acc.lastSyncDate ? new Date(acc.lastSyncDate).toLocaleDateString() : 'Never'}
