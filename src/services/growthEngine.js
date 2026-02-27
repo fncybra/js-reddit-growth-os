@@ -197,6 +197,8 @@ ${angleTag ? `- Visual angle/theme hint for this asset: ${angleTag}` : ''}
 ${includeVoiceProfile && modelVoiceProfile ? `- Model Voice Profile (must match): ${modelVoiceProfile}` : ''}
 ${includeVoiceProfile && accountVoiceOverride ? `- Account Voice Override (must match): ${accountVoiceOverride}` : ''}
 
+If voice profile includes identity anchors (age/hair/state/niche keywords), keep wording aligned to those anchors and never contradict them.
+
 - Top 50 Viral Titles from this exact subreddit (Your Tone DNA):
 ${JSON.stringify(topTitles)}
 
