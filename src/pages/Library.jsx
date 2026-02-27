@@ -180,12 +180,13 @@ export function Library() {
             const { SettingsService, CloudSyncService } = await import('../services/growthEngine');
             const proxyUrl = await SettingsService.getProxyUrl();
 
-            const response = await fetch(`${proxyUrl}/api/redgifs/upload-from-asset`, {
+            const response = await fetch(`/api/redgifs/upload-from-asset`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     driveFileId: asset.driveFileId || null,
                     sourceUrl: asset.originalUrl || asset.externalUrl || null,
+                    proxyUrl,
                     fileName: asset.fileName || `asset-${asset.id}.mp4`,
                     title: '',
                     tags: [asset.angleTag, 'growthos'].filter(Boolean),
