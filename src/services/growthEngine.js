@@ -62,6 +62,7 @@ export const SettingsService = {
             assetReuseCooldownDays: 30,
             dailyPostCap: 10,
             maxPostsPerSubPerDay: 5,
+            allowSubredditRepeatsInQueue: 0,
             supabaseUrl: 'https://bwckevjsjlvsfwfbnske.supabase.co',
             supabaseAnonKey: 'sb_publishable_zJdDCrJNoZNGU5arum893A_mxmdvoCH',
             proxyUrl: 'https://js-reddit-proxy-production.up.railway.app',
@@ -783,6 +784,11 @@ export const DailyPlanGenerator = {
         let taskGenerationPromises = [];
         const usedAssetsInSession = new Map(); // Track counts to reuse a photo multiple times a day
         const postedTitleCache = new Map();
+        const usedTitlesSession = new Set(
+            allModelTasksToday
+                .map(t => TitleGuardService.normalize(t.title || ''))
+                .filter(Boolean)
+        );
 
         // 2. Iterate through accounts and fill their individual quotas
         for (const account of activeAccounts) {
@@ -825,7 +831,7 @@ export const DailyPlanGenerator = {
             }
 
             // Backfill quota when unique subreddits are exhausted
-            if (selectedSubsForAccount.length < tasksToGenerate) {
+            if (Number(settings.allowSubredditRepeatsInQueue || 0) === 1 && selectedSubsForAccount.length < tasksToGenerate) {
                 const canBackfillFromTesting = accountProvenSubs.length === 0 && accountFallbackSubs.length === 0;
                 const reusablePool = [
                     ...accountProvenSubs,
@@ -835,6 +841,7 @@ export const DailyPlanGenerator = {
 
                 for (const sub of reusablePool) {
                     if (selectedSubsForAccount.length >= tasksToGenerate) break;
+                    if (selectedSubsForAccount.some(existing => existing.id === sub.id)) continue;
                     if (!canUseSubreddit(sub.id, true)) continue;
                     selectedSubsForAccount.push(sub);
                     markSubredditUsed(sub.id);
@@ -1020,6 +1027,30 @@ export const DailyPlanGenerator = {
                             aiTitle = TitleGuardService.buildSafeFallback({ angleTag: selectedAsset.angleTag });
                         }
 
+                        let dedupeAttempts = 0;
+                        while (dedupeAttempts < 4 && usedTitlesSession.has(TitleGuardService.normalize(aiTitle))) {
+                            dedupeAttempts++;
+                            aiTitle = await TitleGeneratorService.generateTitle(
+                                sub.name,
+                                currentRules,
+                                sub.requiredFlair,
+                                [...previousTitles, ...postedTitles, aiTitle],
+                                {
+                                    assetType: selectedAsset.assetType,
+                                    angleTag: selectedAsset.angleTag,
+                                    modelVoiceProfile: model?.voiceProfile || '',
+                                    accountVoiceOverride: account?.voiceOverride || ''
+                                }
+                            );
+                        }
+
+                        const normalizedFinal = TitleGuardService.normalize(aiTitle);
+                        if (!normalizedFinal || usedTitlesSession.has(normalizedFinal)) {
+                            aiTitle = `${TitleGuardService.buildSafeFallback({ angleTag: selectedAsset.angleTag })} ${Math.floor(Math.random() * 900 + 100)}`;
+                        }
+
+                        usedTitlesSession.add(TitleGuardService.normalize(aiTitle));
+
                         postedTitles.push(aiTitle);
                         postedTitleCache.set(cacheKey, postedTitles);
 
@@ -1040,17 +1071,12 @@ export const DailyPlanGenerator = {
             }
         }
 
-        // Process in chunks of 10 — paid models support 100+ requests/min
-        const chunkSize = 10;
+        // Process sequentially to guarantee deterministic de-duplication
         let finalNewTasks = [];
 
-        for (let i = 0; i < taskGenerationPromises.length; i += chunkSize) {
-            const chunk = taskGenerationPromises.slice(i, i + chunkSize);
-            console.log(`Processing queue chunk ${i / chunkSize + 1} of ${Math.ceil(taskGenerationPromises.length / chunkSize)}...`);
-
-            // Wait for this specific chunk to finish
-            const chunkResults = await Promise.all(chunk.map(fn => fn()));
-            finalNewTasks.push(...chunkResults);
+        for (const generateTaskFn of taskGenerationPromises) {
+            const one = await generateTaskFn();
+            finalNewTasks.push(one);
         }
 
         if (finalNewTasks.length > 0) { // Finalize
