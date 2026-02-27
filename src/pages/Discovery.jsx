@@ -6,6 +6,7 @@ import { Search, Loader2, Download } from 'lucide-react';
 export function Discovery() {
     const models = useLiveQuery(() => db.models.toArray());
     const [selectedModelId, setSelectedModelId] = useState(null);
+    const [selectedAccountId, setSelectedAccountId] = useState('');
 
     // Auto-select first model available if none selected
     React.useEffect(() => {
@@ -15,6 +16,22 @@ export function Discovery() {
     }, [models, selectedModelId]);
 
     const targetModel = models?.find(m => m.id === selectedModelId);
+    const modelAccounts = useLiveQuery(
+        () => targetModel ? db.accounts.where({ modelId: targetModel.id }).toArray() : [],
+        [targetModel?.id]
+    );
+
+    React.useEffect(() => {
+        if (!modelAccounts || modelAccounts.length === 0) {
+            setSelectedAccountId('');
+            return;
+        }
+
+        const exists = modelAccounts.some(a => String(a.id) === String(selectedAccountId));
+        if (!selectedAccountId || !exists) {
+            setSelectedAccountId(String(modelAccounts[0].id));
+        }
+    }, [modelAccounts, selectedAccountId]);
 
     const existingSubreddits = useLiveQuery(
         () => targetModel ? db.subreddits.where({ modelId: targetModel.id }).toArray() : [],
@@ -125,6 +142,10 @@ export function Discovery() {
 
     async function handleImport() {
         if (selectedSubs.size === 0) return;
+        if (!selectedAccountId) {
+            alert('Select an account first so imported subreddits are attached correctly.');
+            return;
+        }
 
         setLoading(true);
         const subNames = Array.from(selectedSubs);
@@ -149,6 +170,7 @@ export function Discovery() {
 
                 subsToAdd.push({
                     modelId: targetModel.id,
+                    accountId: Number(selectedAccountId),
                     name: subName,
                     url: `reddit.com/r/${subName}`,
                     nicheTag: importNiche.toLowerCase(),
@@ -178,6 +200,28 @@ export function Discovery() {
         }
     }
 
+    async function handleAssignExistingToSelectedAccount() {
+        if (!targetModel || !selectedAccountId) return;
+        const scoped = (existingSubreddits || []).filter(s => !s.accountId);
+        if (scoped.length === 0) {
+            alert('No unassigned subreddits found for this model.');
+            return;
+        }
+
+        const account = (modelAccounts || []).find(a => String(a.id) === String(selectedAccountId));
+        const confirmed = window.confirm(`Assign ${scoped.length} existing unassigned subreddits in ${targetModel.name} to ${account?.handle || selectedAccountId}?`);
+        if (!confirmed) return;
+
+        try {
+            await db.subreddits.bulkPut(scoped.map(s => ({ ...s, accountId: Number(selectedAccountId) })));
+            const { CloudSyncService } = await import('../services/growthEngine');
+            await CloudSyncService.autoPush(['subreddits']);
+            alert(`Assigned ${scoped.length} subreddits to ${account?.handle || selectedAccountId}.`);
+        } catch (err) {
+            alert('Failed to assign existing subreddits: ' + err.message);
+        }
+    }
+
     const validResults = filterValidResults(results);
 
     return (
@@ -197,6 +241,26 @@ export function Discovery() {
                                 <option key={m.id} value={m.id}>{m.name}</option>
                             ))}
                         </select>
+                        Account:
+                        <select
+                            className="input-field"
+                            style={{ padding: '4px 8px', fontSize: '0.9rem', width: 'auto', display: 'inline-block', minWidth: '170px' }}
+                            value={selectedAccountId}
+                            onChange={e => setSelectedAccountId(e.target.value)}
+                        >
+                            {(modelAccounts || []).map(a => (
+                                <option key={a.id} value={String(a.id)}>{a.handle}</option>
+                            ))}
+                        </select>
+                        <button
+                            type="button"
+                            className="btn btn-outline"
+                            onClick={handleAssignExistingToSelectedAccount}
+                            disabled={!selectedAccountId}
+                            style={{ padding: '4px 10px', fontSize: '0.78rem' }}
+                        >
+                            Assign Existing To Account
+                        </button>
                     </div>
                 </div>
                 {selectedSubs.size > 0 && (
