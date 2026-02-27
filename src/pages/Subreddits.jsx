@@ -11,8 +11,8 @@ export function Subreddits() {
     const performances = useLiveQuery(() => db.performances.toArray());
 
     const [selectedModelId, setSelectedModelId] = useState('');
-    const [tableModelFilter, setTableModelFilter] = useState('all');
-    const [tableAccountFilter, setTableAccountFilter] = useState('all');
+    const [tableModelFilter, setTableModelFilter] = useState('');
+    const [tableAccountFilter, setTableAccountFilter] = useState('');
     const [searchText, setSearchText] = useState('');
     const [historySubredditId, setHistorySubredditId] = useState(null);
 
@@ -23,8 +23,10 @@ export function Subreddits() {
     }, [models, selectedModelId]);
 
     const [formData, setFormData] = useState({
-        name: '', url: '', nicheTag: '', riskLevel: 'low', contentComplexity: 'general'
+        name: '', url: '', nicheTag: '', riskLevel: 'low', contentComplexity: 'general', accountId: 'all'
     });
+
+    const formAccounts = (accounts || []).filter(a => String(a.modelId) === String(selectedModelId));
 
     async function handleSubmit(e) {
         e.preventDefault();
@@ -51,6 +53,7 @@ export function Subreddits() {
             ...formData,
             name: formData.name.replace(/^(r\/|\/r\/)/i, ''),
             modelId: Number(selectedModelId),
+            accountId: formData.accountId === 'all' ? null : Number(formData.accountId),
             status: 'testing',
             totalTests: 0,
             avg24hViews: 0,
@@ -61,11 +64,15 @@ export function Subreddits() {
             requiredFlair: ''
         });
 
-        setFormData({ name: '', url: '', nicheTag: '', riskLevel: 'low', contentComplexity: 'general' });
+        setFormData({ name: '', url: '', nicheTag: '', riskLevel: 'low', contentComplexity: 'general', accountId: 'all' });
     }
 
     const filteredSubreddits = (subreddits || [])
-        .filter(sub => tableModelFilter === 'all' || String(sub.modelId) === String(tableModelFilter))
+        .filter(sub => !tableModelFilter || String(sub.modelId) === String(tableModelFilter))
+        .filter(sub => {
+            if (!tableAccountFilter || tableAccountFilter === 'all') return true;
+            return String(sub.accountId || '') === String(tableAccountFilter);
+        })
         .filter(sub => {
             if (!searchText.trim()) return true;
             const q = searchText.toLowerCase();
@@ -81,14 +88,32 @@ export function Subreddits() {
             return (b.avg24hViews || 0) - (a.avg24hViews || 0);
         });
 
-    const visibleAccounts = (accounts || []).filter(a => tableModelFilter === 'all' || String(a.modelId) === String(tableModelFilter));
+    const visibleAccounts = (accounts || []).filter(a => !tableModelFilter || String(a.modelId) === String(tableModelFilter));
 
     React.useEffect(() => {
         if (!models || models.length === 0) return;
-        if (tableAccountFilter === 'all') return;
+        if (!tableModelFilter) {
+            setTableModelFilter(String(models[0].id));
+        }
+    }, [models, tableModelFilter]);
+
+    React.useEffect(() => {
+        if (!visibleAccounts || visibleAccounts.length === 0) {
+            setTableAccountFilter('all');
+            return;
+        }
         const exists = visibleAccounts.some(a => String(a.id) === String(tableAccountFilter));
-        if (!exists) setTableAccountFilter('all');
+        if (!tableAccountFilter || !exists) {
+            setTableAccountFilter(String(visibleAccounts[0].id));
+        }
     }, [tableModelFilter, tableAccountFilter, visibleAccounts]);
+
+    React.useEffect(() => {
+        const exists = formAccounts.some(a => String(a.id) === String(formData.accountId));
+        if (formData.accountId !== 'all' && !exists) {
+            setFormData(prev => ({ ...prev, accountId: 'all' }));
+        }
+    }, [selectedModelId, formAccounts, formData.accountId]);
 
     const scopedStatsBySubreddit = React.useMemo(() => {
         const map = new Map();
@@ -96,7 +121,7 @@ export function Subreddits() {
 
         const perfByTaskId = new Map((performances || []).map(p => [p.taskId, p]));
         const relevantTasks = (tasks || []).filter(t => {
-            if (tableModelFilter !== 'all' && String(t.modelId) !== String(tableModelFilter)) return false;
+            if (tableModelFilter && String(t.modelId) !== String(tableModelFilter)) return false;
             if (tableAccountFilter !== 'all' && String(t.accountId) !== String(tableAccountFilter)) return false;
             return true;
         });
@@ -134,7 +159,7 @@ export function Subreddits() {
                 <div>
                     <h1 className="page-title">Agency Subreddits</h1>
                     <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '4px' }}>
-                        Manage subreddits for all models across the agency.
+                        Focus flow: model to account to subreddits attached to that account.
                     </div>
                 </div>
             </header>
@@ -143,7 +168,7 @@ export function Subreddits() {
                     <div className="card">
                         <h2 style={{ fontSize: '1.1rem', marginBottom: '16px' }}>Add New Subreddit</h2>
                         <form onSubmit={handleSubmit}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
                                 <div className="input-group" style={{ marginBottom: 0 }}>
                                     <label className="input-label">Subreddit Name</label>
                                     <input className="input-field" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} placeholder="e.g. funny" required />
@@ -159,6 +184,19 @@ export function Subreddits() {
                                         <option value="" disabled>Select a Model</option>
                                         {models?.map(m => (
                                             <option key={m.id} value={m.id}>{m.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="input-group" style={{ marginBottom: 0 }}>
+                                    <label className="input-label">Attach to Account</label>
+                                    <select
+                                        className="input-field"
+                                        value={String(formData.accountId)}
+                                        onChange={e => setFormData({ ...formData, accountId: e.target.value })}
+                                    >
+                                        <option value="all">All model accounts</option>
+                                        {formAccounts.map(acc => (
+                                            <option key={acc.id} value={String(acc.id)}>{acc.handle}</option>
                                         ))}
                                     </select>
                                 </div>
@@ -203,7 +241,6 @@ export function Subreddits() {
                                 onChange={e => setTableModelFilter(e.target.value)}
                                 style={{ width: 'auto', minWidth: '160px', padding: '6px 10px' }}
                             >
-                                <option value="all">All Models</option>
                                 {models?.map(m => (
                                     <option key={m.id} value={String(m.id)}>{m.name}</option>
                                 ))}
@@ -221,7 +258,7 @@ export function Subreddits() {
                                 onChange={e => setTableAccountFilter(e.target.value)}
                                 style={{ width: 'auto', minWidth: '180px', padding: '6px 10px' }}
                             >
-                                <option value="all">All Accounts</option>
+                                <option value="all">All Accounts (this model)</option>
                                 {visibleAccounts.map(acc => (
                                     <option key={acc.id} value={String(acc.id)}>{acc.handle}</option>
                                 ))}
@@ -237,6 +274,7 @@ export function Subreddits() {
                                     <tr>
                                         <th>Name</th>
                                         <th>Assigned Model</th>
+                                        <th>Attached Account</th>
                                         <th>Status</th>
                                         <th>Niche Tag</th>
                                         <th>Risk</th>
@@ -269,7 +307,9 @@ export function Subreddits() {
                                                         onChange={async (e) => {
                                                             const nextModelId = Number(e.target.value);
                                                             if (nextModelId !== sub.modelId) {
-                                                                await db.subreddits.update(sub.id, { modelId: nextModelId });
+                                                                const modelAccountIds = (accounts || []).filter(a => a.modelId === nextModelId).map(a => Number(a.id));
+                                                                const nextAccountId = modelAccountIds.includes(Number(sub.accountId)) ? sub.accountId : null;
+                                                                await db.subreddits.update(sub.id, { modelId: nextModelId, accountId: nextAccountId });
                                                             }
                                                         }}
                                                     >
@@ -315,6 +355,22 @@ export function Subreddits() {
                                                             {!sub.minRequiredKarma && !sub.minAccountAgeDays ? 'Open' : ''}
                                                         </span>
                                                     )}
+                                                </td>
+                                                <td>
+                                                    <select
+                                                        className="input-field"
+                                                        value={sub.accountId ? String(sub.accountId) : 'all'}
+                                                        style={{ padding: '4px 8px', fontSize: '0.8rem', width: '170px' }}
+                                                        onChange={async (e) => {
+                                                            const nextAccountId = e.target.value === 'all' ? null : Number(e.target.value);
+                                                            await db.subreddits.update(sub.id, { accountId: nextAccountId });
+                                                        }}
+                                                    >
+                                                        <option value="all">All model accounts</option>
+                                                        {(accounts || []).filter(a => a.modelId === sub.modelId).map(acc => (
+                                                            <option key={acc.id} value={String(acc.id)}>{acc.handle}</option>
+                                                        ))}
+                                                    </select>
                                                 </td>
                                                 <td>
                                                     <button
