@@ -631,6 +631,152 @@ app.get('/api/drive/download/:fileId', async (req, res) => {
     }
 });
 
+function inferMimeFromFilename(name = '') {
+    const lower = String(name || '').toLowerCase();
+    if (lower.endsWith('.mp4')) return 'video/mp4';
+    if (lower.endsWith('.mov')) return 'video/quicktime';
+    if (lower.endsWith('.webm')) return 'video/webm';
+    if (lower.endsWith('.m4v')) return 'video/x-m4v';
+    if (lower.endsWith('.avi')) return 'video/x-msvideo';
+    if (lower.endsWith('.gif')) return 'image/gif';
+    return 'application/octet-stream';
+}
+
+function extractRedgifsUrl(payload) {
+    if (!payload) return '';
+    if (typeof payload === 'string' && /^https?:\/\//i.test(payload)) return payload;
+    if (typeof payload !== 'object') return '';
+
+    const candidates = [
+        payload.url,
+        payload.permalink,
+        payload.gifUrl,
+        payload.shareUrl,
+        payload.data?.url,
+        payload.data?.permalink,
+        payload.gif?.url,
+        payload.gif?.permalink,
+        payload.result?.url,
+        payload.result?.permalink,
+    ].filter(Boolean);
+
+    return candidates.find(c => /^https?:\/\//i.test(String(c))) || '';
+}
+
+// RedGifs upload endpoint (manager-triggered, never automatic)
+app.post('/api/redgifs/upload-from-asset', async (req, res) => {
+    try {
+        const {
+            driveFileId = '',
+            sourceUrl = '',
+            fileName = 'upload.mp4',
+            title = '',
+            tags = [],
+        } = req.body || {};
+
+        if (!driveFileId && !sourceUrl) {
+            return res.status(400).json({ error: 'Provide driveFileId or sourceUrl' });
+        }
+
+        const uploadEndpoint = (process.env.REDGIFS_UPLOAD_ENDPOINT || '').trim();
+        const apiToken = (process.env.REDGIFS_API_TOKEN || '').trim();
+        const dryRun = String(process.env.REDGIFS_DRY_RUN || '').toLowerCase() === 'true';
+
+        if (!dryRun && (!uploadEndpoint || !apiToken)) {
+            return res.status(400).json({
+                error: 'RedGifs backend not configured',
+                detail: 'Set REDGIFS_UPLOAD_ENDPOINT and REDGIFS_API_TOKEN (or REDGIFS_DRY_RUN=true)'
+            });
+        }
+
+        let buffer = null;
+        let mimeType = inferMimeFromFilename(fileName);
+
+        if (driveFileId) {
+            if (!drive) return res.status(503).json({ error: 'Google Drive not configured on proxy' });
+
+            const meta = await drive.files.get({
+                fileId: driveFileId,
+                fields: 'name,mimeType',
+                supportsAllDrives: true
+            });
+            const driveMime = meta?.data?.mimeType || '';
+            if (driveMime) mimeType = driveMime;
+
+            const fileRes = await drive.files.get(
+                { fileId: driveFileId, alt: 'media', supportsAllDrives: true },
+                { responseType: 'arraybuffer' }
+            );
+            buffer = Buffer.from(fileRes.data);
+        } else {
+            const fileRes = await axios.get(String(sourceUrl), {
+                responseType: 'arraybuffer',
+                timeout: 30000,
+            });
+            const contentType = fileRes?.headers?.['content-type'];
+            if (contentType) mimeType = String(contentType);
+            buffer = Buffer.from(fileRes.data);
+        }
+
+        if (!buffer || buffer.length === 0) {
+            return res.status(422).json({ error: 'Asset payload is empty' });
+        }
+
+        if (dryRun) {
+            return res.json({
+                success: true,
+                url: `https://redgifs.com/watch/mock-${Date.now()}`,
+                dryRun: true,
+            });
+        }
+
+        const form = new FormData();
+        const blob = new Blob([buffer], { type: mimeType || 'application/octet-stream' });
+        form.append('file', blob, String(fileName || 'upload.mp4').replace(/[^a-zA-Z0-9._-]/g, '_'));
+        if (title) form.append('title', String(title).slice(0, 200));
+        if (Array.isArray(tags) && tags.length > 0) {
+            form.append('tags', tags.filter(Boolean).join(','));
+        }
+
+        const upstream = await fetch(uploadEndpoint, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${apiToken}`,
+            },
+            body: form,
+        });
+
+        const upstreamText = await upstream.text();
+        let upstreamPayload = null;
+        try {
+            upstreamPayload = JSON.parse(upstreamText);
+        } catch {
+            upstreamPayload = { raw: upstreamText };
+        }
+
+        if (!upstream.ok) {
+            return res.status(502).json({
+                error: 'RedGifs upload failed',
+                detail: upstreamPayload,
+                status: upstream.status,
+            });
+        }
+
+        const url = extractRedgifsUrl(upstreamPayload);
+        if (!url) {
+            return res.status(502).json({
+                error: 'RedGifs upload succeeded but no URL returned',
+                detail: upstreamPayload,
+            });
+        }
+
+        return res.json({ success: true, url, payload: upstreamPayload });
+    } catch (err) {
+        console.error('RedGifs Upload Error:', err.message);
+        return res.status(500).json({ error: 'Failed RedGifs upload', detail: err.message });
+    }
+});
+
 // Google Drive: Move file to "Used" folder
 app.post('/api/drive/move', async (req, res) => {
     if (!drive) return res.status(503).json({ error: "Google Drive not configured" });
