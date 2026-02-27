@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { db } from '../db/db';
 import { AnalyticsEngine } from '../services/growthEngine';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -87,7 +87,7 @@ export function Dashboard() {
     const healthyAccounts = leaderboard.reduce((acc, m) => acc + (m.metrics.accountHealth?.activeCount || 0), 0);
     const suspendedAccounts = leaderboard.reduce((acc, m) => acc + (m.metrics.accountHealth?.suspendedCount || 0), 0);
 
-    const accountSubredditLeaders = useMemo(() => {
+    const accountSubredditLeaders = (() => {
         if (!tasksAll || !performancesAll || !accountsAll || !subredditsAll) return [];
         const perfByTaskId = new Map(performancesAll.map(p => [p.taskId, p]));
         const accountsById = new Map(accountsAll.map(a => [a.id, a]));
@@ -126,9 +126,9 @@ export function Dashboard() {
             }))
             .sort((a, b) => b.avgUps - a.avgUps)
             .slice(0, 12);
-    }, [tasksAll, performancesAll, accountsAll, subredditsAll]);
+    })();
 
-    const accountNicheLeaders = useMemo(() => {
+    const accountNicheLeaders = (() => {
         if (!tasksAll || !performancesAll || !accountsAll || !assetsAll) return [];
         const perfByTaskId = new Map(performancesAll.map(p => [p.taskId, p]));
         const assetsById = new Map(assetsAll.map(a => [a.id, a]));
@@ -168,7 +168,7 @@ export function Dashboard() {
             }))
             .sort((a, b) => b.avgUps - a.avgUps)
             .slice(0, 12);
-    }, [tasksAll, performancesAll, accountsAll, assetsAll]);
+    })();
 
     async function handleSync() {
         setSyncing(true);
