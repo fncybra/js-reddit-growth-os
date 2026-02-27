@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../db/db';
 import { AnalyticsEngine } from '../services/growthEngine';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -9,6 +9,11 @@ export function Dashboard() {
     const [metrics, setMetrics] = useState(null);
     const [syncing, setSyncing] = useState(false);
     const models = useLiveQuery(() => db.models.toArray());
+    const accountsAll = useLiveQuery(() => db.accounts.toArray());
+    const subredditsAll = useLiveQuery(() => db.subreddits.toArray());
+    const tasksAll = useLiveQuery(() => db.tasks.toArray());
+    const performancesAll = useLiveQuery(() => db.performances.toArray());
+    const assetsAll = useLiveQuery(() => db.assets.toArray());
     const analyticsTrigger = useLiveQuery(async () => {
         const [tasks, perfs] = await Promise.all([db.tasks.toArray(), db.performances.toArray()]);
         const taskSig = tasks.map(t => `${t.id}:${t.status}:${t.redditPostId || ''}`).join('|');
@@ -81,6 +86,89 @@ export function Dashboard() {
 
     const healthyAccounts = leaderboard.reduce((acc, m) => acc + (m.metrics.accountHealth?.activeCount || 0), 0);
     const suspendedAccounts = leaderboard.reduce((acc, m) => acc + (m.metrics.accountHealth?.suspendedCount || 0), 0);
+
+    const accountSubredditLeaders = useMemo(() => {
+        if (!tasksAll || !performancesAll || !accountsAll || !subredditsAll) return [];
+        const perfByTaskId = new Map(performancesAll.map(p => [p.taskId, p]));
+        const accountsById = new Map(accountsAll.map(a => [a.id, a]));
+        const subsById = new Map(subredditsAll.map(s => [s.id, s]));
+        const bucket = new Map();
+
+        for (const task of tasksAll) {
+            if (!task.accountId || !task.subredditId) continue;
+            const perf = perfByTaskId.get(task.id);
+            if (!perf) continue;
+
+            const key = `${task.accountId}:${task.subredditId}`;
+            if (!bucket.has(key)) {
+                bucket.set(key, {
+                    accountId: task.accountId,
+                    subredditId: task.subredditId,
+                    posts: 0,
+                    totalUps: 0,
+                    removed: 0,
+                });
+            }
+
+            const row = bucket.get(key);
+            row.posts += 1;
+            row.totalUps += Number(perf.views24h || 0);
+            if (perf.removed) row.removed += 1;
+        }
+
+        return Array.from(bucket.values())
+            .map(row => ({
+                ...row,
+                accountHandle: accountsById.get(row.accountId)?.handle || `acct-${row.accountId}`,
+                subredditName: subsById.get(row.subredditId)?.name || `sub-${row.subredditId}`,
+                avgUps: row.posts > 0 ? Math.round(row.totalUps / row.posts) : 0,
+                removalPct: row.posts > 0 ? Number(((row.removed / row.posts) * 100).toFixed(1)) : 0,
+            }))
+            .sort((a, b) => b.avgUps - a.avgUps)
+            .slice(0, 12);
+    }, [tasksAll, performancesAll, accountsAll, subredditsAll]);
+
+    const accountNicheLeaders = useMemo(() => {
+        if (!tasksAll || !performancesAll || !accountsAll || !assetsAll) return [];
+        const perfByTaskId = new Map(performancesAll.map(p => [p.taskId, p]));
+        const assetsById = new Map(assetsAll.map(a => [a.id, a]));
+        const accountsById = new Map(accountsAll.map(a => [a.id, a]));
+        const bucket = new Map();
+
+        for (const task of tasksAll) {
+            if (!task.accountId || !task.assetId) continue;
+            const perf = perfByTaskId.get(task.id);
+            if (!perf) continue;
+            const asset = assetsById.get(task.assetId);
+            const niche = (asset?.angleTag || 'general').toLowerCase();
+
+            const key = `${task.accountId}:${niche}`;
+            if (!bucket.has(key)) {
+                bucket.set(key, {
+                    accountId: task.accountId,
+                    niche,
+                    posts: 0,
+                    totalUps: 0,
+                    removed: 0,
+                });
+            }
+
+            const row = bucket.get(key);
+            row.posts += 1;
+            row.totalUps += Number(perf.views24h || 0);
+            if (perf.removed) row.removed += 1;
+        }
+
+        return Array.from(bucket.values())
+            .map(row => ({
+                ...row,
+                accountHandle: accountsById.get(row.accountId)?.handle || `acct-${row.accountId}`,
+                avgUps: row.posts > 0 ? Math.round(row.totalUps / row.posts) : 0,
+                removalPct: row.posts > 0 ? Number(((row.removed / row.posts) * 100).toFixed(1)) : 0,
+            }))
+            .sort((a, b) => b.avgUps - a.avgUps)
+            .slice(0, 12);
+    }, [tasksAll, performancesAll, accountsAll, assetsAll]);
 
     async function handleSync() {
         setSyncing(true);
@@ -239,6 +327,84 @@ export function Dashboard() {
                                 })}
                             </tbody>
                         </table>
+                    </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
+                    <div className="card">
+                        <h2 style={{ fontSize: '1.05rem', marginBottom: '10px', fontWeight: '600' }}>Account x Subreddit Winners</h2>
+                        <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', marginBottom: '12px' }}>
+                            Shows which account is winning in which subreddit.
+                        </div>
+                        <div className="data-table-container">
+                            <table className="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Account</th>
+                                        <th>Subreddit</th>
+                                        <th>Posts</th>
+                                        <th>Avg Ups</th>
+                                        <th>Removal</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {accountSubredditLeaders.length === 0 && (
+                                        <tr><td colSpan="5" style={{ color: 'var(--text-secondary)', textAlign: 'center' }}>No synced results yet.</td></tr>
+                                    )}
+                                    {accountSubredditLeaders.map((row) => (
+                                        <tr key={`${row.accountId}-${row.subredditId}`}>
+                                            <td>
+                                                <Link to={`/account/${row.accountId}`} style={{ color: 'var(--primary-color)', textDecoration: 'none' }}>
+                                                    {row.accountHandle}
+                                                </Link>
+                                            </td>
+                                            <td>r/{row.subredditName}</td>
+                                            <td>{row.posts}</td>
+                                            <td style={{ fontWeight: '600' }}>{row.avgUps}</td>
+                                            <td style={{ color: row.removalPct > 20 ? 'var(--status-danger)' : 'var(--status-success)' }}>{row.removalPct}%</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div className="card">
+                        <h2 style={{ fontSize: '1.05rem', marginBottom: '10px', fontWeight: '600' }}>Account x Niche Winners</h2>
+                        <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', marginBottom: '12px' }}>
+                            Reveals which niche tags perform best per account.
+                        </div>
+                        <div className="data-table-container">
+                            <table className="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Account</th>
+                                        <th>Niche</th>
+                                        <th>Posts</th>
+                                        <th>Avg Ups</th>
+                                        <th>Removal</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {accountNicheLeaders.length === 0 && (
+                                        <tr><td colSpan="5" style={{ color: 'var(--text-secondary)', textAlign: 'center' }}>No synced results yet.</td></tr>
+                                    )}
+                                    {accountNicheLeaders.map((row) => (
+                                        <tr key={`${row.accountId}-${row.niche}`}>
+                                            <td>
+                                                <Link to={`/account/${row.accountId}`} style={{ color: 'var(--primary-color)', textDecoration: 'none' }}>
+                                                    {row.accountHandle}
+                                                </Link>
+                                            </td>
+                                            <td><span className="badge badge-info">{row.niche}</span></td>
+                                            <td>{row.posts}</td>
+                                            <td style={{ fontWeight: '600' }}>{row.avgUps}</td>
+                                            <td style={{ color: row.removalPct > 20 ? 'var(--status-danger)' : 'var(--status-success)' }}>{row.removalPct}%</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
 
