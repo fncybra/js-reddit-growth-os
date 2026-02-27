@@ -65,9 +65,26 @@ export function Sidebar() {
 }
 
 function CloudSyncStatus() {
-  const settings = useLiveQuery(() => db.settings.toArray());
-  const isSynced = settings?.some(s => s.key === 'supabaseUrl' && s.value && s.value.length > 0);
-  const [proxyState, setProxyState] = React.useState({ checking: true, connected: false, ip: '' });
+    const settings = useLiveQuery(() => db.settings.toArray());
+    const [isSynced, setIsSynced] = React.useState(false);
+    const [proxyState, setProxyState] = React.useState({ checking: true, connected: false, ip: '' });
+
+    React.useEffect(() => {
+      let cancelled = false;
+
+      async function checkCloud() {
+        try {
+          const cfg = await SettingsService.getSettings();
+          const connected = !!(cfg?.supabaseUrl && cfg?.supabaseAnonKey);
+          if (!cancelled) setIsSynced(connected);
+        } catch (_err) {
+          if (!cancelled) setIsSynced(false);
+        }
+      }
+
+      checkCloud();
+      return () => { cancelled = true; };
+    }, [settings]);
 
   React.useEffect(() => {
     let cancelled = false;
