@@ -591,13 +591,14 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
             const proxyUrl = await SettingsService.getProxyUrl();
 
             if (asset) {
+                const nextTimesUsed = (asset.timesUsed || 0) + 1;
                 const assetUpdate = {
-                    timesUsed: (asset.timesUsed || 0) + 1,
+                    timesUsed: nextTimesUsed,
                     lastUsedDate: new Date().toISOString()
                 };
                 await db.assets.update(asset.id, assetUpdate);
 
-                if (asset.driveFileId && targetModel?.usedFolderId) {
+                if (nextTimesUsed >= 5 && asset.driveFileId && targetModel?.usedFolderId && !asset.movedToUsed) {
                     try {
                         let cleanUsedFolderId = targetModel.usedFolderId;
                         if (cleanUsedFolderId.includes('drive.google.com')) {
@@ -616,6 +617,8 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
                         });
                         if (!moveRes.ok) {
                             console.error("Failed to move file in Drive");
+                        } else {
+                            await db.assets.update(asset.id, { movedToUsed: 1 });
                         }
                     } catch (err) {
                         console.error("Error during Drive move:", err);
