@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../db/db';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, ArrowUp, User, CheckCircle, XCircle, AlertTriangle, ExternalLink, Heart, ShieldCheck } from 'lucide-react';
-import { AnalyticsEngine, AccountSyncService } from '../services/growthEngine';
+import { ArrowLeft, ArrowUp, User, CheckCircle, XCircle, AlertTriangle, ExternalLink, Heart, ShieldCheck, ClipboardCheck } from 'lucide-react';
+import { AnalyticsEngine, AccountSyncService, CloudSyncService } from '../services/growthEngine';
 
 export function AccountDetail() {
     const { id } = useParams();
@@ -177,6 +177,69 @@ export function AccountDetail() {
                                 </div>
                                 <div style={{ width: '100%', height: '6px', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: '3px', overflow: 'hidden' }}>
                                     <div style={{ width: `${healthScore}%`, height: '100%', backgroundColor: color, borderRadius: '3px', transition: 'width 0.5s ease' }} />
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })()}
+
+                {/* Profile Audit Card */}
+                {(() => {
+                    const profileScore = AnalyticsEngine.computeProfileScore(account);
+                    const pColor = profileScore >= 80 ? '#4caf50' : profileScore >= 50 ? '#ff9800' : '#f44336';
+                    const items = [
+                        { key: 'hasAvatar', label: 'Custom Avatar', points: 15 },
+                        { key: 'hasBanner', label: 'Profile Banner', points: 10 },
+                        { key: 'hasBio', label: 'Bio / Description', points: 20 },
+                        { key: 'hasDisplayName', label: 'Display Name', points: 10 },
+                        { key: 'hasVerifiedEmail', label: 'Verified Email', points: 15 },
+                    ];
+                    const ageDays = account.createdUtc ? Math.floor((Date.now() - Number(account.createdUtc) * 1000) / (24 * 60 * 60 * 1000)) : 0;
+                    const hasAge = ageDays >= 7;
+                    const hasKarma = Number(account.totalKarma || 0) >= 100;
+                    return (
+                        <div className="card" style={{ padding: '16px 20px', marginBottom: '24px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <ClipboardCheck size={18} style={{ color: pColor }} />
+                                    <span style={{ fontSize: '1.05rem', fontWeight: 600 }}>Profile Audit</span>
+                                    <span style={{ fontSize: '1.3rem', fontWeight: 700, color: pColor }}>{profileScore}%</span>
+                                </div>
+                                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                                    {account.lastProfileAudit ? `Last audit: ${new Date(account.lastProfileAudit).toLocaleDateString()}` : 'Not audited yet'}
+                                </span>
+                            </div>
+                            <div style={{ width: '100%', height: '6px', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: '3px', overflow: 'hidden', marginBottom: '14px' }}>
+                                <div style={{ width: `${profileScore}%`, height: '100%', backgroundColor: pColor, borderRadius: '3px', transition: 'width 0.5s ease' }} />
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px 16px', fontSize: '0.85rem' }}>
+                                {items.map(item => {
+                                    const done = !!account[item.key];
+                                    return (
+                                        <label key={item.key} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={done}
+                                                onChange={async () => {
+                                                    await db.accounts.update(accountId, { [item.key]: done ? 0 : 1 });
+                                                    try { await CloudSyncService.autoPush(['accounts']); } catch (e) { /* non-critical */ }
+                                                }}
+                                                style={{ accentColor: pColor }}
+                                            />
+                                            <span style={{ color: done ? '#4caf50' : 'var(--text-secondary)' }}>{item.label}</span>
+                                            <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>+{item.points}</span>
+                                        </label>
+                                    );
+                                })}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    {hasAge ? <CheckCircle size={14} style={{ color: '#4caf50' }} /> : <XCircle size={14} style={{ color: '#f44336' }} />}
+                                    <span style={{ color: hasAge ? '#4caf50' : 'var(--text-secondary)' }}>Age 7+ days</span>
+                                    <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>+15</span>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    {hasKarma ? <CheckCircle size={14} style={{ color: '#4caf50' }} /> : <XCircle size={14} style={{ color: '#f44336' }} />}
+                                    <span style={{ color: hasKarma ? '#4caf50' : 'var(--text-secondary)' }}>Karma 100+</span>
+                                    <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>+15</span>
                                 </div>
                             </div>
                         </div>

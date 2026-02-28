@@ -41,6 +41,14 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS "taskType" TEXT;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS "scheduledTime" TEXT;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS "postedAt" TEXT;
 
+-- accounts: profile audit fields (Phase 4A)
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "hasAvatar" INTEGER;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "hasBanner" INTEGER;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "hasBio" INTEGER;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "hasDisplayName" INTEGER;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "hasVerifiedEmail" INTEGER;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "lastProfileAudit" TEXT;
+
 -- subreddits: verification required flag (Phase 3B)
 ALTER TABLE subreddits ADD COLUMN IF NOT EXISTS "requiresVerified" INTEGER;
 

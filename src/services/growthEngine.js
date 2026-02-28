@@ -1276,6 +1276,23 @@ export const AnalyticsEngine = {
         return Math.max(0, Math.min(100, Math.round(score)));
     },
 
+    computeProfileScore(account) {
+        let score = 0;
+        if (account.hasAvatar) score += 15;
+        if (account.hasBanner) score += 10;
+        if (account.hasBio) score += 20;
+        if (account.hasDisplayName) score += 10;
+        if (account.hasVerifiedEmail) score += 15;
+        // Account age > 7 days
+        if (account.createdUtc) {
+            const ageDays = Math.floor((Date.now() - Number(account.createdUtc) * 1000) / (24 * 60 * 60 * 1000));
+            if (ageDays >= 7) score += 15;
+        }
+        // Karma > 100
+        if (Number(account.totalKarma || 0) >= 100) score += 15;
+        return Math.min(100, score);
+    },
+
     getManagerSignals({ tasksCompleted, avgViewsPerPost, removalRatePct, worstSubreddits, testingSubs, provenSubs }) {
         const confidence = tasksCompleted >= 15 ? 'high' : tasksCompleted >= 5 ? 'medium' : 'low';
         const removalPenalty = Math.min(40, removalRatePct * 1.2);
@@ -2065,14 +2082,27 @@ export const AccountSyncService = {
             if (!res.ok) throw new Error("Stats sync failed");
             const data = await res.json();
 
-            await db.accounts.update(accountId, {
+            const patch = {
                 totalKarma: data.totalKarma,
                 linkKarma: data.linkKarma,
                 commentKarma: data.commentKarma,
                 createdUtc: data.created,
                 isSuspended: data.isSuspended,
                 lastSyncDate: new Date().toISOString()
-            });
+            };
+            // Profile audit fields — capture from API if available
+            if (data.hasAvatar !== undefined) patch.hasAvatar = data.hasAvatar ? 1 : 0;
+            if (data.icon_img !== undefined) patch.hasAvatar = (data.icon_img && !String(data.icon_img).includes('default')) ? 1 : 0;
+            if (data.hasBanner !== undefined) patch.hasBanner = data.hasBanner ? 1 : 0;
+            if (data.banner_img !== undefined) patch.hasBanner = data.banner_img ? 1 : 0;
+            if (data.hasBio !== undefined) patch.hasBio = data.hasBio ? 1 : 0;
+            if (data.description !== undefined) patch.hasBio = data.description ? 1 : 0;
+            if (data.hasDisplayName !== undefined) patch.hasDisplayName = data.hasDisplayName ? 1 : 0;
+            if (data.display_name !== undefined) patch.hasDisplayName = (data.display_name && data.display_name !== data.name) ? 1 : 0;
+            if (data.hasVerifiedEmail !== undefined) patch.hasVerifiedEmail = data.hasVerifiedEmail ? 1 : 0;
+            if (data.has_verified_email !== undefined) patch.hasVerifiedEmail = data.has_verified_email ? 1 : 0;
+            patch.lastProfileAudit = new Date().toISOString();
+            await db.accounts.update(accountId, patch);
             return data;
         } catch (err) {
             console.error(`Account sync fail(${account.handle}): `, err);
