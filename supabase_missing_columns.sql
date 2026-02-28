@@ -29,3 +29,7 @@ ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "warmupStartDate" TEXT;
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "restUntilDate" TEXT;
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "consecutiveActiveDays" INTEGER;
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "lastActiveDate" TEXT;
+
+-- accounts: shadow-ban detection (Phase 1C)
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "shadowBanStatus" TEXT;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "lastShadowCheck" TEXT;

@@ -22,6 +22,17 @@ db.version(8).stores({
     settings: '++id, key'
 });
 
+// v9: shadow-ban detection fields on accounts (shadowBanStatus, lastShadowCheck)
+db.version(9).stores({
+    models: '++id, name, status, driveFolderId, usedFolderId, redgifsProfile, proxyInfo, vaPin',
+    accounts: '++id, modelId, handle, status, proxyInfo, phase',
+    subreddits: '++id, modelId, name, status, lastTestedDate',
+    assets: '++id, modelId, assetType, approved, lastUsedDate, driveFileId, externalUrl',
+    tasks: '++id, date, modelId, accountId, subredditId, assetId, status, redditPostId',
+    performances: '++id, taskId',
+    settings: '++id, key'
+});
+
 // Seed default settings if empty
 db.on('populate', async () => {
     await db.settings.bulkAdd([
