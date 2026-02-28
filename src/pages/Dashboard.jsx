@@ -173,23 +173,55 @@ export function Dashboard() {
     async function handleSync() {
         setSyncing(true);
         try {
-            const { PerformanceSyncService, AccountSyncService } = await import('../services/growthEngine');
+            const { PerformanceSyncService, AccountSyncService, CloudSyncService } = await import('../services/growthEngine');
+            const parts = [];
+
+            // Step 1: Pull latest from cloud first (gets VA-submitted data)
+            const cloudEnabled = await CloudSyncService.isEnabled();
+            if (cloudEnabled) {
+                try {
+                    await CloudSyncService.pullCloudToLocal();
+                    parts.push('Cloud pull: synced.');
+                } catch (e) {
+                    parts.push('Cloud pull: failed (' + e.message + ')');
+                }
+            }
+
+            // Step 2: Sync account health from Reddit
             const accountResult = await AccountSyncService.syncAllAccounts();
-            const stats = await PerformanceSyncService.syncAllPendingPerformance();
-            const parts = ['Stats sync finished.'];
             if (accountResult.total === 0) {
-                parts.push('No accounts to sync.');
+                parts.push('Accounts: none found.');
             } else if (accountResult.failed > 0) {
                 parts.push(`Accounts: ${accountResult.succeeded}/${accountResult.total} synced (${accountResult.failed} failed).`);
             } else {
                 parts.push(`Accounts: ${accountResult.succeeded}/${accountResult.total} synced.`);
             }
+
+            // Step 3: Sync Reddit post stats
+            const stats = await PerformanceSyncService.syncAllPendingPerformance();
             if (stats.scanned === 0) {
-                parts.push('No closed posts to check (need tasks with status "closed" or "failed").');
+                // Show task breakdown so user understands WHY there's nothing to sync
+                const allTasks = await db.tasks.toArray();
+                const statusCounts = {};
+                allTasks.forEach(t => { statusCounts[t.status || 'unknown'] = (statusCounts[t.status || 'unknown'] || 0) + 1; });
+                const breakdown = Object.entries(statusCounts).map(([s, c]) => `${s}: ${c}`).join(', ');
+                parts.push(`Posts: 0 to check.`);
+                if (allTasks.length > 0) {
+                    parts.push(`Task breakdown: ${breakdown}`);
+                    parts.push('(Only "closed" or "failed" tasks get synced. VAs must post and paste the Reddit URL first.)');
+                } else {
+                    parts.push('No tasks exist yet. Generate a daily plan on the Tasks page first.');
+                }
             } else {
                 parts.push(`Posts: ${stats.attempted} checked, ${stats.succeeded} succeeded, ${stats.failed} failed.`);
                 if (stats.skipped > 0) parts.push(`(${stats.skipped} skipped — no post ID)`);
             }
+
+            // Step 4: Push updated data back to cloud
+            if (cloudEnabled) {
+                try { await CloudSyncService.pushLocalToCloud(); } catch (e) { /* non-critical */ }
+            }
+
             alert(parts.join('\n'));
             const data = await AnalyticsEngine.getAgencyMetrics();
             setMetrics(data);
