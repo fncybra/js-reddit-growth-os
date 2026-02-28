@@ -36,3 +36,7 @@ ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "lastShadowCheck" TEXT;
 
 -- tasks: engagement task types (Phase 2B)
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS "taskType" TEXT;
+
+-- tasks: posting stagger (Phase 2C)
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS "scheduledTime" TEXT;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS "postedAt" TEXT;

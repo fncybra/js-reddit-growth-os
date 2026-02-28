@@ -1155,6 +1155,27 @@ export const DailyPlanGenerator = {
             }
         }
 
+        // Assign staggered scheduledTime per account (10-min gaps between posts from same account)
+        const postInterval = Number(settings.postInterval || 10);
+        const accountTimeSlots = new Map();
+        // Start times staggered: first account at 9:00, second at 9:05, etc.
+        const baseHour = 9;
+        const accountList = [...new Set(finalNewTasks.map(t => t.accountId))];
+        accountList.forEach((accId, idx) => {
+            const offsetMinutes = idx * 5; // Offset each account's start by 5 min
+            accountTimeSlots.set(accId, baseHour * 60 + offsetMinutes);
+        });
+
+        for (const task of finalNewTasks) {
+            const currentMinutes = accountTimeSlots.get(task.accountId) || baseHour * 60;
+            const hours = Math.floor(currentMinutes / 60);
+            const mins = currentMinutes % 60;
+            task.scheduledTime = `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+            // Engagement/warmup tasks don't need strict stagger, but posts do
+            const gap = task.taskType === 'post' ? postInterval : 5;
+            accountTimeSlots.set(task.accountId, currentMinutes + gap);
+        }
+
         if (finalNewTasks.length > 0) { // Finalize
             await db.tasks.bulkAdd(finalNewTasks);
             console.log(`DailyPlanGenerator: Generated ${finalNewTasks.length} tasks for model ${modelId}`);
