@@ -2030,6 +2030,24 @@ export const CloudSyncService = {
                 });
             }
 
+            // Accounts: preserve locally-set profile audit fields that Supabase may not have
+            if (table === 'accounts') {
+                const localAccounts = await db.accounts.toArray();
+                const localById = new Map(localAccounts.map(a => [a.id, a]));
+                const profileFields = ['hasAvatar', 'hasBanner', 'hasBio', 'hasDisplayName', 'hasVerifiedEmail', 'hasProfileLink', 'lastProfileAudit', 'removalRate', 'lastActiveDate', 'shadowBanStatus', 'lastShadowCheck'];
+                cloudData = cloudData.map(remote => {
+                    const local = localById.get(remote.id);
+                    if (!local) return remote;
+                    const merged = { ...remote };
+                    for (const field of profileFields) {
+                        if ((merged[field] === undefined || merged[field] === null) && local[field] !== undefined && local[field] !== null) {
+                            merged[field] = local[field];
+                        }
+                    }
+                    return merged;
+                });
+            }
+
             // Settings: merge by `key` field, not auto-increment `id` (IDs differ across devices)
             if (table === 'settings') {
                 const localSettings = await db.settings.toArray();
