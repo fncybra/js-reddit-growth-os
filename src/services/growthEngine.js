@@ -1666,6 +1666,20 @@ export const CloudSyncService = {
                 });
             }
 
+            // Settings: merge by `key` field, not auto-increment `id` (IDs differ across devices)
+            if (table === 'settings') {
+                const localSettings = await db.settings.toArray();
+                const localByKey = new Map(localSettings.map(s => [s.key, s]));
+                cloudData = cloudData.map(remote => {
+                    const local = localByKey.get(remote.key);
+                    if (local) {
+                        // Use local ID so bulkPut updates the right row in Dexie
+                        return { ...remote, id: local.id };
+                    }
+                    return remote;
+                });
+            }
+
             // Merge: upsert cloud data without clearing local
             await db[table].bulkPut(cloudData);
             console.log(`[CloudSync] Merged ${cloudData.length} cloud rows into ${table}`);
