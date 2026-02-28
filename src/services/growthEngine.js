@@ -2285,7 +2285,10 @@ export const AccountSyncService = {
             patch.hasAvatar = hasCustomAvatar ? 1 : 0;
             patch.hasBanner = (data.banner_img && data.banner_img.length > 0) ? 1 : 0;
             patch.hasBio = (data.description && data.description.trim().length > 0) ? 1 : 0;
-            patch.hasDisplayName = (data.display_name && data.display_name.trim().length > 0) ? 1 : 0;
+            // display_name (subreddit.title) counts only if it's not just the handle itself
+            const dn = (data.display_name || '').trim();
+            const handleClean = (account.handle || '').replace(/^u\//i, '').trim();
+            patch.hasDisplayName = (dn.length > 0 && dn.toLowerCase() !== handleClean.toLowerCase()) ? 1 : 0;
             patch.hasVerifiedEmail = data.has_verified_email ? 1 : 0;
             patch.hasProfileLink = data.has_profile_link ? 1 : 0;
             patch.lastProfileAudit = new Date().toISOString();
