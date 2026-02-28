@@ -1099,6 +1099,25 @@ export const DailyPlanGenerator = {
 };
 
 export const AnalyticsEngine = {
+    computeAccountHealthScore(account) {
+        let score = 100;
+        const removalRate = Number(account.removalRate || 0);
+        score -= removalRate * 0.5;
+        if (account.isSuspended) score -= 15;
+        // Inactive 7+ days
+        if (account.lastSyncDate) {
+            const daysSinceSync = differenceInDays(new Date(), new Date(account.lastSyncDate));
+            if (daysSinceSync >= 7) score -= 10;
+        } else if (account.lastActiveDate) {
+            const daysSinceActive = differenceInDays(new Date(), new Date(account.lastActiveDate));
+            if (daysSinceActive >= 7) score -= 10;
+        }
+        const karma = Number(account.totalKarma || 0);
+        if (karma > 5000) score += 10;
+        else if (karma > 1000) score += 5;
+        return Math.max(0, Math.min(100, Math.round(score)));
+    },
+
     getManagerSignals({ tasksCompleted, avgViewsPerPost, removalRatePct, worstSubreddits, testingSubs, provenSubs }) {
         const confidence = tasksCompleted >= 15 ? 'high' : tasksCompleted >= 5 ? 'medium' : 'low';
         const removalPenalty = Math.min(40, removalRatePct * 1.2);

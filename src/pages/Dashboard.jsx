@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../db/db';
-import { AnalyticsEngine } from '../services/growthEngine';
+import { AnalyticsEngine, AccountLifecycleService } from '../services/growthEngine';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Link } from 'react-router-dom';
 import { ArrowUp, Users, Shield, AlertTriangle, RefreshCw, Cloud, RefreshCcw, Smartphone, CheckCircle, XCircle } from 'lucide-react';
@@ -86,6 +86,19 @@ export function Dashboard() {
 
     const healthyAccounts = leaderboard.reduce((acc, m) => acc + (m.metrics.accountHealth?.activeCount || 0), 0);
     const suspendedAccounts = leaderboard.reduce((acc, m) => acc + (m.metrics.accountHealth?.suspendedCount || 0), 0);
+
+    // Health score breakdown
+    const healthCounts = (() => {
+        if (!accountsAll) return { healthy: 0, warning: 0, critical: 0 };
+        let healthy = 0, warning = 0, critical = 0;
+        for (const acc of accountsAll) {
+            const score = AnalyticsEngine.computeAccountHealthScore(acc);
+            if (score >= 80) healthy++;
+            else if (score >= 50) warning++;
+            else critical++;
+        }
+        return { healthy, warning, critical };
+    })();
 
     const accountSubredditLeaders = (() => {
         if (!tasksAll || !performancesAll || !accountsAll || !subredditsAll) return [];
@@ -314,11 +327,16 @@ export function Dashboard() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', color: 'var(--text-secondary)', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                             <Shield size={14} /> Account Health
                         </div>
-                        <div style={{ fontSize: '2rem', fontWeight: '700', color: suspendedAccounts > 0 ? 'var(--status-danger)' : 'var(--status-success)' }}>
-                            {suspendedAccounts > 0 ? `${suspendedAccounts} ⚠️` : `${healthyAccounts} ✓`}
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
+                            <span style={{ fontSize: '2rem', fontWeight: '700', color: healthCounts.critical > 0 ? 'var(--status-danger)' : 'var(--status-success)' }}>
+                                {healthCounts.healthy}
+                            </span>
+                            <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>healthy</span>
                         </div>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                            {suspendedAccounts > 0 ? `${suspendedAccounts} suspended` : 'All healthy'}
+                        <div style={{ fontSize: '0.8rem', marginTop: '4px', display: 'flex', gap: '10px' }}>
+                            {healthCounts.warning > 0 && <span style={{ color: '#ff9800' }}>{healthCounts.warning} warning</span>}
+                            {healthCounts.critical > 0 && <span style={{ color: '#f44336' }}>{healthCounts.critical} critical</span>}
+                            {healthCounts.warning === 0 && healthCounts.critical === 0 && <span style={{ color: 'var(--text-secondary)' }}>All accounts healthy</span>}
                         </div>
                     </div>
 
