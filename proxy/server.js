@@ -298,27 +298,24 @@ app.get('/api/scrape/user/stats/:username', async (req, res) => {
         const bannerBg = (sub.banner_background_image || '').split('?')[0]; // strip query params
         const hasBanner = bannerImg.length > 0 || bannerBg.length > 0;
 
-        // Profile link: check social_links array, bio text URLs, or subreddit url field
-        // old.reddit.com doesn't include social_links — fetch from www.reddit.com if needed
-        let socialLinks = Array.isArray(sub.social_links) ? sub.social_links : [];
-        if (socialLinks.length === 0) {
+        // Profile link: social links aren't in about.json — scrape new Reddit profile HTML
+        let hasLink = /https?:\/\//i.test(bioText);
+        if (!hasLink) {
             try {
-                const newRedditRes = await axiosWithRetry(
-                    `https://www.reddit.com/user/${cleanName}/about.json`,
-                    { 'User-Agent': 'GrowthOS/1.0 (Profile Audit)' },
+                const profileRes = await axiosWithRetry(
+                    `https://www.reddit.com/user/${cleanName}/`,
+                    { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
                     { proxyInfo }
                 );
-                const newSub = newRedditRes.data?.data?.subreddit || {};
-                socialLinks = Array.isArray(newSub.social_links) ? newSub.social_links : [];
-                console.log(`[ProfileAudit] ${cleanName} www.reddit social_links:`, JSON.stringify(socialLinks));
+                const html = typeof profileRes.data === 'string' ? profileRes.data : '';
+                // Reddit embeds social links in faceplate-tracker elements with noun="social_link"
+                hasLink = /noun="social_link"/i.test(html) || /social_link.*"url"\s*:/i.test(html);
+                console.log(`[ProfileAudit] ${cleanName} HTML social_link scrape: hasLink=${hasLink}, htmlLen=${html.length}`);
             } catch (e) {
-                console.log(`[ProfileAudit] ${cleanName} www.reddit fetch failed: ${e.message}`);
+                console.log(`[ProfileAudit] ${cleanName} profile HTML fetch failed: ${e.message}`);
             }
         }
-        const hasLink = socialLinks.length > 0
-            || /https?:\/\//i.test(bioText)
-            || !!(sub.url && sub.url !== `/user/${cleanName}/` && /https?:\/\//i.test(sub.url));
-        console.log(`[ProfileAudit] ${cleanName} link detection: socialLinks=${socialLinks.length}, hasLink=${hasLink}`);
+        console.log(`[ProfileAudit] ${cleanName} link detection: hasLink=${hasLink}`);
 
         res.json({
             name: data.name,
