@@ -1913,6 +1913,11 @@ export const CloudSyncService = {
                     }
                 }
                 if (error) {
+                    // Table doesn't exist in Supabase yet — skip it, don't crash
+                    if (/schema cache|relation.*does not exist|not found/i.test(error.message || '')) {
+                        console.warn(`[CloudSync] Table "${table}" not in cloud schema, skipping push.`);
+                        break;
+                    }
                     console.error(`Sync Error(${table}): `, error.message);
                     throw new Error(`Failed to push to ${table}: ${error.message}`);
                 }
@@ -1929,10 +1934,16 @@ export const CloudSyncService = {
         const tables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'settings', 'verifications', 'dailySnapshots', 'competitors'];
         const fetched = {};
 
-        // Phase 1: fetch every table first; fail without mutating local if any fetch fails
+        // Phase 1: fetch every table first; skip tables that don't exist in cloud yet
         for (const table of tables) {
             const { data, error } = await supabase.from(table).select('*');
             if (error) {
+                // Table doesn't exist in Supabase yet — skip it, don't crash
+                if (/schema cache|relation.*does not exist|not found/i.test(error.message || '')) {
+                    console.warn(`[CloudSync] Table "${table}" not in cloud schema, skipping pull.`);
+                    fetched[table] = [];
+                    continue;
+                }
                 console.error(`Pull Error(${table}): `, error.message);
                 throw new Error(`Cloud pull failed on ${table}: ${error.message}`);
             }
@@ -2081,6 +2092,10 @@ export const CloudSyncService = {
         for (const table of tables) {
             const { error } = await supabase.from(table).delete().neq('id', -1);
             if (error) {
+                if (/schema cache|relation.*does not exist|not found/i.test(error.message || '')) {
+                    console.warn(`[CloudSync] Table "${table}" not in cloud, skipping clear.`);
+                    continue;
+                }
                 throw new Error(`Failed to clear cloud table ${table}: ${error.message}`);
             }
         }
