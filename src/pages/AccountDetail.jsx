@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../db/db';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, ArrowUp, User, CheckCircle, XCircle, AlertTriangle, ExternalLink } from 'lucide-react';
+import { ArrowLeft, ArrowUp, User, CheckCircle, XCircle, AlertTriangle, ExternalLink, Heart } from 'lucide-react';
+import { AnalyticsEngine } from '../services/growthEngine';
 
 export function AccountDetail() {
     const { id } = useParams();
@@ -135,6 +136,27 @@ export function AccountDetail() {
             </header>
 
             <div className="page-content">
+
+                {/* Health Score Banner */}
+                {(() => {
+                    const healthScore = AnalyticsEngine.computeAccountHealthScore(account);
+                    const color = healthScore >= 80 ? '#4caf50' : healthScore >= 50 ? '#ff9800' : '#f44336';
+                    const label = healthScore >= 80 ? 'Healthy' : healthScore >= 50 ? 'Warning' : 'Critical';
+                    return (
+                        <div className="card" style={{ padding: '16px 20px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '16px' }}>
+                            <Heart size={20} style={{ color }} />
+                            <div style={{ flex: 1 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+                                    <span style={{ fontSize: '1.4rem', fontWeight: 700, color }}>{healthScore}</span>
+                                    <span style={{ fontSize: '0.85rem', color, fontWeight: 600 }}>{label}</span>
+                                </div>
+                                <div style={{ width: '100%', height: '6px', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: '3px', overflow: 'hidden' }}>
+                                    <div style={{ width: `${healthScore}%`, height: '100%', backgroundColor: color, borderRadius: '3px', transition: 'width 0.5s ease' }} />
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })()}
 
                 {/* KPI Cards */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '16px', marginBottom: '24px' }}>

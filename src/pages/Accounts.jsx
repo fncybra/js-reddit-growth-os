@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { db } from '../db/db';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { AccountSyncService } from '../services/growthEngine';
+import { AccountSyncService, AnalyticsEngine } from '../services/growthEngine';
 import { Smartphone, RefreshCw, AlertTriangle, Trash2 } from 'lucide-react';
 
 const PHASE_BADGES = {
@@ -23,6 +23,18 @@ function PhaseBadge({ phase }) {
         }}>
             {badge.label}
         </span>
+    );
+}
+
+function HealthBar({ score }) {
+    const color = score >= 80 ? '#4caf50' : score >= 50 ? '#ff9800' : '#f44336';
+    return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: '80px' }}>
+            <div style={{ flex: 1, height: '6px', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: '3px', overflow: 'hidden' }}>
+                <div style={{ width: `${score}%`, height: '100%', backgroundColor: color, borderRadius: '3px' }} />
+            </div>
+            <span style={{ fontSize: '0.75rem', fontWeight: 600, color, minWidth: '24px' }}>{score}</span>
+        </div>
     );
 }
 
@@ -243,6 +255,7 @@ export function Accounts() {
                                     <tr>
                                         <th>Handle</th>
                                         <th>Phase</th>
+                                        <th>Health</th>
                                         <th>Assigned Model</th>
                                         <th>Karma</th>
                                         <th>Account Health</th>
@@ -276,6 +289,7 @@ export function Accounts() {
                                                     </div>
                                                 </td>
                                                 <td><PhaseBadge phase={acc.phase} /></td>
+                                                <td><HealthBar score={AnalyticsEngine.computeAccountHealthScore(acc)} /></td>
                                                 <td>{model ? model.name : 'Unassigned'}</td>
                                                 <td style={{ fontWeight: '600' }}>
                                                     {(acc.totalKarma || 0).toLocaleString()}
