@@ -67,6 +67,19 @@ db.version(12).stores({
     verifications: '++id, accountId, subredditId'
 });
 
+// v13: daily snapshots for trend tracking
+db.version(13).stores({
+    models: '++id, name, status, driveFolderId, usedFolderId, redgifsProfile, proxyInfo, vaPin',
+    accounts: '++id, modelId, handle, status, proxyInfo, phase',
+    subreddits: '++id, modelId, name, status, lastTestedDate',
+    assets: '++id, modelId, assetType, approved, lastUsedDate, driveFileId, externalUrl',
+    tasks: '++id, date, modelId, accountId, subredditId, assetId, status, redditPostId, taskType',
+    performances: '++id, taskId',
+    settings: '++id, key',
+    verifications: '++id, accountId, subredditId',
+    dailySnapshots: '++id, date'
+});
+
 // Seed default settings if empty
 db.on('populate', async () => {
     await db.settings.bulkAdd([

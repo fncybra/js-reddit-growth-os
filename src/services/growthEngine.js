@@ -1688,6 +1688,62 @@ export const AnalyticsEngine = {
     }
 };
 
+export const SnapshotService = {
+    async takeDailySnapshot() {
+        const today = startOfDay(new Date()).toISOString();
+        // Check if we already have a snapshot for today
+        const existing = await db.dailySnapshots.where('date').equals(today).first();
+
+        const accounts = await db.accounts.toArray();
+        const tasks = await db.tasks.toArray();
+        const performances = await db.performances.toArray();
+        const perfByTaskId = new Map(performances.map(p => [p.taskId, p]));
+
+        const totalKarma = accounts.reduce((sum, a) => sum + Number(a.totalKarma || 0), 0);
+        const totalAccounts = accounts.length;
+        const activeAccounts = accounts.filter(a => {
+            const phase = a.phase || 'ready';
+            return a.status === 'active' && (phase === 'ready' || phase === 'active');
+        }).length;
+
+        const todayTasks = tasks.filter(t => t.date === today);
+        const postsToday = todayTasks.filter(t => t.status === 'closed' || t.status === 'failed').length;
+        let removalsToday = 0;
+        for (const t of todayTasks) {
+            const p = perfByTaskId.get(t.id);
+            if (p?.removed) removalsToday++;
+        }
+
+        const totalUpvotes = performances.reduce((sum, p) => sum + Number(p.views24h || 0), 0);
+
+        const snapshot = {
+            date: today,
+            totalKarma,
+            totalAccounts,
+            activeAccounts,
+            postsToday,
+            removalsToday,
+            totalUpvotes,
+            takenAt: new Date().toISOString()
+        };
+
+        if (existing) {
+            await db.dailySnapshots.update(existing.id, snapshot);
+        } else {
+            await db.dailySnapshots.add(snapshot);
+        }
+        return snapshot;
+    },
+
+    async getSnapshots(days = 14) {
+        const cutoff = startOfDay(subDays(new Date(), days)).toISOString();
+        return db.dailySnapshots
+            .where('date')
+            .aboveOrEqual(cutoff)
+            .sortBy('date');
+    }
+};
+
 export const CloudSyncService = {
     async isEnabled() {
         const settings = await SettingsService.getSettings();
@@ -1699,7 +1755,7 @@ export const CloudSyncService = {
         const supabase = await getSupabaseClient();
         if (!supabase) return;
 
-        const allTables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'settings', 'verifications'];
+        const allTables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'settings', 'verifications', 'dailySnapshots'];
         const tables = onlyTables || allTables;
         const TASK_STATUS_RANK = { 'generated': 1, 'failed': 2, 'closed': 3 };
 
@@ -1775,7 +1831,7 @@ export const CloudSyncService = {
         const supabase = await getSupabaseClient();
         if (!supabase) return;
 
-        const tables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'settings', 'verifications'];
+        const tables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'settings', 'verifications', 'dailySnapshots'];
         const fetched = {};
 
         // Phase 1: fetch every table first; fail without mutating local if any fetch fails

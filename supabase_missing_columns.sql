@@ -49,6 +49,19 @@ ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "hasDisplayName" INTEGER;
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "hasVerifiedEmail" INTEGER;
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "lastProfileAudit" TEXT;
 
+-- daily snapshots table (Phase 4C)
+CREATE TABLE IF NOT EXISTS "dailySnapshots" (
+    "id" BIGSERIAL PRIMARY KEY,
+    "date" TEXT,
+    "totalKarma" INTEGER,
+    "totalAccounts" INTEGER,
+    "activeAccounts" INTEGER,
+    "postsToday" INTEGER,
+    "removalsToday" INTEGER,
+    "totalUpvotes" INTEGER,
+    "takenAt" TEXT
+);
+
 -- subreddits: verification required flag (Phase 3B)
 ALTER TABLE subreddits ADD COLUMN IF NOT EXISTS "requiresVerified" INTEGER;
 
