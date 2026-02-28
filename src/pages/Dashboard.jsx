@@ -4,6 +4,7 @@ import { AnalyticsEngine, AccountLifecycleService, SnapshotService } from '../se
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Link } from 'react-router-dom';
 import { ArrowUp, Users, Shield, AlertTriangle, RefreshCw, Cloud, RefreshCcw, Smartphone, CheckCircle, XCircle } from 'lucide-react';
+import { ManagerActionItems } from '../components/ManagerActionItems';
 
 export function Dashboard() {
     const [metrics, setMetrics] = useState(null);
@@ -386,6 +387,8 @@ export function Dashboard() {
                         </div>
                     </div>
                 </div>
+
+                <ManagerActionItems accounts={accountsAll || []} />
 
                 {/* 14-Day Trends */}
                 {snapshots.length >= 2 && (
