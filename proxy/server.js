@@ -302,11 +302,11 @@ app.get('/api/scrape/user/stats/:username', async (req, res) => {
         let hasLink = /https?:\/\//i.test(bioText);
         if (!hasLink) {
             try {
-                const profileRes = await axiosWithRetry(
-                    `https://www.reddit.com/user/${cleanName}/`,
-                    { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
-                    { proxyInfo }
-                );
+                // Fetch directly (no proxy) — residential proxies return 404 for www.reddit.com
+                const profileRes = await axios.get(`https://www.reddit.com/user/${cleanName}/`, {
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
+                    timeout: 8000,
+                });
                 const html = typeof profileRes.data === 'string' ? profileRes.data : '';
                 // Reddit embeds social links in faceplate-tracker elements with noun="social_link"
                 hasLink = /noun="social_link"/i.test(html) || /social_link.*"url"\s*:/i.test(html);
