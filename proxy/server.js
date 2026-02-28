@@ -266,10 +266,40 @@ app.get('/api/scrape/user/stats/:username', async (req, res) => {
 
         const data = response.data.data;
         const sub = data.subreddit || {};
-        // Reddit stores bio in subreddit.description (full) and subreddit.public_description (short)
+
+        // Debug: log raw Reddit profile fields for troubleshooting
+        console.log(`[ProfileAudit] ${cleanName} raw fields:`, JSON.stringify({
+            icon_img: data.icon_img,
+            snoovatar_img: data.snoovatar_img,
+            banner_img: sub.banner_img,
+            banner_background_image: sub.banner_background_image,
+            description: sub.description,
+            public_description: sub.public_description,
+            title: sub.title,
+            display_name: sub.display_name,
+            has_verified_email: data.has_verified_email,
+            url: sub.url,
+        }, null, 0));
+
+        // Bio: check both description fields
         const bioFull = sub.description || '';
         const bioShort = sub.public_description || '';
         const bioText = bioFull || bioShort;
+
+        // Avatar: custom if snoovatar set, or icon_img is not a Reddit default
+        const iconImg = data.icon_img || '';
+        const snooImg = data.snoovatar_img || '';
+        const isDefaultAvatar = !iconImg || /default/i.test(iconImg) || /avatars\/avatar_default/i.test(iconImg);
+        const hasCustomAvatar = snooImg.length > 0 || !isDefaultAvatar;
+
+        // Banner: new Reddit uses banner_background_image, old uses banner_img
+        const bannerImg = sub.banner_img || '';
+        const bannerBg = (sub.banner_background_image || '').split('?')[0]; // strip query params
+        const hasBanner = bannerImg.length > 0 || bannerBg.length > 0;
+
+        // Profile link: check bio text for URLs, or subreddit url field
+        const hasLink = /https?:\/\//i.test(bioText) || !!(sub.url && sub.url !== `/user/${cleanName}/` && /https?:\/\//i.test(sub.url));
+
         res.json({
             name: data.name,
             totalKarma: data.total_karma,
@@ -278,15 +308,17 @@ app.get('/api/scrape/user/stats/:username', async (req, res) => {
             created: data.created_utc,
             isGold: data.is_gold,
             isSuspended: data.is_suspended || false,
-            // Profile audit fields — from Reddit's about.json
-            icon_img: data.icon_img || '',
-            snoovatar_img: data.snoovatar_img || '',
-            banner_img: sub.banner_img || '',
+            // Profile audit fields — pre-computed booleans
+            icon_img: iconImg,
+            snoovatar_img: snooImg,
+            banner_img: bannerImg,
+            banner_background_image: bannerBg,
             description: bioText,
             display_name: sub.title || '',
             has_verified_email: data.has_verified_email || false,
-            // Check for links in bio text OR Reddit's dedicated profile URL field
-            has_profile_link: /https?:\/\//i.test(bioText) || !!(sub.url && sub.url !== `/user/${cleanName}/` && /https?:\/\//i.test(sub.url))
+            has_profile_link: hasLink,
+            has_custom_avatar: hasCustomAvatar,
+            has_banner: hasBanner,
         });
     } catch (error) {
         console.error("Account Stats Scrape Error:", error.message);

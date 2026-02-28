@@ -2279,11 +2279,11 @@ export const AccountSyncService = {
                 isSuspended: data.isSuspended,
                 lastSyncDate: new Date().toISOString()
             };
-            // Profile audit fields — auto-detect from scraped Reddit data
-            const hasCustomAvatar = (data.snoovatar_img && data.snoovatar_img.length > 0)
-                || (data.icon_img && !String(data.icon_img).includes('default'));
-            patch.hasAvatar = hasCustomAvatar ? 1 : 0;
-            patch.hasBanner = (data.banner_img && data.banner_img.length > 0) ? 1 : 0;
+            // Profile audit fields — use pre-computed booleans from proxy when available
+            patch.hasAvatar = data.has_custom_avatar !== undefined ? (data.has_custom_avatar ? 1 : 0)
+                : (((data.snoovatar_img && data.snoovatar_img.length > 0) || (data.icon_img && !String(data.icon_img).includes('default'))) ? 1 : 0);
+            patch.hasBanner = data.has_banner !== undefined ? (data.has_banner ? 1 : 0)
+                : ((data.banner_img && data.banner_img.length > 0) ? 1 : 0);
             patch.hasBio = (data.description && data.description.trim().length > 0) ? 1 : 0;
             // display_name (subreddit.title) counts only if it's not just the handle itself
             const dn = (data.display_name || '').trim();
