@@ -2,13 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../db/db';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, ArrowUp, User, CheckCircle, XCircle, AlertTriangle, ExternalLink, Heart } from 'lucide-react';
-import { AnalyticsEngine } from '../services/growthEngine';
+import { ArrowLeft, ArrowUp, User, CheckCircle, XCircle, AlertTriangle, ExternalLink, Heart, ShieldCheck } from 'lucide-react';
+import { AnalyticsEngine, AccountSyncService } from '../services/growthEngine';
 
 export function AccountDetail() {
     const { id } = useParams();
     const accountId = Number(id);
     const [stats, setStats] = useState(null);
+    const [checkingShadow, setCheckingShadow] = useState(false);
 
     const account = useLiveQuery(() => db.accounts.get(accountId), [accountId]);
     const model = useLiveQuery(
@@ -131,8 +132,32 @@ export function AccountDetail() {
                                 <CheckCircle size={10} /> Active
                             </span>
                         )}
+                        {account.shadowBanStatus && account.shadowBanStatus !== 'clean' && (
+                            <span className="badge badge-danger" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                <AlertTriangle size={10} /> Shadow-Banned
+                            </span>
+                        )}
                     </div>
                 </div>
+                <button
+                    className="btn btn-outline"
+                    disabled={checkingShadow}
+                    onClick={async () => {
+                        setCheckingShadow(true);
+                        try {
+                            const result = await AccountSyncService.checkShadowBan(accountId);
+                            const labels = { clean: 'Clean — no shadow ban detected', shadow_banned: 'Shadow-banned detected!', suspended: 'Account is suspended!', error: 'Check failed — try again' };
+                            alert(labels[result] || result);
+                        } catch (e) {
+                            alert('Check failed: ' + e.message);
+                        }
+                        setCheckingShadow(false);
+                    }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                    <ShieldCheck size={14} className={checkingShadow ? 'spin' : ''} />
+                    {checkingShadow ? 'Checking...' : 'Check Shadow Ban'}
+                </button>
             </header>
 
             <div className="page-content">

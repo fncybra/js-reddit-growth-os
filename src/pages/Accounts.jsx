@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { db } from '../db/db';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { AccountSyncService, AnalyticsEngine } from '../services/growthEngine';
-import { Smartphone, RefreshCw, AlertTriangle, Trash2 } from 'lucide-react';
+import { Smartphone, RefreshCw, AlertTriangle, Trash2, ShieldCheck } from 'lucide-react';
 
 const PHASE_BADGES = {
     warming: { label: 'Warming', bg: '#fff3e0', color: '#e65100', border: '#ffcc80' },
@@ -46,6 +46,7 @@ export function Accounts() {
     const [phaseFilter, setPhaseFilter] = useState('all');
 
     const [syncing, setSyncing] = useState(false);
+    const [checkingShadow, setCheckingShadow] = useState(false);
 
     React.useEffect(() => {
         if (models && models.length > 0 && !selectedModelId) {
@@ -61,6 +62,17 @@ export function Accounts() {
         setSyncing(true);
         await AccountSyncService.syncAllAccounts();
         setSyncing(false);
+    }
+
+    async function handleCheckAllShadowBans() {
+        setCheckingShadow(true);
+        try {
+            const result = await AccountSyncService.checkAllShadowBans();
+            alert(`Shadow ban check complete: ${result.clean} clean, ${result.flagged} flagged, ${result.errors} errors`);
+        } catch (e) {
+            alert('Shadow ban check failed: ' + e.message);
+        }
+        setCheckingShadow(false);
     }
 
     async function handleDeleteAccount(acc) {
@@ -148,15 +160,26 @@ export function Accounts() {
                         Manage health and karma for all operational handles.
                     </div>
                 </div>
-                <button
-                    className="btn btn-outline"
-                    onClick={handleRefreshAll}
-                    disabled={syncing}
-                    style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
-                >
-                    <RefreshCw size={16} className={syncing ? 'spin' : ''} />
-                    {syncing ? 'Refreshing Health...' : 'Refresh All Health Data'}
-                </button>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                        className="btn btn-outline"
+                        onClick={handleCheckAllShadowBans}
+                        disabled={checkingShadow || syncing}
+                        style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                    >
+                        <ShieldCheck size={16} className={checkingShadow ? 'spin' : ''} />
+                        {checkingShadow ? 'Checking...' : 'Check Shadow Bans'}
+                    </button>
+                    <button
+                        className="btn btn-outline"
+                        onClick={handleRefreshAll}
+                        disabled={syncing || checkingShadow}
+                        style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                    >
+                        <RefreshCw size={16} className={syncing ? 'spin' : ''} />
+                        {syncing ? 'Refreshing Health...' : 'Refresh All Health Data'}
+                    </button>
+                </div>
             </header>
             <div className="page-content">
                 <div className="grid-cards mb-6" style={{ marginBottom: '32px' }}>
@@ -295,13 +318,28 @@ export function Accounts() {
                                                     {(acc.totalKarma || 0).toLocaleString()}
                                                 </td>
                                                 <td>
-                                                    {acc.isSuspended ? (
-                                                        <span style={{ color: 'var(--status-danger)', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', fontWeight: 'bold' }}>
-                                                            <AlertTriangle size={14} /> SUSPENDED
-                                                        </span>
-                                                    ) : (
-                                                        <span style={{ color: 'var(--status-success)', fontSize: '0.8rem', fontWeight: 'bold' }}>✅ HEALTHY</span>
-                                                    )}
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                                        {acc.isSuspended ? (
+                                                            <span style={{ color: 'var(--status-danger)', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                                                                <AlertTriangle size={14} /> SUSPENDED
+                                                            </span>
+                                                        ) : (
+                                                            <span style={{ color: 'var(--status-success)', fontSize: '0.8rem', fontWeight: 'bold' }}>HEALTHY</span>
+                                                        )}
+                                                        {acc.shadowBanStatus && acc.shadowBanStatus !== 'clean' && (
+                                                            <span style={{
+                                                                display: 'inline-block', padding: '1px 6px', borderRadius: '8px', fontSize: '0.65rem', fontWeight: 600,
+                                                                backgroundColor: '#ffebee', color: '#c62828', border: '1px solid #ef9a9a'
+                                                            }}>
+                                                                SHADOW-BANNED
+                                                            </span>
+                                                        )}
+                                                        {acc.shadowBanStatus === 'clean' && (
+                                                            <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)' }}>
+                                                                Checked {acc.lastShadowCheck ? new Date(acc.lastShadowCheck).toLocaleDateString() : ''}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </td>
                                                 <td>
                                                     <input

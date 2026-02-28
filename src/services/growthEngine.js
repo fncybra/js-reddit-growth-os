@@ -1933,6 +1933,63 @@ export const AccountSyncService = {
         }
         try { await CloudSyncService.autoPush(); } catch (e) { console.error('[AccountSync] autoPush failed:', e); }
         return { total: accounts.length, succeeded, failed };
+    },
+
+    async checkShadowBan(accountId) {
+        const account = await db.accounts.get(accountId);
+        if (!account || !account.handle) return null;
+
+        const cleanHandle = account.handle.replace(/^(u\/|\/u\/)/i, '').trim();
+        const proxyUrl = await SettingsService.getProxyUrl();
+        const now = new Date().toISOString();
+
+        try {
+            const res = await fetchWithTimeout(`${proxyUrl}/api/scrape/user/stats/${cleanHandle}`, {}, 10000);
+            if (!res.ok) {
+                // 404 or error → likely shadow-banned or suspended
+                await db.accounts.update(accountId, {
+                    shadowBanStatus: 'shadow_banned',
+                    lastShadowCheck: now,
+                    phase: 'burned',
+                    phaseChangedDate: now
+                });
+                return 'shadow_banned';
+            }
+            const data = await res.json();
+            if (data.isSuspended) {
+                await db.accounts.update(accountId, {
+                    shadowBanStatus: 'suspended',
+                    lastShadowCheck: now,
+                    isSuspended: true,
+                    phase: 'burned',
+                    phaseChangedDate: now
+                });
+                return 'suspended';
+            }
+            await db.accounts.update(accountId, {
+                shadowBanStatus: 'clean',
+                lastShadowCheck: now
+            });
+            return 'clean';
+        } catch (err) {
+            console.error(`Shadow ban check failed (${cleanHandle}):`, err);
+            await db.accounts.update(accountId, { lastShadowCheck: now });
+            return 'error';
+        }
+    },
+
+    async checkAllShadowBans() {
+        const accounts = await db.accounts.toArray();
+        let clean = 0, flagged = 0, errors = 0;
+        for (const acc of accounts) {
+            if (!acc.handle) continue;
+            const result = await this.checkShadowBan(acc.id);
+            if (result === 'clean') clean++;
+            else if (result === 'shadow_banned' || result === 'suspended') flagged++;
+            else errors++;
+        }
+        try { await CloudSyncService.autoPush(); } catch (e) { /* non-critical */ }
+        return { total: accounts.length, clean, flagged, errors };
     }
 };
 
