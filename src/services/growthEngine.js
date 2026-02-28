@@ -669,6 +669,48 @@ export const SubredditGuardService = {
     }
 };
 
+export const VerificationService = {
+    async isVerified(accountId, subredditId) {
+        const record = await db.verifications
+            .where('accountId').equals(accountId)
+            .and(v => v.subredditId === subredditId)
+            .first();
+        return !!(record && record.verified);
+    },
+
+    async markVerified(accountId, subredditId) {
+        const existing = await db.verifications
+            .where('accountId').equals(accountId)
+            .and(v => v.subredditId === subredditId)
+            .first();
+        if (existing) {
+            await db.verifications.update(existing.id, { verified: 1, verifiedDate: new Date().toISOString() });
+        } else {
+            await db.verifications.add({ accountId, subredditId, verified: 1, verifiedDate: new Date().toISOString() });
+        }
+        try { await CloudSyncService.autoPush(['verifications']); } catch (e) { /* non-critical */ }
+    },
+
+    async markUnverified(accountId, subredditId) {
+        const existing = await db.verifications
+            .where('accountId').equals(accountId)
+            .and(v => v.subredditId === subredditId)
+            .first();
+        if (existing) {
+            await db.verifications.update(existing.id, { verified: 0, verifiedDate: null });
+        }
+        try { await CloudSyncService.autoPush(['verifications']); } catch (e) { /* non-critical */ }
+    },
+
+    async getVerifiedAccountIds(subredditId) {
+        const records = await db.verifications
+            .where('subredditId').equals(subredditId)
+            .filter(v => v.verified === 1)
+            .toArray();
+        return records.map(v => v.accountId);
+    }
+};
+
 export const DailyPlanGenerator = {
     // Automatically generates structured daily posting plans across multiple accounts
     async generateDailyPlan(modelId, targetDate = new Date()) {
@@ -900,6 +942,12 @@ export const DailyPlanGenerator = {
                 }
                 if (sub.minAccountAgeDays && accountAgeDays < Number(sub.minAccountAgeDays)) {
                     continue;
+                }
+
+                // Verification guard: if sub requires verification, only assign verified accounts
+                if (sub.requiresVerified) {
+                    const isVerified = await VerificationService.isVerified(account.id, sub.id);
+                    if (!isVerified) continue;
                 }
 
                 let selectedAsset = null;
@@ -1634,7 +1682,7 @@ export const CloudSyncService = {
         const supabase = await getSupabaseClient();
         if (!supabase) return;
 
-        const allTables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'settings'];
+        const allTables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'settings', 'verifications'];
         const tables = onlyTables || allTables;
         const TASK_STATUS_RANK = { 'generated': 1, 'failed': 2, 'closed': 3 };
 
@@ -1710,7 +1758,7 @@ export const CloudSyncService = {
         const supabase = await getSupabaseClient();
         if (!supabase) return;
 
-        const tables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'settings'];
+        const tables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'settings', 'verifications'];
         const fetched = {};
 
         // Phase 1: fetch every table first; fail without mutating local if any fetch fails
