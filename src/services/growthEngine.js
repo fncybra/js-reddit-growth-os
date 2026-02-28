@@ -1733,8 +1733,16 @@ export const AccountSyncService = {
 
     async syncAllAccounts() {
         const accounts = await db.accounts.toArray();
-        for (const acc of accounts) await this.syncAccountHealth(acc.id);
-        await CloudSyncService.autoPush();
+        let succeeded = 0;
+        let failed = 0;
+        for (const acc of accounts) {
+            if (!acc.handle) continue;
+            const result = await this.syncAccountHealth(acc.id);
+            if (result) succeeded++;
+            else failed++;
+        }
+        try { await CloudSyncService.autoPush(); } catch (e) { console.error('[AccountSync] autoPush failed:', e); }
+        return { total: accounts.length, succeeded, failed };
     }
 };
 
@@ -1830,7 +1838,7 @@ export const PerformanceSyncService = {
             }
         }
 
-        await CloudSyncService.autoPush();
+        try { await CloudSyncService.autoPush(); } catch (e) { console.error('[PerfSync] autoPush failed:', e); }
 
         return { attempted, succeeded, failed, skipped, scanned: pendingTasks.length };
     }

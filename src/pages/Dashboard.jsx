@@ -174,10 +174,26 @@ export function Dashboard() {
         setSyncing(true);
         try {
             const { PerformanceSyncService, AccountSyncService } = await import('../services/growthEngine');
-            await AccountSyncService.syncAllAccounts();
+            const accountResult = await AccountSyncService.syncAllAccounts();
             const stats = await PerformanceSyncService.syncAllPendingPerformance();
-            alert(`Stats sync finished. Attempted ${stats.attempted}, succeeded ${stats.succeeded}, failed ${stats.failed}.`);
-            window.location.reload();
+            const parts = ['Stats sync finished.'];
+            if (accountResult.total === 0) {
+                parts.push('No accounts to sync.');
+            } else if (accountResult.failed > 0) {
+                parts.push(`Accounts: ${accountResult.succeeded}/${accountResult.total} synced (${accountResult.failed} failed).`);
+            } else {
+                parts.push(`Accounts: ${accountResult.succeeded}/${accountResult.total} synced.`);
+            }
+            if (stats.scanned === 0) {
+                parts.push('No closed posts to check (need tasks with status "closed" or "failed").');
+            } else {
+                parts.push(`Posts: ${stats.attempted} checked, ${stats.succeeded} succeeded, ${stats.failed} failed.`);
+                if (stats.skipped > 0) parts.push(`(${stats.skipped} skipped — no post ID)`);
+            }
+            alert(parts.join('\n'));
+            const data = await AnalyticsEngine.getAgencyMetrics();
+            setMetrics(data);
+            setSyncing(false);
         } catch (err) {
             alert("Sync error: " + err.message);
             setSyncing(false);
@@ -416,9 +432,18 @@ export function Dashboard() {
                             <button
                                 className="btn btn-outline"
                                 onClick={async () => {
-                                    const { CloudSyncService } = await import('../services/growthEngine');
-                                    await CloudSyncService.pushLocalToCloud();
-                                    alert("Backed up to cloud.");
+                                    try {
+                                        const { CloudSyncService } = await import('../services/growthEngine');
+                                        const enabled = await CloudSyncService.isEnabled();
+                                        if (!enabled) {
+                                            alert("Cloud sync not configured. Go to Settings and add your Supabase URL and Anon Key.");
+                                            return;
+                                        }
+                                        await CloudSyncService.pushLocalToCloud();
+                                        alert("Backed up to cloud.");
+                                    } catch (err) {
+                                        alert("Backup failed: " + err.message);
+                                    }
                                 }}
                                 style={{ padding: '4px 12px', fontSize: '0.8rem' }}
                             >
@@ -428,9 +453,18 @@ export function Dashboard() {
                                 className="btn btn-outline"
                                 onClick={async () => {
                                     if (confirm("Overwrite local data with cloud data?")) {
-                                        const { CloudSyncService } = await import('../services/growthEngine');
-                                        await CloudSyncService.pullCloudToLocal();
-                                        window.location.reload();
+                                        try {
+                                            const { CloudSyncService } = await import('../services/growthEngine');
+                                            const enabled = await CloudSyncService.isEnabled();
+                                            if (!enabled) {
+                                                alert("Cloud sync not configured. Go to Settings and add your Supabase URL and Anon Key.");
+                                                return;
+                                            }
+                                            await CloudSyncService.pullCloudToLocal();
+                                            window.location.reload();
+                                        } catch (err) {
+                                            alert("Restore failed: " + err.message);
+                                        }
                                     }
                                 }}
                                 style={{ padding: '4px 12px', fontSize: '0.8rem' }}
