@@ -648,6 +648,15 @@ export const SubredditGuardService = {
         return { ...sub, ...patch };
     },
 
+    calculateRiskLevel(subreddit) {
+        const totalTests = Number(subreddit.totalTests || 0);
+        if (totalTests < 3) return 'unknown';
+        const removalPct = Number(subreddit.removalPct || 0);
+        if (removalPct > 30) return 'high';
+        if (removalPct >= 10) return 'medium';
+        return 'low';
+    },
+
     async moveCooldownToTesting(subredditId) {
         const sub = await db.subreddits.get(subredditId);
         if (!sub) return null;
@@ -881,6 +890,11 @@ export const DailyPlanGenerator = {
             const shuffledAssets = [...activeAssets].sort(() => Math.random() - 0.5);
 
             for (const sub of selectedSubsForAccount) {
+                // Risk-level guard: new/low-karma accounts only get low-risk subs
+                const autoRisk = SubredditGuardService.calculateRiskLevel(sub);
+                if ((accountAgeDays < 30 || accountKarma < 500) && autoRisk === 'high') {
+                    continue;
+                }
                 if (sub.minRequiredKarma && accountKarma < Number(sub.minRequiredKarma)) {
                     continue;
                 }
