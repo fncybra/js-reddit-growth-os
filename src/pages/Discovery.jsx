@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { db } from '../db/db';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Search, Loader2, Download } from 'lucide-react';
+import { Search, Loader2, Download, RefreshCw, Trash2, Plus, Eye } from 'lucide-react';
+import { CompetitorService } from '../services/growthEngine';
 
 export function Discovery() {
     const models = useLiveQuery(() => db.models.toArray());
@@ -37,6 +38,14 @@ export function Discovery() {
         () => targetModel ? db.subreddits.where({ modelId: targetModel.id }).toArray() : [],
         [targetModel?.id]
     );
+
+    const competitors = useLiveQuery(
+        () => targetModel ? db.competitors.where('modelId').equals(targetModel.id).toArray() : [],
+        [targetModel?.id]
+    );
+    const [scrapingAll, setScrapingAll] = useState(false);
+    const [addingCompetitor, setAddingCompetitor] = useState('');
+    const [expandedCompetitor, setExpandedCompetitor] = useState(null);
 
     const [discoveryMode, setDiscoveryMode] = useState('competitor'); // 'competitor' or 'niche'
     const [username, setUsername] = useState('');
@@ -340,6 +349,155 @@ export function Discovery() {
                     </form>
 
                     {error && <div style={{ color: 'var(--status-danger)', marginTop: '12px', fontSize: '0.9rem' }}>⚠️ {error}</div>}
+                </div>
+
+                {/* Saved Competitors */}
+                <div className="card" style={{ marginBottom: '24px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                        <h2 style={{ fontSize: '1.1rem' }}>Tracked Competitors ({(competitors || []).length})</h2>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            <input
+                                className="input-field"
+                                placeholder="u/handle"
+                                value={addingCompetitor}
+                                onChange={e => setAddingCompetitor(e.target.value)}
+                                onKeyDown={async e => {
+                                    if (e.key === 'Enter' && addingCompetitor.trim() && targetModel) {
+                                        await CompetitorService.addCompetitor(targetModel.id, addingCompetitor);
+                                        setAddingCompetitor('');
+                                    }
+                                }}
+                                style={{ width: '160px', padding: '6px 10px', fontSize: '0.85rem' }}
+                            />
+                            <button
+                                className="btn btn-primary"
+                                disabled={!addingCompetitor.trim() || !targetModel}
+                                onClick={async () => {
+                                    if (!addingCompetitor.trim() || !targetModel) return;
+                                    await CompetitorService.addCompetitor(targetModel.id, addingCompetitor);
+                                    setAddingCompetitor('');
+                                }}
+                                style={{ padding: '6px 12px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                            >
+                                <Plus size={14} /> Add
+                            </button>
+                            <button
+                                className="btn btn-outline"
+                                disabled={scrapingAll || !(competitors?.length > 0)}
+                                onClick={async () => {
+                                    setScrapingAll(true);
+                                    try {
+                                        const result = await CompetitorService.scrapeAllCompetitors(targetModel?.id);
+                                        alert(`Scraped ${result.succeeded}/${result.total} competitors.${result.failed > 0 ? ` ${result.failed} failed.` : ''}`);
+                                    } catch (e) { alert('Scrape failed: ' + e.message); }
+                                    setScrapingAll(false);
+                                }}
+                                style={{ padding: '6px 12px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                            >
+                                <RefreshCw size={14} className={scrapingAll ? 'animate-spin' : ''} />
+                                {scrapingAll ? 'Scraping...' : 'Scrape All'}
+                            </button>
+                        </div>
+                    </div>
+                    {(!competitors || competitors.length === 0) ? (
+                        <div style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '20px' }}>
+                            No competitors tracked yet. Add a Reddit handle above to start monitoring.
+                        </div>
+                    ) : (
+                        <div className="data-table-container">
+                            <table className="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Handle</th>
+                                        <th>Karma</th>
+                                        <th>Change</th>
+                                        <th>Top Subreddits</th>
+                                        <th>Last Scraped</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {(competitors || []).map(comp => {
+                                        const karmaDiff = (comp.totalKarma || 0) - (comp.prevKarma || 0);
+                                        const topSubs = comp.topSubreddits || [];
+                                        const isExpanded = expandedCompetitor === comp.id;
+                                        return (
+                                            <React.Fragment key={comp.id}>
+                                                <tr>
+                                                    <td style={{ fontWeight: 500 }}>
+                                                        <a href={`https://reddit.com/user/${comp.handle}`} target="_blank" rel="noreferrer" style={{ color: 'var(--primary-color)', textDecoration: 'none' }}>
+                                                            u/{comp.handle}
+                                                        </a>
+                                                    </td>
+                                                    <td style={{ fontWeight: 600 }}>{(comp.totalKarma || 0).toLocaleString()}</td>
+                                                    <td style={{ color: karmaDiff > 0 ? '#4caf50' : karmaDiff < 0 ? '#f44336' : 'var(--text-secondary)', fontWeight: 600 }}>
+                                                        {comp.lastScrapedDate ? (karmaDiff > 0 ? `+${karmaDiff.toLocaleString()}` : karmaDiff === 0 ? '—' : karmaDiff.toLocaleString()) : '—'}
+                                                    </td>
+                                                    <td style={{ fontSize: '0.8rem' }}>
+                                                        {topSubs.slice(0, 3).map(s => (
+                                                            <span key={s.name} className="badge badge-info" style={{ marginRight: '4px', fontSize: '0.7rem' }}>
+                                                                r/{s.name} ({s.posts})
+                                                            </span>
+                                                        ))}
+                                                        {topSubs.length > 3 && <span style={{ color: 'var(--text-secondary)' }}>+{topSubs.length - 3} more</span>}
+                                                    </td>
+                                                    <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                                        {comp.lastScrapedDate ? new Date(comp.lastScrapedDate).toLocaleDateString() : 'Never'}
+                                                    </td>
+                                                    <td>
+                                                        <div style={{ display: 'flex', gap: '4px' }}>
+                                                            <button className="btn btn-outline" style={{ padding: '2px 6px' }} title="Expand subreddits"
+                                                                onClick={() => setExpandedCompetitor(isExpanded ? null : comp.id)}>
+                                                                <Eye size={12} />
+                                                            </button>
+                                                            <button className="btn btn-outline" style={{ padding: '2px 6px' }} title="Scrape now"
+                                                                onClick={async () => {
+                                                                    try {
+                                                                        await CompetitorService.scrapeCompetitor(comp.id);
+                                                                    } catch (e) { alert('Failed: ' + e.message); }
+                                                                }}>
+                                                                <RefreshCw size={12} />
+                                                            </button>
+                                                            <button className="btn btn-outline" style={{ padding: '2px 6px', color: '#f44336', borderColor: '#f44336' }} title="Delete"
+                                                                onClick={async () => {
+                                                                    if (window.confirm(`Remove u/${comp.handle} from tracking?`)) {
+                                                                        await CompetitorService.deleteCompetitor(comp.id);
+                                                                    }
+                                                                }}>
+                                                                <Trash2 size={12} />
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                                {isExpanded && topSubs.length > 0 && (
+                                                    <tr>
+                                                        <td colSpan="6" style={{ padding: '8px 16px', backgroundColor: 'rgba(99,102,241,0.05)' }}>
+                                                            <div style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '6px' }}>u/{comp.handle}'s Active Subreddits</div>
+                                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                                                {topSubs.map(s => (
+                                                                    <span key={s.name} style={{
+                                                                        display: 'inline-flex', alignItems: 'center', gap: '6px',
+                                                                        padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem',
+                                                                        backgroundColor: existingSubNames.has(s.name.toLowerCase()) ? 'rgba(76,175,80,0.15)' : 'rgba(255,255,255,0.05)',
+                                                                        border: `1px solid ${existingSubNames.has(s.name.toLowerCase()) ? '#4caf50' : 'var(--border-color)'}`
+                                                                    }}>
+                                                                        <a href={`https://reddit.com/r/${s.name}`} target="_blank" rel="noreferrer" style={{ color: 'var(--primary-color)', textDecoration: 'none' }}>r/{s.name}</a>
+                                                                        <span style={{ color: 'var(--text-secondary)' }}>{s.posts} posts</span>
+                                                                        <span style={{ color: 'var(--text-secondary)' }}>~{s.avgUps} ups</span>
+                                                                        {existingSubNames.has(s.name.toLowerCase()) && <span style={{ color: '#4caf50', fontWeight: 600 }}>✓ tracked</span>}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                )}
+                                            </React.Fragment>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
                 </div>
 
                 {results.length > 0 && (

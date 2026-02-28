@@ -80,6 +80,20 @@ db.version(13).stores({
     dailySnapshots: '++id, date'
 });
 
+// v14: persistent competitor tracking
+db.version(14).stores({
+    models: '++id, name, status, driveFolderId, usedFolderId, redgifsProfile, proxyInfo, vaPin',
+    accounts: '++id, modelId, handle, status, proxyInfo, phase',
+    subreddits: '++id, modelId, name, status, lastTestedDate',
+    assets: '++id, modelId, assetType, approved, lastUsedDate, driveFileId, externalUrl',
+    tasks: '++id, date, modelId, accountId, subredditId, assetId, status, redditPostId, taskType',
+    performances: '++id, taskId',
+    settings: '++id, key',
+    verifications: '++id, accountId, subredditId',
+    dailySnapshots: '++id, date',
+    competitors: '++id, modelId, handle'
+});
+
 // Seed default settings if empty
 db.on('populate', async () => {
     await db.settings.bulkAdd([
