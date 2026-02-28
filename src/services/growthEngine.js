@@ -2465,3 +2465,161 @@ export const PerformanceSyncService = {
         return { attempted, succeeded, failed, skipped, scanned: pendingTasks.length };
     }
 };
+
+/**
+ * Pure function: generates manager action items from account data.
+ * No DB calls, no async, no side effects.
+ */
+export function generateManagerActionItems(accounts) {
+    if (!accounts || !accounts.length) return [];
+
+    const now = Date.now();
+    const items = [];
+
+    for (const account of accounts) {
+        const handle = account.handle || `Account #${account.id}`;
+        const accountId = account.id;
+        const karma = Number(account.totalKarma || 0);
+        const removalRate = Number(account.removalRate || 0);
+        const phase = (account.phase || '').toLowerCase();
+        const isSuspended = !!account.isSuspended;
+
+        // Compute account age in days
+        let ageDays = null;
+        if (account.createdUtc) {
+            ageDays = Math.floor((now - Number(account.createdUtc) * 1000) / (86400000));
+        }
+
+        // Rule 13: Burned/suspended — short-circuit, only this rule applies
+        if (isSuspended || account.status === 'burned') {
+            items.push({
+                accountId,
+                handle,
+                priority: 'critical',
+                message: `${handle} is BURNED — remove from rotation`,
+                rule: 13
+            });
+            continue;
+        }
+
+        // --- Warming Phase Rules (days 0-7) ---
+        if (phase === 'warming' && ageDays !== null) {
+            // Rule 1: Day 0-3, karma = 0
+            if (ageDays <= 3 && karma === 0) {
+                items.push({
+                    accountId,
+                    handle,
+                    priority: 'info',
+                    message: `Leave ${handle} alone — don't post yet (day ${ageDays}/3)`,
+                    rule: 1
+                });
+            }
+
+            // Rule 2: Day 3+, karma < 30
+            if (ageDays >= 3 && karma < 30) {
+                items.push({
+                    accountId,
+                    handle,
+                    priority: 'warning',
+                    message: `Start anime karma farming on ${handle} — only ${karma} karma`,
+                    rule: 2
+                });
+            }
+
+            // Rule 3: Day 5+, karma < 80
+            if (ageDays >= 5 && karma < 80) {
+                items.push({
+                    accountId,
+                    handle,
+                    priority: 'critical',
+                    message: `URGENT: ${handle} behind on karma — needs 100 by day 7`,
+                    rule: 3
+                });
+            }
+
+            // Rule 4: Day 7+, still warming
+            if (ageDays >= 7) {
+                items.push({
+                    accountId,
+                    handle,
+                    priority: 'critical',
+                    message: `${handle} failed warmup — only ${karma} karma after ${ageDays} days`,
+                    rule: 4
+                });
+            }
+        }
+
+        // --- Ready Phase Checklist (day 7+ or phase=ready/active) ---
+        if (phase === 'ready' || phase === 'active' || (ageDays !== null && ageDays >= 7 && phase !== 'warming')) {
+            const missing = [];
+
+            // Rule 5: No profile link
+            if (!account.hasProfileLink) {
+                items.push({ accountId, handle, priority: 'warning', message: `Add deep link to ${handle}'s bio`, rule: 5 });
+                missing.push('profileLink');
+            }
+
+            // Rule 6: No avatar
+            if (!account.hasAvatar) {
+                items.push({ accountId, handle, priority: 'warning', message: `Set custom avatar on ${handle}`, rule: 6 });
+                missing.push('avatar');
+            }
+
+            // Rule 7: No banner
+            if (!account.hasBanner) {
+                items.push({ accountId, handle, priority: 'warning', message: `Set profile banner on ${handle}`, rule: 7 });
+                missing.push('banner');
+            }
+
+            // Rule 8: No bio
+            if (!account.hasBio) {
+                items.push({ accountId, handle, priority: 'warning', message: `Write bio for ${handle}`, rule: 8 });
+                missing.push('bio');
+            }
+
+            // Rule 9: No display name
+            if (!account.hasDisplayName) {
+                items.push({ accountId, handle, priority: 'warning', message: `Set display name on ${handle}`, rule: 9 });
+                missing.push('displayName');
+            }
+
+            // Rule 10: All profile complete
+            if (missing.length === 0 && account.hasProfileLink && account.hasAvatar && account.hasBanner && account.hasBio && account.hasDisplayName) {
+                items.push({ accountId, handle, priority: 'success', message: `${handle} fully set up — ready for NSFW posting`, rule: 10 });
+            }
+        }
+
+        // --- Ongoing Monitoring ---
+
+        // Rule 11: Removal rate > 30%
+        if (removalRate > 30) {
+            items.push({
+                accountId,
+                handle,
+                priority: 'critical',
+                message: `HIGH removals on ${handle} (${Math.round(removalRate)}%) — check subreddits`,
+                rule: 11
+            });
+        }
+
+        // Rule 12: No posts in 3+ days (active accounts only)
+        if ((phase === 'ready' || phase === 'active') && account.lastActiveDate) {
+            const daysSinceActive = Math.floor((now - new Date(account.lastActiveDate).getTime()) / 86400000);
+            if (daysSinceActive >= 3) {
+                items.push({
+                    accountId,
+                    handle,
+                    priority: 'warning',
+                    message: `${handle} hasn't posted in ${daysSinceActive} days`,
+                    rule: 12
+                });
+            }
+        }
+    }
+
+    // Sort: critical → warning → info → success
+    const priorityOrder = { critical: 0, warning: 1, info: 2, success: 3 };
+    items.sort((a, b) => (priorityOrder[a.priority] ?? 99) - (priorityOrder[b.priority] ?? 99));
+
+    return items;
+}
