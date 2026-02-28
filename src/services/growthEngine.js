@@ -2077,7 +2077,7 @@ export const CloudSyncService = {
         const supabase = await getSupabaseClient();
         if (!supabase) return;
 
-        const tables = ['performances', 'tasks', 'assets', 'subreddits', 'accounts', 'models', 'settings'];
+        const tables = ['verifications', 'dailySnapshots', 'competitors', 'performances', 'tasks', 'assets', 'subreddits', 'accounts', 'models', 'settings'];
         for (const table of tables) {
             const { error } = await supabase.from(table).delete().neq('id', -1);
             if (error) {
