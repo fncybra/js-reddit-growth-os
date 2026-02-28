@@ -216,19 +216,11 @@ export function AccountDetail() {
                                 {items.map(item => {
                                     const done = !!account[item.key];
                                     return (
-                                        <label key={item.key} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
-                                            <input
-                                                type="checkbox"
-                                                checked={done}
-                                                onChange={async () => {
-                                                    await db.accounts.update(accountId, { [item.key]: done ? 0 : 1 });
-                                                    try { await CloudSyncService.autoPush(['accounts']); } catch (e) { /* non-critical */ }
-                                                }}
-                                                style={{ accentColor: pColor }}
-                                            />
+                                        <div key={item.key} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            {done ? <CheckCircle size={14} style={{ color: '#4caf50' }} /> : <XCircle size={14} style={{ color: '#f44336' }} />}
                                             <span style={{ color: done ? '#4caf50' : 'var(--text-secondary)' }}>{item.label}</span>
                                             <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>+{item.points}</span>
-                                        </label>
+                                        </div>
                                     );
                                 })}
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -241,6 +233,9 @@ export function AccountDetail() {
                                     <span style={{ color: hasKarma ? '#4caf50' : 'var(--text-secondary)' }}>Karma 100+</span>
                                     <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>+15</span>
                                 </div>
+                            </div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '10px' }}>
+                                Auto-detected when syncing accounts. Hit "Sync Stats" above to refresh.
                             </div>
                         </div>
                     );

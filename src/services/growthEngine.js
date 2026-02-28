@@ -2241,17 +2241,14 @@ export const AccountSyncService = {
                 isSuspended: data.isSuspended,
                 lastSyncDate: new Date().toISOString()
             };
-            // Profile audit fields — capture from API if available
-            if (data.hasAvatar !== undefined) patch.hasAvatar = data.hasAvatar ? 1 : 0;
-            if (data.icon_img !== undefined) patch.hasAvatar = (data.icon_img && !String(data.icon_img).includes('default')) ? 1 : 0;
-            if (data.hasBanner !== undefined) patch.hasBanner = data.hasBanner ? 1 : 0;
-            if (data.banner_img !== undefined) patch.hasBanner = data.banner_img ? 1 : 0;
-            if (data.hasBio !== undefined) patch.hasBio = data.hasBio ? 1 : 0;
-            if (data.description !== undefined) patch.hasBio = data.description ? 1 : 0;
-            if (data.hasDisplayName !== undefined) patch.hasDisplayName = data.hasDisplayName ? 1 : 0;
-            if (data.display_name !== undefined) patch.hasDisplayName = (data.display_name && data.display_name !== data.name) ? 1 : 0;
-            if (data.hasVerifiedEmail !== undefined) patch.hasVerifiedEmail = data.hasVerifiedEmail ? 1 : 0;
-            if (data.has_verified_email !== undefined) patch.hasVerifiedEmail = data.has_verified_email ? 1 : 0;
+            // Profile audit fields — auto-detect from scraped Reddit data
+            const hasCustomAvatar = (data.snoovatar_img && data.snoovatar_img.length > 0)
+                || (data.icon_img && !String(data.icon_img).includes('default'));
+            patch.hasAvatar = hasCustomAvatar ? 1 : 0;
+            patch.hasBanner = (data.banner_img && data.banner_img.length > 0) ? 1 : 0;
+            patch.hasBio = (data.description && data.description.trim().length > 0) ? 1 : 0;
+            patch.hasDisplayName = (data.display_name && data.display_name.trim().length > 0) ? 1 : 0;
+            patch.hasVerifiedEmail = data.has_verified_email ? 1 : 0;
             patch.lastProfileAudit = new Date().toISOString();
             await db.accounts.update(accountId, patch);
             return data;

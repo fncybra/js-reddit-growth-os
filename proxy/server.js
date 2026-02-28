@@ -272,7 +272,14 @@ app.get('/api/scrape/user/stats/:username', async (req, res) => {
             commentKarma: data.comment_karma,
             created: data.created_utc,
             isGold: data.is_gold,
-            isSuspended: data.is_suspended || false
+            isSuspended: data.is_suspended || false,
+            // Profile audit fields — from Reddit's about.json
+            icon_img: data.icon_img || '',
+            snoovatar_img: data.snoovatar_img || '',
+            banner_img: (data.subreddit && data.subreddit.banner_img) || '',
+            description: (data.subreddit && data.subreddit.public_description) || '',
+            display_name: (data.subreddit && data.subreddit.title) || '',
+            has_verified_email: data.has_verified_email || false
         });
     } catch (error) {
         console.error("Account Stats Scrape Error:", error.message);
