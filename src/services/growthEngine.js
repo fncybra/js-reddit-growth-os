@@ -1688,6 +1688,101 @@ export const AnalyticsEngine = {
     }
 };
 
+export const CompetitorService = {
+    async addCompetitor(modelId, handle) {
+        const cleanHandle = handle.replace(/^(u\/|\/u\/)/i, '').trim();
+        if (!cleanHandle) return null;
+        // Check duplicate
+        const existing = await db.competitors.where('modelId').equals(modelId)
+            .and(c => c.handle.toLowerCase() === cleanHandle.toLowerCase()).first();
+        if (existing) return existing;
+        const id = await db.competitors.add({
+            modelId,
+            handle: cleanHandle,
+            addedDate: new Date().toISOString(),
+            totalKarma: 0,
+            prevKarma: 0,
+            topSubreddits: [],
+            lastScrapedDate: null,
+            notes: ''
+        });
+        try { await CloudSyncService.autoPush(['competitors']); } catch (e) { /* non-critical */ }
+        return db.competitors.get(id);
+    },
+
+    async scrapeCompetitor(competitorId) {
+        const comp = await db.competitors.get(competitorId);
+        if (!comp) return null;
+        const proxyUrl = await SettingsService.getProxyUrl();
+
+        // Fetch stats
+        let karma = comp.totalKarma || 0;
+        try {
+            const statsRes = await fetchWithTimeout(`${proxyUrl}/api/scrape/user/stats/${comp.handle}`, {}, 8000);
+            if (statsRes.ok) {
+                const stats = await statsRes.json();
+                karma = stats.totalKarma || 0;
+            }
+        } catch (e) { /* non-critical */ }
+
+        // Fetch recent posts to find top subreddits
+        let topSubs = comp.topSubreddits || [];
+        try {
+            const postsRes = await fetchWithTimeout(`${proxyUrl}/api/scrape/user/${comp.handle}`, {}, 10000);
+            if (postsRes.ok) {
+                const data = await postsRes.json();
+                const posts = data?.data?.children || [];
+                const subMap = new Map();
+                for (const post of posts) {
+                    const subName = post.data?.subreddit;
+                    if (!subName) continue;
+                    if (!subMap.has(subName)) {
+                        subMap.set(subName, { name: subName, posts: 0, avgUps: 0, totalUps: 0 });
+                    }
+                    const bucket = subMap.get(subName);
+                    bucket.posts++;
+                    bucket.totalUps += Number(post.data?.ups || 0);
+                    bucket.avgUps = Math.round(bucket.totalUps / bucket.posts);
+                }
+                topSubs = Array.from(subMap.values())
+                    .sort((a, b) => b.posts - a.posts)
+                    .slice(0, 10);
+            }
+        } catch (e) { /* non-critical */ }
+
+        const patch = {
+            prevKarma: comp.totalKarma || 0,
+            totalKarma: karma,
+            topSubreddits: topSubs,
+            lastScrapedDate: new Date().toISOString()
+        };
+        await db.competitors.update(competitorId, patch);
+        try { await CloudSyncService.autoPush(['competitors']); } catch (e) { /* non-critical */ }
+        return { ...comp, ...patch };
+    },
+
+    async scrapeAllCompetitors(modelId) {
+        const comps = modelId
+            ? await db.competitors.where('modelId').equals(modelId).toArray()
+            : await db.competitors.toArray();
+        let succeeded = 0, failed = 0;
+        for (const comp of comps) {
+            try {
+                await this.scrapeCompetitor(comp.id);
+                succeeded++;
+            } catch (e) { failed++; }
+        }
+        return { total: comps.length, succeeded, failed };
+    },
+
+    async deleteCompetitor(competitorId) {
+        await db.competitors.delete(competitorId);
+        try {
+            await CloudSyncService.deleteFromCloud('competitors', competitorId);
+        } catch (e) { /* non-critical */ }
+    }
+};
+
 export const SnapshotService = {
     async takeDailySnapshot() {
         const today = startOfDay(new Date()).toISOString();
@@ -1755,7 +1850,7 @@ export const CloudSyncService = {
         const supabase = await getSupabaseClient();
         if (!supabase) return;
 
-        const allTables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'settings', 'verifications', 'dailySnapshots'];
+        const allTables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'settings', 'verifications', 'dailySnapshots', 'competitors'];
         const tables = onlyTables || allTables;
         const TASK_STATUS_RANK = { 'generated': 1, 'failed': 2, 'closed': 3 };
 
@@ -1831,7 +1926,7 @@ export const CloudSyncService = {
         const supabase = await getSupabaseClient();
         if (!supabase) return;
 
-        const tables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'settings', 'verifications', 'dailySnapshots'];
+        const tables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'settings', 'verifications', 'dailySnapshots', 'competitors'];
         const fetched = {};
 
         // Phase 1: fetch every table first; fail without mutating local if any fetch fails

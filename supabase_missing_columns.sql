@@ -49,6 +49,19 @@ ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "hasDisplayName" INTEGER;
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "hasVerifiedEmail" INTEGER;
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "lastProfileAudit" TEXT;
 
+-- competitors table (Phase 5A)
+CREATE TABLE IF NOT EXISTS competitors (
+    "id" BIGSERIAL PRIMARY KEY,
+    "modelId" BIGINT REFERENCES models("id") ON DELETE CASCADE,
+    "handle" TEXT,
+    "addedDate" TEXT,
+    "totalKarma" INTEGER DEFAULT 0,
+    "prevKarma" INTEGER DEFAULT 0,
+    "topSubreddits" TEXT,
+    "lastScrapedDate" TEXT,
+    "notes" TEXT
+);
+
 -- daily snapshots table (Phase 4C)
 CREATE TABLE IF NOT EXISTS "dailySnapshots" (
     "id" BIGSERIAL PRIMARY KEY,
