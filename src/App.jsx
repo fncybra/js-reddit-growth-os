@@ -15,6 +15,7 @@ import { VADashboard } from './pages/VADashboard';
 import { CloudSyncHandler } from './components/CloudSyncHandler';
 import { SOP } from './pages/SOP';
 import { Repurpose } from './pages/Repurpose';
+import { LinkTracker } from './pages/LinkTracker';
 
 // Error Boundary to catch runtime crashes and show them instead of a black screen
 class ErrorBoundary extends React.Component {
@@ -75,6 +76,7 @@ function App() {
             <Route path="library" element={<Library />} />
             <Route path="repurpose" element={<Repurpose />} />
             <Route path="tasks" element={<Tasks />} />
+            <Route path="links" element={<LinkTracker />} />
             <Route path="settings" element={<Settings />} />
             <Route path="sop" element={<SOP />} />
           </Route>
