@@ -279,6 +279,7 @@ app.get('/api/scrape/user/stats/:username', async (req, res) => {
             display_name: sub.display_name,
             has_verified_email: data.has_verified_email,
             url: sub.url,
+            social_links: sub.social_links,
         }, null, 0));
 
         // Bio: check both description fields
@@ -297,25 +298,12 @@ app.get('/api/scrape/user/stats/:username', async (req, res) => {
         const bannerBg = (sub.banner_background_image || '').split('?')[0]; // strip query params
         const hasBanner = bannerImg.length > 0 || bannerBg.length > 0;
 
-        // Profile link: check bio text for URLs, or subreddit url field
-        let hasLink = /https?:\/\//i.test(bioText) || !!(sub.url && sub.url !== `/user/${cleanName}/` && /https?:\/\//i.test(sub.url));
-
-        // Social Links are NOT in old.reddit.com/about.json — scrape new Reddit profile to detect them
-        if (!hasLink) {
-            try {
-                const profileRes = await axiosWithRetry(
-                    `https://www.reddit.com/user/${cleanName}/`,
-                    { 'Accept': 'text/html', 'Accept-Language': 'en-US,en;q=0.9' },
-                    { proxyInfo }
-                );
-                const html = typeof profileRes.data === 'string' ? profileRes.data : '';
-                // Reddit renders social links in a section; check for common markers
-                hasLink = /social-link/i.test(html) || /socialLinks/i.test(html) || /"url"\s*:\s*"https?:\/\//i.test(html);
-                console.log(`[ProfileAudit] ${cleanName} social links scrape: hasLink=${hasLink}`);
-            } catch (e) {
-                console.log(`[ProfileAudit] ${cleanName} social links scrape failed: ${e.message}`);
-            }
-        }
+        // Profile link: check social_links array, bio text URLs, or subreddit url field
+        const socialLinks = Array.isArray(sub.social_links) ? sub.social_links : [];
+        const hasLink = socialLinks.length > 0
+            || /https?:\/\//i.test(bioText)
+            || !!(sub.url && sub.url !== `/user/${cleanName}/` && /https?:\/\//i.test(sub.url));
+        console.log(`[ProfileAudit] ${cleanName} link detection: socialLinks=${socialLinks.length}, hasLink=${hasLink}`);
 
         res.json({
             name: data.name,
