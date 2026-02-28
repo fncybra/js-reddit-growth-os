@@ -4,11 +4,34 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { AccountSyncService } from '../services/growthEngine';
 import { Smartphone, RefreshCw, AlertTriangle, Trash2 } from 'lucide-react';
 
+const PHASE_BADGES = {
+    warming: { label: 'Warming', bg: '#fff3e0', color: '#e65100', border: '#ffcc80' },
+    ready:   { label: 'Ready',   bg: '#e3f2fd', color: '#1565c0', border: '#90caf9' },
+    active:  { label: 'Active',  bg: '#e8f5e9', color: '#2e7d32', border: '#a5d6a7' },
+    resting: { label: 'Resting', bg: '#f5f5f5', color: '#616161', border: '#bdbdbd' },
+    burned:  { label: 'Burned',  bg: '#ffebee', color: '#c62828', border: '#ef9a9a' },
+};
+
+function PhaseBadge({ phase }) {
+    const key = phase || 'ready';
+    const badge = PHASE_BADGES[key] || PHASE_BADGES.ready;
+    return (
+        <span style={{
+            display: 'inline-block', padding: '2px 8px', borderRadius: '12px', fontSize: '0.7rem',
+            fontWeight: 600, backgroundColor: badge.bg, color: badge.color, border: `1px solid ${badge.border}`,
+            whiteSpace: 'nowrap'
+        }}>
+            {badge.label}
+        </span>
+    );
+}
+
 export function Accounts() {
     const models = useLiveQuery(() => db.models.toArray());
     const accounts = useLiveQuery(() => db.accounts.toArray());
 
     const [selectedModelId, setSelectedModelId] = useState('');
+    const [phaseFilter, setPhaseFilter] = useState('all');
 
     const [syncing, setSyncing] = useState(false);
 
@@ -77,7 +100,10 @@ export function Accounts() {
         await db.accounts.add({
             ...formData,
             modelId: Number(selectedModelId),
-            dailyCap: Number(formData.dailyCap)
+            dailyCap: Number(formData.dailyCap),
+            phase: 'warming',
+            phaseChangedDate: new Date().toISOString(),
+            warmupStartDate: new Date().toISOString()
         });
 
         try {
@@ -189,7 +215,25 @@ export function Accounts() {
                 </div>
 
                 <div className="card">
-                    <h2 style={{ fontSize: '1.1rem', marginBottom: '16px' }}>Active Accounts ({accounts?.length || 0})</h2>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                        <h2 style={{ fontSize: '1.1rem', margin: 0 }}>Active Accounts ({accounts?.length || 0})</h2>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Phase:</label>
+                            <select
+                                className="input-field"
+                                value={phaseFilter}
+                                onChange={e => setPhaseFilter(e.target.value)}
+                                style={{ width: '130px', padding: '4px 8px', fontSize: '0.85rem' }}
+                            >
+                                <option value="all">All Phases</option>
+                                <option value="warming">Warming</option>
+                                <option value="ready">Ready</option>
+                                <option value="active">Active</option>
+                                <option value="resting">Resting</option>
+                                <option value="burned">Burned</option>
+                            </select>
+                        </div>
+                    </div>
                     {accounts?.length === 0 ? (
                         <div style={{ color: 'var(--text-secondary)' }}>No accounts registered for this model.</div>
                     ) : (
@@ -198,6 +242,7 @@ export function Accounts() {
                                 <thead>
                                     <tr>
                                         <th>Handle</th>
+                                        <th>Phase</th>
                                         <th>Assigned Model</th>
                                         <th>Karma</th>
                                         <th>Account Health</th>
@@ -210,7 +255,7 @@ export function Accounts() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {accounts?.map(acc => {
+                                    {accounts?.filter(a => phaseFilter === 'all' || (a.phase || 'ready') === phaseFilter).map(acc => {
                                         const model = models?.find(m => m.id === acc.modelId);
                                         return (
                                             <tr key={acc.id}>
@@ -230,6 +275,7 @@ export function Accounts() {
                                                         </button>
                                                     </div>
                                                 </td>
+                                                <td><PhaseBadge phase={acc.phase} /></td>
                                                 <td>{model ? model.name : 'Unassigned'}</td>
                                                 <td style={{ fontWeight: '600' }}>
                                                     {(acc.totalKarma || 0).toLocaleString()}

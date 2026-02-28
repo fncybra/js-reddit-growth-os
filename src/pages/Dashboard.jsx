@@ -173,7 +173,7 @@ export function Dashboard() {
     async function handleSync() {
         setSyncing(true);
         try {
-            const { PerformanceSyncService, AccountSyncService, CloudSyncService } = await import('../services/growthEngine');
+            const { PerformanceSyncService, AccountSyncService, AccountLifecycleService, CloudSyncService } = await import('../services/growthEngine');
             const parts = [];
 
             // Step 1: Pull latest from cloud first (gets VA-submitted data)
@@ -187,7 +187,15 @@ export function Dashboard() {
                 }
             }
 
-            // Step 2: Sync account health from Reddit
+            // Step 2: Evaluate account lifecycle phases
+            try {
+                await AccountLifecycleService.evaluateAccountPhases();
+                parts.push('Phases: evaluated.');
+            } catch (e) {
+                parts.push('Phases: failed (' + e.message + ')');
+            }
+
+            // Step 3: Sync account health from Reddit
             const accountResult = await AccountSyncService.syncAllAccounts();
             if (accountResult.total === 0) {
                 parts.push('Accounts: none found.');

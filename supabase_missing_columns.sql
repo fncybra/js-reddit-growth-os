@@ -21,3 +21,11 @@ ALTER TABLE assets ADD COLUMN IF NOT EXISTS "movedToUsed" INTEGER;
 
 -- tasks: posting window
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS "postingWindow" TEXT;
+
+-- accounts: lifecycle phase system (Phase 1A)
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "phase" TEXT;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "phaseChangedDate" TEXT;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "warmupStartDate" TEXT;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "restUntilDate" TEXT;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "consecutiveActiveDays" INTEGER;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "lastActiveDate" TEXT;

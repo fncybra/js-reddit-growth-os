@@ -129,6 +129,31 @@ export function Settings() {
                     </div>
 
                     <div className="card">
+                        <h2 style={{ fontSize: '1.2rem', marginBottom: '20px' }}>Account Lifecycle Rules</h2>
+                        <div className="input-group">
+                            <label className="input-label">Min Warmup Days</label>
+                            <input type="number" className="input-field" value={settings.minWarmupDays ?? 7} onChange={e => setSettings({ ...settings, minWarmupDays: e.target.value })} />
+                            <small style={{ color: 'var(--text-secondary)' }}>New accounts stay in "Warming" phase for at least this many days.</small>
+                        </div>
+                        <div className="input-group">
+                            <label className="input-label">Min Warmup Karma</label>
+                            <input type="number" className="input-field" value={settings.minWarmupKarma ?? 100} onChange={e => setSettings({ ...settings, minWarmupKarma: e.target.value })} />
+                            <small style={{ color: 'var(--text-secondary)' }}>Account must reach this karma before graduating from Warming.</small>
+                        </div>
+                        <div className="input-group">
+                            <label className="input-label">Max Consecutive Active Days</label>
+                            <input type="number" className="input-field" value={settings.maxConsecutiveActiveDays ?? 4} onChange={e => setSettings({ ...settings, maxConsecutiveActiveDays: e.target.value })} />
+                            <small style={{ color: 'var(--text-secondary)' }}>After this many consecutive posting days, account enters "Resting" phase.</small>
+                        </div>
+                        <div className="input-group">
+                            <label className="input-label">Rest Duration Days</label>
+                            <input type="number" className="input-field" value={settings.restDurationDays ?? 2} onChange={e => setSettings({ ...settings, restDurationDays: e.target.value })} />
+                            <small style={{ color: 'var(--text-secondary)' }}>How many days an account rests before returning to "Ready".</small>
+                        </div>
+                        <button onClick={handleSave} className="btn btn-outline" style={{ width: '100%', marginTop: '8px' }}>Save Lifecycle Rules</button>
+                    </div>
+
+                    <div className="card">
                         <h2 style={{ fontSize: '1.2rem', marginBottom: '20px' }}>AI Brain Integration</h2>
                         <div className="input-group" style={{ marginBottom: '16px' }}>
                             <label className="input-label">AI Base URL</label>
