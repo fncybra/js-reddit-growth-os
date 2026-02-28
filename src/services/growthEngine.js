@@ -2167,9 +2167,31 @@ export const AccountLifecycleService = {
         const today = startOfDay(new Date());
 
         for (const acc of accounts) {
-            const phase = acc.phase || 'ready';
+            let phase = acc.phase || '';
             let newPhase = phase;
             const updates = {};
+
+            // Auto-assign phase to accounts that don't have one yet
+            // Uses Reddit account age from createdUtc (set during sync)
+            if (!phase) {
+                if (acc.createdUtc) {
+                    const ageDays = differenceInDays(today, startOfDay(new Date(acc.createdUtc * 1000)));
+                    const karma = acc.totalKarma || 0;
+                    if (acc.isSuspended) {
+                        phase = 'burned';
+                    } else if (ageDays >= minWarmupDays && karma >= minWarmupKarma) {
+                        phase = 'ready';
+                    } else {
+                        phase = 'warming';
+                        updates.warmupStartDate = new Date(acc.createdUtc * 1000).toISOString();
+                    }
+                } else {
+                    // No Reddit data yet — assume warming until first sync
+                    phase = 'warming';
+                    updates.warmupStartDate = new Date().toISOString();
+                }
+                newPhase = phase;
+            }
 
             // any → burned: suspended or extreme removal rate
             if (acc.isSuspended || (acc.removalRate && acc.removalRate > 60)) {
