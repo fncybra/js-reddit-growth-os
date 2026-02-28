@@ -302,6 +302,7 @@ export function Tasks() {
                             <table className="data-table">
                                 <thead>
                                     <tr>
+                                        <th>Time</th>
                                         <th>Type</th>
                                         <th>Task Details</th>
                                         <th>Media Asset</th>
@@ -311,7 +312,7 @@ export function Tasks() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {tasks?.map(task => (
+                                    {[...(tasks || [])].sort((a, b) => (a.scheduledTime || '99:99').localeCompare(b.scheduledTime || '99:99')).map(task => (
                                         <TaskRow key={task.id} task={task} activeModelId={activeModelId} proxyUrl={proxyUrl} />
                                     ))}
                                 </tbody>
@@ -450,13 +451,15 @@ function TaskRow({ task, activeModelId, proxyUrl }) {
 
     return (
         <tr style={{ opacity: saved ? 0.7 : 1, transition: 'opacity 0.2s', borderBottom: '1px solid var(--border-color)' }}>
+            <td style={{ verticalAlign: 'middle', textAlign: 'center', fontSize: '0.85rem', fontWeight: 600, color: 'var(--primary-color)', whiteSpace: 'nowrap' }}>
+                {task.scheduledTime || '—'}
+            </td>
             <td style={{ verticalAlign: 'middle', textAlign: 'center', fontSize: '1.1rem' }} title={typeInfo.label}>
                 <div>{typeInfo.icon}</div>
                 <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)' }}>{typeInfo.label}</div>
             </td>
             <td style={{ fontWeight: '500', verticalAlign: 'middle' }}>
                 <div style={{ fontSize: '1rem' }}>{task.title}</div>
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Window: {task.postingWindow}</div>
             </td>
             <td style={{ verticalAlign: 'middle', width: '200px' }}>
                 {asset ? (
