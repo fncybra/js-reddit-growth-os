@@ -1,6 +1,5 @@
 import { db } from '../db/db.js';
-import OpenAI from "openai";
-import { subDays, isAfter, startOfDay } from 'date-fns';
+import { subDays, isAfter, startOfDay, differenceInDays } from 'date-fns';
 
 const fetchWithTimeout = async (url, options = {}, timeoutMs = 5000) => {
     const controller = new AbortController();
@@ -667,10 +666,18 @@ export const DailyPlanGenerator = {
         console.log('DailyPlanGenerator: Starting generation for model', modelId);
 
         const settings = await SettingsService.getSettings();
-        const activeAccounts = await db.accounts.where('modelId').equals(modelId).filter(a => a.status === 'active').toArray();
+        // Evaluate account lifecycle phases before selecting accounts
+        await AccountLifecycleService.evaluateAccountPhases();
+
+        const activeAccounts = await db.accounts.where('modelId').equals(modelId).filter(a => {
+            if (a.status !== 'active') return false;
+            // Phase filter: only 'ready', 'active', or undefined (backward compat) get posting tasks
+            const phase = a.phase || 'ready';
+            return phase === 'ready' || phase === 'active';
+        }).toArray();
 
         if (activeAccounts.length === 0) {
-            throw new Error("No ACTIVE Reddit accounts found for this model. Go to Accounts tab and set at least one to 'Active'.");
+            throw new Error("No eligible Reddit accounts found for this model. Accounts must have status 'Active' and phase 'Ready' or 'Active'. Check the Accounts tab.");
         }
 
         const todayStr = startOfDay(targetDate).toISOString();
@@ -1783,6 +1790,89 @@ export const DriveSyncService = {
         }
 
         return { newCount, updatedCount, totalFiles: driveFiles.length };
+    }
+};
+
+
+export const AccountLifecycleService = {
+    async evaluateAccountPhases() {
+        const settings = await SettingsService.getSettings();
+        const minWarmupDays = Number(settings.minWarmupDays) || 7;
+        const minWarmupKarma = Number(settings.minWarmupKarma) || 100;
+        const maxConsecutiveActiveDays = Number(settings.maxConsecutiveActiveDays) || 4;
+        const restDurationDays = Number(settings.restDurationDays) || 2;
+
+        const accounts = await db.accounts.toArray();
+        const today = startOfDay(new Date());
+
+        for (const acc of accounts) {
+            const phase = acc.phase || 'ready';
+            let newPhase = phase;
+            const updates = {};
+
+            // any → burned: suspended or extreme removal rate
+            if (acc.isSuspended || (acc.removalRate && acc.removalRate > 60)) {
+                if (phase !== 'burned') {
+                    newPhase = 'burned';
+                }
+            }
+            // warming → ready: old enough + enough karma
+            else if (phase === 'warming') {
+                const warmupStart = acc.warmupStartDate ? new Date(acc.warmupStartDate) : (acc.createdUtc ? new Date(acc.createdUtc * 1000) : null);
+                const accountAge = warmupStart ? differenceInDays(today, startOfDay(warmupStart)) : 999;
+                const karma = acc.totalKarma || 0;
+
+                if (accountAge >= minWarmupDays && karma >= minWarmupKarma) {
+                    newPhase = 'ready';
+                }
+            }
+            // active → resting: too many consecutive active days
+            else if (phase === 'active') {
+                const consecutive = acc.consecutiveActiveDays || 0;
+                if (consecutive >= maxConsecutiveActiveDays) {
+                    newPhase = 'resting';
+                    const restUntil = new Date(today);
+                    restUntil.setDate(restUntil.getDate() + restDurationDays);
+                    updates.restUntilDate = restUntil.toISOString();
+                    updates.consecutiveActiveDays = 0;
+                }
+            }
+            // resting → ready: rest period over
+            else if (phase === 'resting') {
+                if (acc.restUntilDate && new Date(acc.restUntilDate) <= today) {
+                    newPhase = 'ready';
+                    updates.restUntilDate = null;
+                }
+            }
+
+            if (newPhase !== phase) {
+                updates.phase = newPhase;
+                updates.phaseChangedDate = new Date().toISOString();
+                await db.accounts.update(acc.id, updates);
+            }
+        }
+    },
+
+    async markAccountActiveDay(accountId) {
+        const acc = await db.accounts.get(accountId);
+        if (!acc) return;
+        const today = startOfDay(new Date()).toISOString();
+        const updates = {};
+
+        if (acc.lastActiveDate !== today) {
+            updates.lastActiveDate = today;
+            updates.consecutiveActiveDays = (acc.consecutiveActiveDays || 0) + 1;
+        }
+
+        const phase = acc.phase || 'ready';
+        if (phase === 'ready') {
+            updates.phase = 'active';
+            updates.phaseChangedDate = new Date().toISOString();
+        }
+
+        if (Object.keys(updates).length > 0) {
+            await db.accounts.update(accountId, updates);
+        }
     }
 };
 
