@@ -56,6 +56,28 @@ export function Library() {
     // Reset pagination when filters change
     React.useEffect(() => { setVisibleCount(PAGE_SIZE); }, [selectedModelId, nicheFilter]);
 
+    // Per-asset performance stats: assetId → { posts, totalViews, removed, avgViews }
+    // Placed before early returns to satisfy React hooks ordering rules
+    const assetStats = React.useMemo(() => {
+        const map = new Map();
+        if (!tasks || !performances) return map;
+        const perfByTaskId = new Map(performances.map(p => [p.taskId, p]));
+        for (const t of tasks) {
+            if (!t.assetId) continue;
+            if (!map.has(t.assetId)) map.set(t.assetId, { posts: 0, totalViews: 0, removed: 0 });
+            const bucket = map.get(t.assetId);
+            const perf = perfByTaskId.get(t.id);
+            if (!perf) continue;
+            bucket.posts += 1;
+            bucket.totalViews += Number(perf.views24h || 0);
+            if (perf.removed) bucket.removed += 1;
+        }
+        for (const [id, stats] of map.entries()) {
+            stats.avgViews = stats.posts > 0 ? Math.round(stats.totalViews / stats.posts) : 0;
+        }
+        return map;
+    }, [tasks, performances]);
+
     // useLiveQuery returns undefined while Dexie is loading (e.g. during CloudSync pull)
     // We must NOT show the "no models" message during this loading phase
     if (models === undefined || assets === undefined) {
@@ -218,27 +240,6 @@ export function Library() {
             setRedgifsUploadingId(null);
         }
     }
-
-    // Per-asset performance stats: assetId → { posts, totalViews, removed, avgViews }
-    const assetStats = React.useMemo(() => {
-        const map = new Map();
-        if (!tasks || !performances) return map;
-        const perfByTaskId = new Map(performances.map(p => [p.taskId, p]));
-        for (const t of tasks) {
-            if (!t.assetId) continue;
-            if (!map.has(t.assetId)) map.set(t.assetId, { posts: 0, totalViews: 0, removed: 0 });
-            const bucket = map.get(t.assetId);
-            const perf = perfByTaskId.get(t.id);
-            if (!perf) continue;
-            bucket.posts += 1;
-            bucket.totalViews += Number(perf.views24h || 0);
-            if (perf.removed) bucket.removed += 1;
-        }
-        for (const [id, stats] of map.entries()) {
-            stats.avgViews = stats.posts > 0 ? Math.round(stats.totalViews / stats.posts) : 0;
-        }
-        return map;
-    }, [tasks, performances]);
 
     // Filter assets for the current UI
     const filteredAssets = assets?.filter(a => {

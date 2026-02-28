@@ -89,3 +89,27 @@ CREATE TABLE IF NOT EXISTS verifications (
 
 -- tasks: VA attribution (Phase 5B)
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS "vaName" TEXT;
+
+-- models: RedGifs upload config (used by Library upload feature)
+ALTER TABLE models ADD COLUMN IF NOT EXISTS "redgifsUploadEndpoint" TEXT;
+ALTER TABLE models ADD COLUMN IF NOT EXISTS "redgifsApiToken" TEXT;
+
+-- models: AI voice persona fields (used by Models persona builder)
+ALTER TABLE models ADD COLUMN IF NOT EXISTS "voiceArchetype" TEXT;
+ALTER TABLE models ADD COLUMN IF NOT EXISTS "voiceTone" TEXT;
+ALTER TABLE models ADD COLUMN IF NOT EXISTS "voiceEnergy" TEXT;
+ALTER TABLE models ADD COLUMN IF NOT EXISTS "voiceNoGo" TEXT;
+ALTER TABLE models ADD COLUMN IF NOT EXISTS "voiceNotes" TEXT;
+
+-- models: identity fields (used by Models identity section)
+ALTER TABLE models ADD COLUMN IF NOT EXISTS "identityAge" TEXT;
+ALTER TABLE models ADD COLUMN IF NOT EXISTS "identityHairColor" TEXT;
+ALTER TABLE models ADD COLUMN IF NOT EXISTS "identityBodyType" TEXT;
+ALTER TABLE models ADD COLUMN IF NOT EXISTS "identityEthnicity" TEXT;
+ALTER TABLE models ADD COLUMN IF NOT EXISTS "identityCurrentState" TEXT;
+ALTER TABLE models ADD COLUMN IF NOT EXISTS "identityNicheKeywords" TEXT;
+
+-- subreddits: posting guard fields (used by SubredditGuardService)
+ALTER TABLE subreddits ADD COLUMN IF NOT EXISTS "postErrorHistory" TEXT;
+ALTER TABLE subreddits ADD COLUMN IF NOT EXISTS "minRequiredKarma" INTEGER;
+ALTER TABLE subreddits ADD COLUMN IF NOT EXISTS "minAccountAgeDays" INTEGER;
