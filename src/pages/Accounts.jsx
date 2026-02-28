@@ -278,6 +278,7 @@ export function Accounts() {
                                     <tr>
                                         <th>Handle</th>
                                         <th>Phase</th>
+                                        <th>Profile</th>
                                         <th>Health</th>
                                         <th>Assigned Model</th>
                                         <th>Karma</th>
@@ -312,6 +313,7 @@ export function Accounts() {
                                                     </div>
                                                 </td>
                                                 <td><PhaseBadge phase={acc.phase} /></td>
+                                                <td><HealthBar score={AnalyticsEngine.computeProfileScore(acc)} /></td>
                                                 <td><HealthBar score={AnalyticsEngine.computeAccountHealthScore(acc)} /></td>
                                                 <td>{model ? model.name : 'Unassigned'}</td>
                                                 <td style={{ fontWeight: '600' }}>
