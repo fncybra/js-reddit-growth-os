@@ -1280,13 +1280,14 @@ export const AnalyticsEngine = {
         let score = 0;
         if (account.hasAvatar) score += 15;
         if (account.hasBanner) score += 10;
-        if (account.hasBio) score += 20;
+        if (account.hasBio) score += 15;
         if (account.hasDisplayName) score += 10;
-        if (account.hasVerifiedEmail) score += 15;
+        if (account.hasVerifiedEmail) score += 10;
+        if (account.hasProfileLink) score += 10;
         // Account age > 7 days
         if (account.createdUtc) {
             const ageDays = Math.floor((Date.now() - Number(account.createdUtc) * 1000) / (24 * 60 * 60 * 1000));
-            if (ageDays >= 7) score += 15;
+            if (ageDays >= 15) score += 15;
         }
         // Karma > 100
         if (Number(account.totalKarma || 0) >= 100) score += 15;
@@ -2264,6 +2265,7 @@ export const AccountSyncService = {
             patch.hasBio = (data.description && data.description.trim().length > 0) ? 1 : 0;
             patch.hasDisplayName = (data.display_name && data.display_name.trim().length > 0) ? 1 : 0;
             patch.hasVerifiedEmail = data.has_verified_email ? 1 : 0;
+            patch.hasProfileLink = data.has_profile_link ? 1 : 0;
             patch.lastProfileAudit = new Date().toISOString();
             await db.accounts.update(accountId, patch);
             return data;

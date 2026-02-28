@@ -279,7 +279,8 @@ app.get('/api/scrape/user/stats/:username', async (req, res) => {
             banner_img: (data.subreddit && data.subreddit.banner_img) || '',
             description: (data.subreddit && data.subreddit.public_description) || '',
             display_name: (data.subreddit && data.subreddit.title) || '',
-            has_verified_email: data.has_verified_email || false
+            has_verified_email: data.has_verified_email || false,
+            has_profile_link: /https?:\/\//i.test((data.subreddit && data.subreddit.public_description) || '')
         });
     } catch (error) {
         console.error("Account Stats Scrape Error:", error.message);

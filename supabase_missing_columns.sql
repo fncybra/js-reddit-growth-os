@@ -90,6 +90,9 @@ CREATE TABLE IF NOT EXISTS verifications (
 -- tasks: VA attribution (Phase 5B)
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS "vaName" TEXT;
 
+-- accounts: profile link detection
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "hasProfileLink" INTEGER;
+
 -- models: RedGifs upload config (used by Library upload feature)
 ALTER TABLE models ADD COLUMN IF NOT EXISTS "redgifsUploadEndpoint" TEXT;
 ALTER TABLE models ADD COLUMN IF NOT EXISTS "redgifsApiToken" TEXT;

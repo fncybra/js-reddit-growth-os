@@ -9,6 +9,7 @@ export function Dashboard() {
     const [metrics, setMetrics] = useState(null);
     const [syncing, setSyncing] = useState(false);
     const [snapshots, setSnapshots] = useState([]);
+    const [hideWarming, setHideWarming] = useState(true);
     const models = useLiveQuery(() => db.models.toArray());
     const accountsAll = useLiveQuery(() => db.accounts.toArray());
     const subredditsAll = useLiveQuery(() => db.subreddits.toArray());
@@ -92,11 +93,15 @@ export function Dashboard() {
     const healthyAccounts = leaderboard.reduce((acc, m) => acc + (m.metrics.accountHealth?.activeCount || 0), 0);
     const suspendedAccounts = leaderboard.reduce((acc, m) => acc + (m.metrics.accountHealth?.suspendedCount || 0), 0);
 
+    // Filtered accounts (exclude warming when toggle is on)
+    const warmingIds = new Set((accountsAll || []).filter(a => (a.phase || 'ready') === 'warming').map(a => a.id));
+    const filteredAccounts = hideWarming ? (accountsAll || []).filter(a => !warmingIds.has(a.id)) : (accountsAll || []);
+
     // Health score breakdown
     const healthCounts = (() => {
-        if (!accountsAll) return { healthy: 0, warning: 0, critical: 0 };
+        if (!filteredAccounts.length) return { healthy: 0, warning: 0, critical: 0 };
         let healthy = 0, warning = 0, critical = 0;
-        for (const acc of accountsAll) {
+        for (const acc of filteredAccounts) {
             const score = AnalyticsEngine.computeAccountHealthScore(acc);
             if (score >= 80) healthy++;
             else if (score >= 50) warning++;
@@ -114,6 +119,7 @@ export function Dashboard() {
 
         for (const task of tasksAll) {
             if (!task.accountId || !task.subredditId) continue;
+            if (hideWarming && warmingIds.has(task.accountId)) continue;
             const perf = perfByTaskId.get(task.id);
             if (!perf) continue;
 
@@ -155,6 +161,7 @@ export function Dashboard() {
 
         for (const task of tasksAll) {
             if (!task.accountId || !task.assetId) continue;
+            if (hideWarming && warmingIds.has(task.accountId)) continue;
             const perf = perfByTaskId.get(task.id);
             if (!perf) continue;
             const asset = assetsById.get(task.assetId);
@@ -223,7 +230,12 @@ export function Dashboard() {
                 parts.push(`Accounts: ${accountResult.succeeded}/${accountResult.total} synced.`);
             }
 
-            // Step 3: Sync Reddit post stats
+            // Step 3b: Re-evaluate phases with fresh data (catches warming→ready transitions)
+            try {
+                await AccountLifecycleService.evaluateAccountPhases();
+            } catch (e) { /* non-critical, already ran once above */ }
+
+            // Step 4: Sync Reddit post stats
             const stats = await PerformanceSyncService.syncAllPendingPerformance();
             if (stats.scanned === 0) {
                 // Show task breakdown so user understands WHY there's nothing to sync
@@ -278,15 +290,24 @@ export function Dashboard() {
                         </Link>
                     </div>
                 </div>
-                <button
-                    className="btn btn-primary"
-                    onClick={handleSync}
-                    disabled={syncing}
-                    style={{ padding: '8px 16px', fontSize: '0.9rem' }}
-                >
-                    <RefreshCw size={14} style={{ marginRight: '6px' }} className={syncing ? 'spin' : ''} />
-                    {syncing ? 'Syncing...' : 'Sync All Stats'}
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <button
+                        onClick={() => setHideWarming(h => !h)}
+                        className="btn btn-outline"
+                        style={{ padding: '6px 12px', fontSize: '0.75rem', backgroundColor: hideWarming ? '#6366f122' : 'transparent', borderColor: hideWarming ? '#6366f1' : undefined }}
+                    >
+                        {hideWarming ? 'Warming Hidden' : 'Showing All'}
+                    </button>
+                    <button
+                        className="btn btn-primary"
+                        onClick={handleSync}
+                        disabled={syncing}
+                        style={{ padding: '8px 16px', fontSize: '0.9rem' }}
+                    >
+                        <RefreshCw size={14} style={{ marginRight: '6px' }} className={syncing ? 'spin' : ''} />
+                        {syncing ? 'Syncing...' : 'Sync All Stats'}
+                    </button>
+                </div>
             </header>
 
             <div className="page-content">
@@ -587,6 +608,7 @@ export function Dashboard() {
                     const assetBucket = new Map();
                     for (const t of tasksAll) {
                         if (!t.assetId) continue;
+                        if (hideWarming && warmingIds.has(t.accountId)) continue;
                         if (!assetBucket.has(t.assetId)) assetBucket.set(t.assetId, { posts: 0, totalViews: 0, removed: 0 });
                         const b = assetBucket.get(t.assetId);
                         const p = perfByTaskId.get(t.id);
@@ -653,7 +675,7 @@ export function Dashboard() {
                 {/* VA Leaderboard */}
                 {(() => {
                     if (!tasksAll || tasksAll.length === 0) return null;
-                    const closedTasks = tasksAll.filter(t => (t.status === 'closed' || t.status === 'failed') && t.vaName);
+                    const closedTasks = tasksAll.filter(t => (t.status === 'closed' || t.status === 'failed') && t.vaName && !(hideWarming && warmingIds.has(t.accountId)));
                     if (closedTasks.length === 0) return null;
 
                     const vaMap = new Map();
