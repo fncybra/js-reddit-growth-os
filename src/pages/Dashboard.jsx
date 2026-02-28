@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../db/db';
-import { AnalyticsEngine, AccountLifecycleService } from '../services/growthEngine';
+import { AnalyticsEngine, AccountLifecycleService, SnapshotService } from '../services/growthEngine';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Link } from 'react-router-dom';
 import { ArrowUp, Users, Shield, AlertTriangle, RefreshCw, Cloud, RefreshCcw, Smartphone, CheckCircle, XCircle } from 'lucide-react';
@@ -8,6 +8,7 @@ import { ArrowUp, Users, Shield, AlertTriangle, RefreshCw, Cloud, RefreshCcw, Sm
 export function Dashboard() {
     const [metrics, setMetrics] = useState(null);
     const [syncing, setSyncing] = useState(false);
+    const [snapshots, setSnapshots] = useState([]);
     const models = useLiveQuery(() => db.models.toArray());
     const accountsAll = useLiveQuery(() => db.accounts.toArray());
     const subredditsAll = useLiveQuery(() => db.subreddits.toArray());
@@ -28,6 +29,10 @@ export function Dashboard() {
         }
         fetchMetrics();
     }, [models, analyticsTrigger]);
+
+    useEffect(() => {
+        SnapshotService.getSnapshots(14).then(setSnapshots).catch(() => {});
+    }, [syncing]);
 
     if (!models) return <div style={{ padding: '48px', textAlign: 'center', color: 'var(--text-secondary)' }}>Loading...</div>;
 
@@ -238,7 +243,15 @@ export function Dashboard() {
                 if (stats.skipped > 0) parts.push(`(${stats.skipped} skipped — no post ID)`);
             }
 
-            // Step 4: Push updated data back to cloud
+            // Step 4: Take daily snapshot
+            try {
+                await SnapshotService.takeDailySnapshot();
+                parts.push('Snapshot: saved.');
+            } catch (e) {
+                parts.push('Snapshot: failed (' + e.message + ')');
+            }
+
+            // Step 5: Push updated data back to cloud
             if (cloudEnabled) {
                 try { await CloudSyncService.pushLocalToCloud(); } catch (e) { /* non-critical */ }
             }
@@ -352,6 +365,91 @@ export function Dashboard() {
                         </div>
                     </div>
                 </div>
+
+                {/* 14-Day Trends */}
+                {snapshots.length >= 2 && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
+                        {/* Karma Trend */}
+                        <div className="card" style={{ padding: '16px 20px' }}>
+                            <h2 style={{ fontSize: '1rem', marginBottom: '12px', fontWeight: 600 }}>Karma Trend (14d)</h2>
+                            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '3px', height: '80px' }}>
+                                {(() => {
+                                    const maxK = Math.max(...snapshots.map(s => s.totalKarma || 0), 1);
+                                    return snapshots.map((s, i) => {
+                                        const pct = Math.max(4, ((s.totalKarma || 0) / maxK) * 100);
+                                        const d = new Date(s.date);
+                                        const label = `${d.getMonth() + 1}/${d.getDate()}`;
+                                        const prev = i > 0 ? (snapshots[i - 1].totalKarma || 0) : (s.totalKarma || 0);
+                                        const diff = (s.totalKarma || 0) - prev;
+                                        return (
+                                            <div key={s.date} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+                                                <div
+                                                    title={`${label}: ${(s.totalKarma || 0).toLocaleString()} karma${diff !== 0 ? ` (${diff > 0 ? '+' : ''}${diff.toLocaleString()})` : ''}`}
+                                                    style={{
+                                                        width: '100%', maxWidth: '28px',
+                                                        height: `${pct}%`,
+                                                        backgroundColor: diff >= 0 ? '#6366f1' : '#f44336',
+                                                        borderRadius: '3px 3px 0 0',
+                                                        transition: 'height 0.3s ease',
+                                                        minHeight: '3px'
+                                                    }}
+                                                />
+                                                <span style={{ fontSize: '0.55rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{label}</span>
+                                            </div>
+                                        );
+                                    });
+                                })()}
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                                <span>{(snapshots[0]?.totalKarma || 0).toLocaleString()}</span>
+                                <span style={{ fontWeight: 600, color: (snapshots[snapshots.length - 1]?.totalKarma || 0) >= (snapshots[0]?.totalKarma || 0) ? '#4caf50' : '#f44336' }}>
+                                    {(snapshots[snapshots.length - 1]?.totalKarma || 0).toLocaleString()}
+                                    {(() => {
+                                        const diff = (snapshots[snapshots.length - 1]?.totalKarma || 0) - (snapshots[0]?.totalKarma || 0);
+                                        return diff !== 0 ? ` (${diff > 0 ? '+' : ''}${diff.toLocaleString()})` : '';
+                                    })()}
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* Daily Posts Trend */}
+                        <div className="card" style={{ padding: '16px 20px' }}>
+                            <h2 style={{ fontSize: '1rem', marginBottom: '12px', fontWeight: 600 }}>Daily Posts (14d)</h2>
+                            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '3px', height: '80px' }}>
+                                {(() => {
+                                    const maxP = Math.max(...snapshots.map(s => s.postsToday || 0), 1);
+                                    return snapshots.map(s => {
+                                        const pct = Math.max(4, ((s.postsToday || 0) / maxP) * 100);
+                                        const d = new Date(s.date);
+                                        const label = `${d.getMonth() + 1}/${d.getDate()}`;
+                                        const remPct = s.postsToday > 0 ? ((s.removalsToday || 0) / s.postsToday) : 0;
+                                        const barColor = remPct > 0.3 ? '#f44336' : remPct > 0.1 ? '#ff9800' : '#4caf50';
+                                        return (
+                                            <div key={s.date} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+                                                <div
+                                                    title={`${label}: ${s.postsToday || 0} posts, ${s.removalsToday || 0} removed`}
+                                                    style={{
+                                                        width: '100%', maxWidth: '28px',
+                                                        height: `${pct}%`,
+                                                        backgroundColor: barColor,
+                                                        borderRadius: '3px 3px 0 0',
+                                                        transition: 'height 0.3s ease',
+                                                        minHeight: '3px'
+                                                    }}
+                                                />
+                                                <span style={{ fontSize: '0.55rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{label}</span>
+                                            </div>
+                                        );
+                                    });
+                                })()}
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                                <span>Green = low removal</span>
+                                <span>Red = high removal</span>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* Model Leaderboard - Clean Table */}
                 <div className="card" style={{ marginBottom: '20px' }}>
