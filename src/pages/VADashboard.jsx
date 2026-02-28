@@ -155,6 +155,8 @@ export function VADashboard() {
     const [authorizedModels, setAuthorizedModels] = useState([]);
     const [authorizedAccountIds, setAuthorizedAccountIds] = useState([]);
     const [selectedAccountId, setSelectedAccountId] = useState('ALL');
+    const [vaName, setVaName] = useState(() => localStorage.getItem('vaName') || '');
+    const [vaNameConfirmed, setVaNameConfirmed] = useState(() => !!localStorage.getItem('vaName'));
 
     const models = useLiveQuery(() => db.models.toArray());
     const allAccounts = useLiveQuery(() => db.accounts.toArray());
@@ -401,6 +403,48 @@ export function VADashboard() {
         );
     }
 
+    // VA Name entry — shown once after PIN auth, remembered in localStorage
+    if (!vaNameConfirmed) {
+        return (
+            <div className="va-root" style={{ minHeight: '100vh', backgroundColor: '#0f1115', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#e5e7eb', fontFamily: 'sans-serif' }}>
+                <style>{vaResponsiveCss}</style>
+                <div className="va-auth-card" style={{ backgroundColor: '#1a1d24', padding: '40px', borderRadius: '12px', border: '1px solid #2d313a' }}>
+                    <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+                        <div style={{ fontSize: '2rem', marginBottom: '8px' }}>👤</div>
+                        <h2 style={{ fontSize: '1.2rem' }}>Who's Working?</h2>
+                        <p style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Enter your name so posts get attributed to you</p>
+                    </div>
+                    <input
+                        type="text"
+                        className="input-field"
+                        style={{ textAlign: 'center', marginBottom: '16px', backgroundColor: '#0f1115', fontSize: '1.2rem', padding: '12px' }}
+                        placeholder="Your name..."
+                        value={vaName}
+                        onChange={e => setVaName(e.target.value)}
+                        onKeyDown={e => {
+                            if (e.key === 'Enter' && vaName.trim()) {
+                                localStorage.setItem('vaName', vaName.trim());
+                                setVaNameConfirmed(true);
+                            }
+                        }}
+                        autoFocus
+                    />
+                    <button
+                        onClick={() => {
+                            if (!vaName.trim()) return;
+                            localStorage.setItem('vaName', vaName.trim());
+                            setVaNameConfirmed(true);
+                        }}
+                        disabled={!vaName.trim()}
+                        style={{ width: '100%', backgroundColor: '#6366f1', color: '#fff', border: 'none', padding: '12px', borderRadius: '6px', fontWeight: 'bold', cursor: vaName.trim() ? 'pointer' : 'not-allowed', opacity: vaName.trim() ? 1 : 0.5 }}
+                    >
+                        Continue
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
     if (!models || models.length === 0) {
         if (syncing) {
             return (
@@ -477,6 +521,10 @@ export function VADashboard() {
                     >
                         🔄 Refresh
                     </button>
+                    <span style={{ fontSize: '0.8rem', color: '#9ca3af', padding: '4px 8px', backgroundColor: '#6366f122', borderRadius: '4px', border: '1px solid #6366f144' }}>
+                        VA: <strong style={{ color: '#6366f1' }}>{vaName}</strong>
+                        <button onClick={() => { setVaNameConfirmed(false); }} style={{ background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: '0.7rem', marginLeft: '4px' }}>(change)</button>
+                    </span>
                     <button onClick={() => { setAuthenticated(false); setAuthorizedModels([]); setAuthorizedAccountIds([]); setSelectedModelId(''); setSelectedAccountId('ALL'); setPinInput(''); }} style={{ backgroundColor: 'transparent', color: '#9ca3af', border: '1px solid #2d313a', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}>Lock</button>
                 </div>
             </header>
@@ -494,7 +542,7 @@ export function VADashboard() {
                 ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                         {tasks?.map((task, index) => (
-                            <VATaskCard key={task.id} task={task} index={index + 1} onPosted={() => setCooldownUntil(Date.now() + (Number(postInterval || 3) * 60 * 1000))} cooldownActive={timeLeft > 0} />
+                            <VATaskCard key={task.id} task={task} index={index + 1} onPosted={() => setCooldownUntil(Date.now() + (Number(postInterval || 3) * 60 * 1000))} cooldownActive={timeLeft > 0} vaName={vaName} />
                         ))}
                     </div>
                 )}
@@ -503,7 +551,7 @@ export function VADashboard() {
     );
 }
 
-function VATaskCard({ task, index, onPosted, cooldownActive }) {
+function VATaskCard({ task, index, onPosted, cooldownActive, vaName }) {
     const asset = useLiveQuery(() => db.assets.get(task.assetId), [task.assetId]);
     const subreddit = useLiveQuery(() => db.subreddits.get(task.subredditId), [task.subredditId]);
     const account = useLiveQuery(() => db.accounts.get(task.accountId), [task.accountId]);
@@ -642,7 +690,9 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
         await db.tasks.update(task.id, {
             status: 'closed',
             redditUrl: redditUrl,
-            redditPostId: redditPostId
+            redditPostId: redditPostId,
+            vaName: vaName || '',
+            postedAt: new Date().toISOString()
         });
 
         // 2. Add Performance Record
@@ -715,7 +765,7 @@ function VATaskCard({ task, index, onPosted, cooldownActive }) {
     async function handleMarkError() {
         const reason = window.prompt("Why couldn't you post this? (e.g., account banned, banned from sub, filter block)");
         if (reason) {
-            const taskUpdate = { status: 'failed' };
+            const taskUpdate = { status: 'failed', vaName: vaName || '', postedAt: new Date().toISOString() };
             await db.tasks.update(task.id, taskUpdate);
 
             const perfInsert = {

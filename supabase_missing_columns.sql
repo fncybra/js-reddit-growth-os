@@ -86,3 +86,6 @@ CREATE TABLE IF NOT EXISTS verifications (
     "verified" INTEGER DEFAULT 0,
     "verifiedDate" TEXT
 );
+
+-- tasks: VA attribution (Phase 5B)
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS "vaName" TEXT;

@@ -650,6 +650,92 @@ export function Dashboard() {
                     );
                 })()}
 
+                {/* VA Leaderboard */}
+                {(() => {
+                    if (!tasksAll || tasksAll.length === 0) return null;
+                    const closedTasks = tasksAll.filter(t => (t.status === 'closed' || t.status === 'failed') && t.vaName);
+                    if (closedTasks.length === 0) return null;
+
+                    const vaMap = new Map();
+                    const perfMap = new Map();
+                    (performancesAll || []).forEach(p => perfMap.set(p.taskId, p));
+
+                    closedTasks.forEach(t => {
+                        const name = t.vaName;
+                        if (!vaMap.has(name)) vaMap.set(name, { posts: 0, failed: 0, removed: 0, totalViews: 0, firstPost: t.postedAt || '', lastPost: t.postedAt || '' });
+                        const s = vaMap.get(name);
+                        if (t.status === 'closed') {
+                            s.posts++;
+                            const perf = perfMap.get(t.id);
+                            if (perf) {
+                                s.totalViews += (perf.views24h || 0);
+                                if (perf.removed) s.removed++;
+                            }
+                        } else {
+                            s.failed++;
+                        }
+                        if (t.postedAt) {
+                            if (!s.firstPost || t.postedAt < s.firstPost) s.firstPost = t.postedAt;
+                            if (!s.lastPost || t.postedAt > s.lastPost) s.lastPost = t.postedAt;
+                        }
+                    });
+
+                    const ranked = Array.from(vaMap.entries())
+                        .map(([name, s]) => ({
+                            name,
+                            posts: s.posts,
+                            failed: s.failed,
+                            removed: s.removed,
+                            totalViews: s.totalViews,
+                            avgViews: s.posts > 0 ? Math.round(s.totalViews / s.posts) : 0,
+                            removalPct: s.posts > 0 ? Math.round((s.removed / s.posts) * 100) : 0,
+                            lastPost: s.lastPost,
+                        }))
+                        .sort((a, b) => b.posts - a.posts);
+
+                    return (
+                        <div className="card" style={{ marginBottom: '20px' }}>
+                            <h2 style={{ fontSize: '1.05rem', marginBottom: '10px', fontWeight: 600 }}>VA Leaderboard</h2>
+                            <div className="data-table-container">
+                                <table className="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>#</th>
+                                            <th>VA Name</th>
+                                            <th>Posts</th>
+                                            <th>Failed</th>
+                                            <th>Removed</th>
+                                            <th>Removal %</th>
+                                            <th>Avg Views</th>
+                                            <th>Total Views</th>
+                                            <th>Last Active</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {ranked.map((va, i) => (
+                                            <tr key={va.name}>
+                                                <td style={{ fontWeight: 700, color: i === 0 ? '#fbbf24' : i === 1 ? '#9ca3af' : i === 2 ? '#cd7f32' : 'var(--text-secondary)' }}>{i + 1}</td>
+                                                <td style={{ fontWeight: 600 }}>{va.name}</td>
+                                                <td style={{ fontWeight: 600, color: 'var(--primary-color)' }}>{va.posts}</td>
+                                                <td style={{ color: va.failed > 0 ? '#ef4444' : 'var(--text-secondary)' }}>{va.failed}</td>
+                                                <td style={{ color: va.removed > 0 ? '#ef4444' : 'var(--text-secondary)' }}>{va.removed}</td>
+                                                <td>
+                                                    <span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 600, backgroundColor: va.removalPct > 30 ? '#ef444422' : va.removalPct > 15 ? '#fbbf2422' : '#10b98122', color: va.removalPct > 30 ? '#ef4444' : va.removalPct > 15 ? '#fbbf24' : '#10b981' }}>
+                                                        {va.removalPct}%
+                                                    </span>
+                                                </td>
+                                                <td>{va.avgViews.toLocaleString()}</td>
+                                                <td>{va.totalViews.toLocaleString()}</td>
+                                                <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{va.lastPost ? new Date(va.lastPost).toLocaleDateString() : '—'}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    );
+                })()}
+
                 {/* Cloud Sync - Minimal */}
                 <div className="card" style={{ padding: '16px 20px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
