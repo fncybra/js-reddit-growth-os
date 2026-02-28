@@ -190,12 +190,13 @@ export function AccountDetail() {
                     const items = [
                         { key: 'hasAvatar', label: 'Custom Avatar', points: 15 },
                         { key: 'hasBanner', label: 'Profile Banner', points: 10 },
-                        { key: 'hasBio', label: 'Bio / Description', points: 20 },
+                        { key: 'hasBio', label: 'Bio / Description', points: 15 },
                         { key: 'hasDisplayName', label: 'Display Name', points: 10 },
-                        { key: 'hasVerifiedEmail', label: 'Verified Email', points: 15 },
+                        { key: 'hasVerifiedEmail', label: 'Verified Email', points: 10 },
+                        { key: 'hasProfileLink', label: 'Profile Link', points: 10 },
                     ];
                     const ageDays = account.createdUtc ? Math.floor((Date.now() - Number(account.createdUtc) * 1000) / (24 * 60 * 60 * 1000)) : 0;
-                    const hasAge = ageDays >= 7;
+                    const hasAge = ageDays >= 15;
                     const hasKarma = Number(account.totalKarma || 0) >= 100;
                     return (
                         <div className="card" style={{ padding: '16px 20px', marginBottom: '24px' }}>
@@ -225,7 +226,7 @@ export function AccountDetail() {
                                 })}
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                     {hasAge ? <CheckCircle size={14} style={{ color: '#4caf50' }} /> : <XCircle size={14} style={{ color: '#f44336' }} />}
-                                    <span style={{ color: hasAge ? '#4caf50' : 'var(--text-secondary)' }}>Age 7+ days</span>
+                                    <span style={{ color: hasAge ? '#4caf50' : 'var(--text-secondary)' }}>Age 15+ days</span>
                                     <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>+15</span>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
