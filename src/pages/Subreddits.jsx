@@ -434,7 +434,28 @@ export function Subreddits() {
                                                         }}
                                                     />
                                                 </td>
-                                                <td>{sub.riskLevel}</td>
+                                                <td>
+                                                    {(() => {
+                                                        const risk = (() => {
+                                                            if (tests < 3) return 'unknown';
+                                                            if (removalPct > 30) return 'high';
+                                                            if (removalPct >= 10) return 'medium';
+                                                            return 'low';
+                                                        })();
+                                                        const badges = {
+                                                            low:     { icon: '🟢', color: '#4caf50' },
+                                                            medium:  { icon: '🟡', color: '#ff9800' },
+                                                            high:    { icon: '🔴', color: '#f44336' },
+                                                            unknown: { icon: '⚪', color: '#9e9e9e' },
+                                                        };
+                                                        const b = badges[risk];
+                                                        return (
+                                                            <span style={{ fontSize: '0.8rem', fontWeight: 600, color: b.color }} title={`Auto-calculated: ${risk}`}>
+                                                                {b.icon} {risk}
+                                                            </span>
+                                                        );
+                                                    })()}
+                                                </td>
                                                 <td>{tests}</td>
                                                 <td>{avg24h?.toLocaleString() || 0}</td>
                                                 <td style={{ color: removalPct > 20 ? 'var(--status-danger)' : 'inherit' }}>{Number(removalPct || 0).toFixed(1)}%</td>
