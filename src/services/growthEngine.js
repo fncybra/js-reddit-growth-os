@@ -1500,18 +1500,43 @@ export const CloudSyncService = {
 
         const allTables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'settings'];
         const tables = onlyTables || allTables;
+        const TASK_STATUS_RANK = { 'generated': 1, 'failed': 2, 'closed': 3 };
 
         for (const table of tables) {
             const localData = await db[table].toArray();
             if (localData.length === 0) continue;
 
-            const cleanData = localData.map(item => {
+            let cleanData = localData.map(item => {
                 const { ...rest } = item;
                 if (table === 'assets' && rest.fileBlob) delete rest.fileBlob;
                 return rest;
             }).filter(Boolean);
 
             if (cleanData.length === 0) continue;
+
+            // For tasks: fetch cloud versions first to avoid downgrading status
+            if (table === 'tasks') {
+                try {
+                    const { data: cloudTasks } = await supabase.from('tasks').select('id, status, redditUrl, redditPostId');
+                    if (cloudTasks && cloudTasks.length > 0) {
+                        const cloudById = new Map(cloudTasks.map(t => [t.id, t]));
+                        cleanData = cleanData.map(local => {
+                            const cloud = cloudById.get(local.id);
+                            if (!cloud) return local;
+                            const localRank = TASK_STATUS_RANK[local.status] || 0;
+                            const cloudRank = TASK_STATUS_RANK[cloud.status] || 0;
+                            if (cloudRank > localRank) {
+                                // Cloud is more advanced — don't downgrade
+                                return { ...local, status: cloud.status, redditUrl: cloud.redditUrl || local.redditUrl, redditPostId: cloud.redditPostId || local.redditPostId };
+                            }
+                            // Local is more advanced or equal — push local but preserve any Reddit data
+                            return { ...local, redditUrl: local.redditUrl || cloud.redditUrl, redditPostId: local.redditPostId || cloud.redditPostId };
+                        });
+                    }
+                } catch (e) {
+                    console.warn('[CloudSync] Could not pre-fetch cloud tasks for merge:', e.message);
+                }
+            }
 
             // Batch upsert in chunks of 500 to avoid Supabase payload limits
             const BATCH_SIZE = 500;
@@ -1562,11 +1587,18 @@ export const CloudSyncService = {
             fetched[table] = data || [];
         }
 
-        // Phase 2: transform and apply locally only after full fetch succeeded
+        // Task status ranking for conflict resolution (higher = more advanced)
+        const TASK_STATUS_RANK = { 'generated': 1, 'failed': 2, 'closed': 3 };
+
+        // Phase 2: MERGE cloud data into local (never clear — prevents data loss)
         for (const table of tables) {
             let cloudData = fetched[table] || [];
+            if (cloudData.length === 0) {
+                console.log(`[CloudSync] Skipped ${table} — cloud is empty, keeping local data`);
+                continue;
+            }
 
-            if (table === 'assets' && cloudData.length > 0) {
+            if (table === 'assets') {
                 const localAssets = await db.assets.toArray();
                 const byId = new Map(localAssets.map(a => [a.id, a]));
                 const byDriveId = new Map(localAssets.filter(a => a.driveFileId).map(a => [a.driveFileId, a]));
@@ -1584,7 +1616,7 @@ export const CloudSyncService = {
                 });
             }
 
-            if (table === 'subreddits' && cloudData.length > 0) {
+            if (table === 'subreddits') {
                 const localSubs = await db.subreddits.toArray();
                 const localById = new Map(localSubs.map(s => [s.id, s]));
                 cloudData = cloudData.map(remote => {
@@ -1597,11 +1629,46 @@ export const CloudSyncService = {
                 });
             }
 
-            await db[table].clear();
-            if (cloudData.length > 0) {
-                await db[table].bulkPut(cloudData);
+            // Tasks: smart merge — never downgrade status, always preserve Reddit data
+            if (table === 'tasks') {
+                const localTasks = await db.tasks.toArray();
+                const localById = new Map(localTasks.map(t => [t.id, t]));
+                cloudData = cloudData.map(remote => {
+                    const local = localById.get(remote.id);
+                    if (!local) return remote;
+                    const localRank = TASK_STATUS_RANK[local.status] || 0;
+                    const remoteRank = TASK_STATUS_RANK[remote.status] || 0;
+                    // Keep whichever status is more advanced
+                    const winnerStatus = localRank >= remoteRank ? local.status : remote.status;
+                    // Always preserve Reddit URL/ID from whichever has it
+                    return {
+                        ...remote,
+                        status: winnerStatus,
+                        redditUrl: remote.redditUrl || local.redditUrl,
+                        redditPostId: remote.redditPostId || local.redditPostId,
+                    };
+                });
             }
-            console.log(`[CloudSync] Pulled ${cloudData.length} rows for ${table}`);
+
+            // Performances: smart merge — keep whichever has more data
+            if (table === 'performances') {
+                const localPerfs = await db.performances.toArray();
+                const localById = new Map(localPerfs.map(p => [p.id, p]));
+                const localByTaskId = new Map(localPerfs.map(p => [p.taskId, p]));
+                cloudData = cloudData.map(remote => {
+                    const local = localById.get(remote.id) || localByTaskId.get(remote.taskId);
+                    if (!local) return remote;
+                    // Keep whichever has higher views (more up-to-date sync)
+                    if ((local.views24h || 0) > (remote.views24h || 0)) {
+                        return { ...remote, views24h: local.views24h, removed: local.removed, notes: local.notes };
+                    }
+                    return remote;
+                });
+            }
+
+            // Merge: upsert cloud data without clearing local
+            await db[table].bulkPut(cloudData);
+            console.log(`[CloudSync] Merged ${cloudData.length} cloud rows into ${table}`);
         }
     },
 
