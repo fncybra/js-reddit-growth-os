@@ -676,8 +676,13 @@ export const DailyPlanGenerator = {
             return phase === 'ready' || phase === 'active';
         }).toArray();
 
-        if (activeAccounts.length === 0) {
-            throw new Error("No eligible Reddit accounts found for this model. Accounts must have status 'Active' and phase 'Ready' or 'Active'. Check the Accounts tab.");
+        // Also fetch warming accounts — they get ONLY engagement/warmup tasks
+        const warmingAccounts = await db.accounts.where('modelId').equals(modelId).filter(a => {
+            return a.status === 'active' && a.phase === 'warming';
+        }).toArray();
+
+        if (activeAccounts.length === 0 && warmingAccounts.length === 0) {
+            throw new Error("No eligible Reddit accounts found for this model. Accounts must have status 'Active' and phase 'Ready', 'Active', or 'Warming'. Check the Accounts tab.");
         }
 
         const todayStr = startOfDay(targetDate).toISOString();
@@ -1078,6 +1083,7 @@ export const DailyPlanGenerator = {
                             subredditId: sub.id,
                             assetId: selectedAsset.id,
                             title: aiTitle,
+                            taskType: 'post',
                             postingWindow: 'Morning', // Could be randomized later
                             status: 'generated'
                         };
@@ -1094,6 +1100,59 @@ export const DailyPlanGenerator = {
         for (const generateTaskFn of taskGenerationPromises) {
             const one = await generateTaskFn();
             finalNewTasks.push(one);
+        }
+
+        // Generate engagement tasks for active accounts that got posting tasks
+        const allSubsForEngagement = [...provenSubs, ...testingSubs, ...fallbackSubs];
+        const accountsGettingPosts = new Set(finalNewTasks.map(t => t.accountId));
+        const engagementTypes = ['comment', 'upvote'];
+
+        for (const accId of accountsGettingPosts) {
+            const shuffledSubs = [...allSubsForEngagement].sort(() => Math.random() - 0.5);
+            const engagementCount = Math.min(2 + Math.floor(Math.random() * 2), shuffledSubs.length); // 2-3 tasks
+            for (let i = 0; i < engagementCount; i++) {
+                const sub = shuffledSubs[i];
+                const type = engagementTypes[i % engagementTypes.length];
+                finalNewTasks.push({
+                    date: todayStr,
+                    modelId,
+                    accountId: accId,
+                    subredditId: sub.id,
+                    assetId: null,
+                    title: type === 'comment'
+                        ? `Engage: Comment on a top post in r/${sub.name}`
+                        : `Engage: Upvote & browse r/${sub.name}`,
+                    taskType: type,
+                    postingWindow: 'Anytime',
+                    status: 'generated'
+                });
+            }
+        }
+
+        // Generate warmup-only tasks for warming accounts
+        for (const warmAcc of warmingAccounts) {
+            const existingWarmupToday = allModelTasksToday.filter(t => t.accountId === warmAcc.id);
+            if (existingWarmupToday.length > 0) continue; // Already has tasks today
+
+            const shuffledSubs = [...allSubsForEngagement].sort(() => Math.random() - 0.5);
+            const warmupCount = Math.min(3, shuffledSubs.length);
+            for (let i = 0; i < warmupCount; i++) {
+                const sub = shuffledSubs[i];
+                const warmupActions = ['comment', 'upvote', 'upvote'];
+                finalNewTasks.push({
+                    date: todayStr,
+                    modelId,
+                    accountId: warmAcc.id,
+                    subredditId: sub.id,
+                    assetId: null,
+                    title: warmupActions[i] === 'comment'
+                        ? `Warmup: Leave a genuine comment in r/${sub.name}`
+                        : `Warmup: Browse & upvote posts in r/${sub.name}`,
+                    taskType: 'warmup',
+                    postingWindow: 'Anytime',
+                    status: 'generated'
+                });
+            }
         }
 
         if (finalNewTasks.length > 0) { // Finalize

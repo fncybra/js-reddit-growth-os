@@ -302,6 +302,7 @@ export function Tasks() {
                             <table className="data-table">
                                 <thead>
                                     <tr>
+                                        <th>Type</th>
                                         <th>Task Details</th>
                                         <th>Media Asset</th>
                                         <th>Target Subreddit</th>
@@ -322,6 +323,14 @@ export function Tasks() {
         </>
     );
 }
+
+const TASK_TYPE_ICONS = {
+    post: { icon: '📝', label: 'Post' },
+    comment: { icon: '💬', label: 'Comment' },
+    upvote: { icon: '👍', label: 'Upvote' },
+    engage: { icon: '🤝', label: 'Engage' },
+    warmup: { icon: '🧊', label: 'Warmup' },
+};
 
 function TaskRow({ task, activeModelId, proxyUrl }) {
     const [outcome, setOutcome] = useState({ views: '', removed: false });
@@ -436,8 +445,15 @@ function TaskRow({ task, activeModelId, proxyUrl }) {
         || asset?.originalUrl
         || null;
 
+    const isEngagement = task.taskType && task.taskType !== 'post';
+    const typeInfo = TASK_TYPE_ICONS[task.taskType] || TASK_TYPE_ICONS.post;
+
     return (
         <tr style={{ opacity: saved ? 0.7 : 1, transition: 'opacity 0.2s', borderBottom: '1px solid var(--border-color)' }}>
+            <td style={{ verticalAlign: 'middle', textAlign: 'center', fontSize: '1.1rem' }} title={typeInfo.label}>
+                <div>{typeInfo.icon}</div>
+                <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)' }}>{typeInfo.label}</div>
+            </td>
             <td style={{ fontWeight: '500', verticalAlign: 'middle' }}>
                 <div style={{ fontSize: '1rem' }}>{task.title}</div>
                 <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Window: {task.postingWindow}</div>
@@ -475,38 +491,67 @@ function TaskRow({ task, activeModelId, proxyUrl }) {
                 </span>
             </td>
             <td>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <input
-                        type="number"
-                        className="input-field"
-                        style={{ width: '100px', padding: '6px' }}
-                        placeholder="Views"
-                        value={outcome.views}
-                        onChange={e => { setOutcome({ ...outcome, views: e.target.value }); setSaved(false); }}
-                    />
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.85rem' }}>
-                        <input
-                            type="checkbox"
-                            checked={outcome.removed}
-                            onChange={e => { setOutcome({ ...outcome, removed: e.target.checked }); setSaved(false); }}
-                        />
-                        Removed
-                    </label>
-                    {!saved && (
-                        <button className="btn btn-outline" style={{ padding: '4px 12px', fontSize: '0.8rem' }} onClick={handleSaveOutcome}>
-                            Save
+                {isEngagement ? (
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        {task.status !== 'closed' ? (
+                            <button
+                                className="btn btn-primary"
+                                style={{ padding: '4px 16px', fontSize: '0.8rem' }}
+                                onClick={async () => {
+                                    await db.tasks.update(task.id, { status: 'closed' });
+                                    try { await CloudSyncService.autoPush(['tasks']); } catch {}
+                                    setSaved(true);
+                                }}
+                            >
+                                Done
+                            </button>
+                        ) : (
+                            <span style={{ color: 'var(--status-success)', fontSize: '0.8rem', fontWeight: 600 }}>Completed</span>
+                        )}
+                        <button
+                            type="button"
+                            className="btn btn-outline"
+                            style={{ padding: '4px 8px', fontSize: '0.8rem', color: 'var(--status-danger)', borderColor: 'var(--status-danger)' }}
+                            onClick={handleDeleteTask}
+                            title="Delete task"
+                        >
+                            🗑️
                         </button>
-                    )}
-                    <button
-                        type="button"
-                        className="btn btn-outline"
-                        style={{ padding: '4px 8px', fontSize: '0.8rem', color: 'var(--status-danger)', borderColor: 'var(--status-danger)' }}
-                        onClick={handleDeleteTask}
-                        title="Delete task"
-                    >
-                        🗑️
-                    </button>
-                </div>
+                    </div>
+                ) : (
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <input
+                            type="number"
+                            className="input-field"
+                            style={{ width: '100px', padding: '6px' }}
+                            placeholder="Views"
+                            value={outcome.views}
+                            onChange={e => { setOutcome({ ...outcome, views: e.target.value }); setSaved(false); }}
+                        />
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.85rem' }}>
+                            <input
+                                type="checkbox"
+                                checked={outcome.removed}
+                                onChange={e => { setOutcome({ ...outcome, removed: e.target.checked }); setSaved(false); }}
+                            />
+                            Removed
+                        </label>
+                        {!saved && (
+                            <button className="btn btn-outline" style={{ padding: '4px 12px', fontSize: '0.8rem' }} onClick={handleSaveOutcome}>
+                                Save
+                            </button>
+                        )}
+                        <button
+                            type="button"
+                            className="btn btn-outline"
+                            style={{ padding: '4px 8px', fontSize: '0.8rem', color: 'var(--status-danger)', borderColor: 'var(--status-danger)' }}
+                            onClick={handleDeleteTask}
+                            title="Delete task"
+                        >
+                            🗑️
+                        </button>
+                    </div>
+                )}
             </td>
         </tr>
     );

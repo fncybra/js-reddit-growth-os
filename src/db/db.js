@@ -33,6 +33,17 @@ db.version(9).stores({
     settings: '++id, key'
 });
 
+// v10: engagement task types (taskType field on tasks)
+db.version(10).stores({
+    models: '++id, name, status, driveFolderId, usedFolderId, redgifsProfile, proxyInfo, vaPin',
+    accounts: '++id, modelId, handle, status, proxyInfo, phase',
+    subreddits: '++id, modelId, name, status, lastTestedDate',
+    assets: '++id, modelId, assetType, approved, lastUsedDate, driveFileId, externalUrl',
+    tasks: '++id, date, modelId, accountId, subredditId, assetId, status, redditPostId, taskType',
+    performances: '++id, taskId',
+    settings: '++id, key'
+});
+
 // Seed default settings if empty
 db.on('populate', async () => {
     await db.settings.bulkAdd([

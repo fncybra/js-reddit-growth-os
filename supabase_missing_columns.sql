@@ -33,3 +33,6 @@ ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "lastActiveDate" TEXT;
 -- accounts: shadow-ban detection (Phase 1C)
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "shadowBanStatus" TEXT;
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "lastShadowCheck" TEXT;
+
+-- tasks: engagement task types (Phase 2B)
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS "taskType" TEXT;
