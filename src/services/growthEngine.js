@@ -797,10 +797,20 @@ export const DailyPlanGenerator = {
                 .filter(Boolean)
         );
 
-        // 2. Iterate through accounts and fill their individual quotas
+        // 2. Spread tasks evenly across accounts via round-robin
+        // Calculate total available sub slots and fair share per account
+        const totalAvailableSubs = provenSubs.length + testingSubs.length + fallbackSubs.length;
+        const fairSharePerAccount = activeAccounts.length > 0
+            ? Math.max(1, Math.floor(totalAvailableSubs / activeAccounts.length))
+            : 0;
+
         for (const account of activeAccounts) {
             const accountTasksToday = allModelTasksToday.filter(t => t.accountId === account.id);
-            const accountQuota = account.dailyCap || settings.dailyPostCap;
+            const rawQuota = account.dailyCap || settings.dailyPostCap;
+            // Cap at fair share to ensure even spread when subs are limited
+            const accountQuota = totalAvailableSubs < (rawQuota * activeAccounts.length)
+                ? Math.min(rawQuota, fairSharePerAccount)
+                : rawQuota;
             const tasksToGenerate = accountQuota - accountTasksToday.length;
 
             if (tasksToGenerate <= 0) continue;
@@ -1089,6 +1099,12 @@ export const DailyPlanGenerator = {
         if (finalNewTasks.length > 0) { // Finalize
             await db.tasks.bulkAdd(finalNewTasks);
             console.log(`DailyPlanGenerator: Generated ${finalNewTasks.length} tasks for model ${modelId}`);
+
+            // Mark each account that received tasks as active for the day (tracks consecutiveActiveDays)
+            const accountsWithTasks = new Set(finalNewTasks.map(t => t.accountId));
+            for (const accId of accountsWithTasks) {
+                await AccountLifecycleService.markAccountActiveDay(accId);
+            }
 
             // Auto-push to cloud so others (VAs) see the new plan immediately
             await CloudSyncService.autoPush();
