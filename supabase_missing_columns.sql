@@ -40,3 +40,15 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS "taskType" TEXT;
 -- tasks: posting stagger (Phase 2C)
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS "scheduledTime" TEXT;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS "postedAt" TEXT;
+
+-- subreddits: verification required flag (Phase 3B)
+ALTER TABLE subreddits ADD COLUMN IF NOT EXISTS "requiresVerified" INTEGER;
+
+-- verifications: account-subreddit verification tracking (Phase 3B)
+CREATE TABLE IF NOT EXISTS verifications (
+    "id" BIGSERIAL PRIMARY KEY,
+    "accountId" BIGINT REFERENCES accounts("id") ON DELETE CASCADE,
+    "subredditId" BIGINT REFERENCES subreddits("id") ON DELETE CASCADE,
+    "verified" INTEGER DEFAULT 0,
+    "verifiedDate" TEXT
+);

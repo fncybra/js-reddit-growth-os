@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { db } from '../db/db';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { SubredditGuardService } from '../services/growthEngine';
+import { SubredditGuardService, VerificationService } from '../services/growthEngine';
 
 export function Subreddits() {
     const models = useLiveQuery(() => db.models.toArray());
@@ -9,6 +9,7 @@ export function Subreddits() {
     const accounts = useLiveQuery(() => db.accounts.toArray());
     const tasks = useLiveQuery(() => db.tasks.toArray());
     const performances = useLiveQuery(() => db.performances.toArray());
+    const verifications = useLiveQuery(() => db.verifications.toArray());
 
     const [selectedModelId, setSelectedModelId] = useState('');
     const [tableModelFilter, setTableModelFilter] = useState('');
@@ -145,6 +146,15 @@ export function Subreddits() {
 
         return map;
     }, [tasks, performances, tableModelFilter, tableAccountFilter]);
+
+    // Build verification lookup: "accountId:subredditId" → true/false
+    const verificationMap = React.useMemo(() => {
+        const map = new Map();
+        for (const v of (verifications || [])) {
+            if (v.verified) map.set(`${v.accountId}:${v.subredditId}`, true);
+        }
+        return map;
+    }, [verifications]);
 
     async function handleAttachUnassignedToSelectedAccount() {
         if (!tableModelFilter || tableAccountFilter === 'all' || !tableAccountFilter) return;
@@ -360,6 +370,7 @@ export function Subreddits() {
                                         <th>Avg 24h</th>
                                         <th>Removal %</th>
                                         <th>Posting Gate</th>
+                                        <th>Verified</th>
                                         <th>Action</th>
                                     </tr>
                                 </thead>
@@ -470,6 +481,45 @@ export function Subreddits() {
                                                             {!sub.minRequiredKarma && !sub.minAccountAgeDays ? 'Open' : ''}
                                                         </span>
                                                     )}
+                                                </td>
+                                                <td style={{ textAlign: 'center' }}>
+                                                    {(() => {
+                                                        if (!sub.requiresVerified) {
+                                                            return <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>—</span>;
+                                                        }
+                                                        const selectedAccId = tableAccountFilter !== 'all' ? Number(tableAccountFilter) : null;
+                                                        if (!selectedAccId) {
+                                                            const verifiedCount = (verifications || []).filter(v => v.subredditId === sub.id && v.verified).length;
+                                                            const totalAccounts = (accounts || []).filter(a => a.modelId === sub.modelId).length;
+                                                            return (
+                                                                <span style={{ fontSize: '0.75rem', color: verifiedCount > 0 ? '#4caf50' : '#f44336' }}>
+                                                                    {verifiedCount}/{totalAccounts}
+                                                                </span>
+                                                            );
+                                                        }
+                                                        const isVerified = verificationMap.has(`${selectedAccId}:${sub.id}`);
+                                                        return (
+                                                            <button
+                                                                type="button"
+                                                                className="btn btn-outline"
+                                                                style={{
+                                                                    padding: '2px 8px', fontSize: '0.75rem',
+                                                                    color: isVerified ? '#4caf50' : '#f44336',
+                                                                    borderColor: isVerified ? '#4caf50' : '#f44336'
+                                                                }}
+                                                                onClick={async (e) => {
+                                                                    e.stopPropagation();
+                                                                    if (isVerified) {
+                                                                        await VerificationService.markUnverified(selectedAccId, sub.id);
+                                                                    } else {
+                                                                        await VerificationService.markVerified(selectedAccId, sub.id);
+                                                                    }
+                                                                }}
+                                                            >
+                                                                {isVerified ? '✓ Yes' : '✗ No'}
+                                                            </button>
+                                                        );
+                                                    })()}
                                                 </td>
                                                 <td>
                                                     <button
