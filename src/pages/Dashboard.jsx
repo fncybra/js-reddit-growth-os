@@ -580,6 +580,76 @@ export function Dashboard() {
                     </div>
                 </div>
 
+                {/* Top Content */}
+                {(() => {
+                    if (!tasksAll || !performancesAll || !assetsAll) return null;
+                    const perfByTaskId = new Map(performancesAll.map(p => [p.taskId, p]));
+                    const assetBucket = new Map();
+                    for (const t of tasksAll) {
+                        if (!t.assetId) continue;
+                        if (!assetBucket.has(t.assetId)) assetBucket.set(t.assetId, { posts: 0, totalViews: 0, removed: 0 });
+                        const b = assetBucket.get(t.assetId);
+                        const p = perfByTaskId.get(t.id);
+                        if (!p) continue;
+                        b.posts++;
+                        b.totalViews += Number(p.views24h || 0);
+                        if (p.removed) b.removed++;
+                    }
+                    const assetsById = new Map((assetsAll || []).map(a => [a.id, a]));
+                    const modelsById = new Map((models || []).map(m => [m.id, m]));
+                    const ranked = Array.from(assetBucket.entries())
+                        .map(([id, s]) => {
+                            const asset = assetsById.get(id);
+                            return {
+                                id,
+                                name: asset?.fileName || asset?.angleTag || `asset-${id}`,
+                                niche: asset?.angleTag || '?',
+                                modelName: modelsById.get(asset?.modelId)?.name || '?',
+                                posts: s.posts,
+                                avgViews: s.posts > 0 ? Math.round(s.totalViews / s.posts) : 0,
+                                totalViews: s.totalViews,
+                                removed: s.removed,
+                            };
+                        })
+                        .filter(r => r.posts >= 1)
+                        .sort((a, b) => b.avgViews - a.avgViews)
+                        .slice(0, 10);
+                    if (ranked.length === 0) return null;
+                    return (
+                        <div className="card" style={{ marginBottom: '20px' }}>
+                            <h2 style={{ fontSize: '1.05rem', marginBottom: '10px', fontWeight: 600 }}>Top Content by Avg Views</h2>
+                            <div className="data-table-container">
+                                <table className="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Asset</th>
+                                            <th>Niche</th>
+                                            <th>Model</th>
+                                            <th>Posts</th>
+                                            <th>Avg Views</th>
+                                            <th>Total Views</th>
+                                            <th>Removed</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {ranked.map(r => (
+                                            <tr key={r.id}>
+                                                <td style={{ fontWeight: 500, maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.name}>{r.name}</td>
+                                                <td><span className="badge badge-info">{r.niche}</span></td>
+                                                <td>{r.modelName}</td>
+                                                <td>{r.posts}</td>
+                                                <td style={{ fontWeight: 600, color: 'var(--primary-color)' }}>{r.avgViews.toLocaleString()}</td>
+                                                <td>{r.totalViews.toLocaleString()}</td>
+                                                <td style={{ color: r.removed > 0 ? '#f44336' : 'var(--text-secondary)' }}>{r.removed}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    );
+                })()}
+
                 {/* Cloud Sync - Minimal */}
                 <div className="card" style={{ padding: '16px 20px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
