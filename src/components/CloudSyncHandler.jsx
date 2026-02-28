@@ -12,6 +12,12 @@ export function CloudSyncHandler() {
         const runCycle = async () => {
             if (cycleRef.current) return;
             cycleRef.current = true;
+            // Acquire lock — skip if a manual sync (Dashboard "Sync All") is running
+            const gotLock = await CloudSyncService.acquireLock();
+            if (!gotLock) {
+                cycleRef.current = false;
+                return;
+            }
             try {
                 const enabled = await CloudSyncService.isEnabled();
                 if (!enabled) return;
@@ -21,6 +27,7 @@ export function CloudSyncHandler() {
             } catch (err) {
                 console.error('[CloudSync] Cycle failed:', err);
             } finally {
+                CloudSyncService.releaseLock();
                 cycleRef.current = false;
             }
         };

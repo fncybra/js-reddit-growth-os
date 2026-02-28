@@ -1841,9 +1841,25 @@ export const SnapshotService = {
 };
 
 export const CloudSyncService = {
+    _syncLock: false,
+
     async isEnabled() {
         const settings = await SettingsService.getSettings();
         return !!(settings.supabaseUrl && settings.supabaseAnonKey);
+    },
+
+    async acquireLock() {
+        if (this._syncLock) return false;
+        this._syncLock = true;
+        return true;
+    },
+
+    releaseLock() {
+        this._syncLock = false;
+    },
+
+    get isLocked() {
+        return this._syncLock;
     },
 
     async pushLocalToCloud(onlyTables = null) {
@@ -1855,6 +1871,18 @@ export const CloudSyncService = {
         const tables = onlyTables || allTables;
         const TASK_STATUS_RANK = { 'generated': 1, 'failed': 2, 'closed': 3 };
 
+        // Pre-compute account IDs that will be excluded from push (no handle = NOT NULL violation)
+        // Dependent tables (tasks, subreddits, verifications) must also exclude rows referencing these
+        const fkTables = ['accounts', 'tasks', 'subreddits', 'verifications'];
+        const needsExclusionCheck = tables.some(t => fkTables.includes(t));
+        const excludedAccountIds = new Set();
+        if (needsExclusionCheck) {
+            const allAccounts = await db.accounts.toArray();
+            for (const acc of allAccounts) {
+                if (!acc.handle) excludedAccountIds.add(acc.id);
+            }
+        }
+
         for (const table of tables) {
             const localData = await db[table].toArray();
             if (localData.length === 0) continue;
@@ -1864,6 +1892,18 @@ export const CloudSyncService = {
                 if (table === 'assets' && rest.fileBlob) delete rest.fileBlob;
                 return rest;
             }).filter(Boolean);
+
+            // Skip accounts with missing handle — Supabase has NOT NULL constraint
+            if (table === 'accounts') {
+                cleanData = cleanData.filter(row => !!row.handle);
+            }
+
+            // Skip rows that reference excluded accounts — prevents FK violations
+            if (excludedAccountIds.size > 0) {
+                if (table === 'tasks' || table === 'subreddits' || table === 'verifications') {
+                    cleanData = cleanData.filter(row => !row.accountId || !excludedAccountIds.has(row.accountId));
+                }
+            }
 
             if (cleanData.length === 0) continue;
 
@@ -1918,6 +1958,11 @@ export const CloudSyncService = {
                     if (/schema cache|relation.*does not exist|not found/i.test(error.message || '')) {
                         console.warn(`[CloudSync] Table "${table}" not in cloud schema, skipping push.`);
                         break;
+                    }
+                    // FK violations (e.g. task references account not yet in cloud) — skip batch, don't crash
+                    if (/violates foreign key|foreign key constraint|insert or update on table/i.test(error.message || '')) {
+                        console.warn(`[CloudSync] FK violation in ${table}, skipping batch: ${error.message}`);
+                        continue;
                     }
                     console.error(`Sync Error(${table}): `, error.message);
                     throw new Error(`Failed to push to ${table}: ${error.message}`);
@@ -2034,7 +2079,12 @@ export const CloudSyncService = {
             if (table === 'accounts') {
                 const localAccounts = await db.accounts.toArray();
                 const localById = new Map(localAccounts.map(a => [a.id, a]));
-                const profileFields = ['hasAvatar', 'hasBanner', 'hasBio', 'hasDisplayName', 'hasVerifiedEmail', 'hasProfileLink', 'lastProfileAudit', 'removalRate', 'lastActiveDate', 'shadowBanStatus', 'lastShadowCheck'];
+                const profileFields = [
+                    'hasAvatar', 'hasBanner', 'hasBio', 'hasDisplayName', 'hasVerifiedEmail', 'hasProfileLink',
+                    'lastProfileAudit', 'removalRate', 'lastActiveDate', 'shadowBanStatus', 'lastShadowCheck',
+                    // Lifecycle phase fields — cloud schema may not have these columns yet
+                    'phase', 'phaseChangedDate', 'warmupStartDate', 'restUntilDate', 'consecutiveActiveDays'
+                ];
                 cloudData = cloudData.map(remote => {
                     const local = localById.get(remote.id);
                     if (!local) return remote;
@@ -2285,7 +2335,8 @@ export const AccountSyncService = {
 
         try {
             const proxyUrl = await SettingsService.getProxyUrl();
-            const res = await fetch(`${proxyUrl}/api/scrape/user/stats/${account.handle}`);
+            const cleanHandle = account.handle.replace(/^(u\/|\/u\/)/i, '').trim();
+            const res = await fetchWithTimeout(`${proxyUrl}/api/scrape/user/stats/${cleanHandle}`, {}, 10000);
             if (!res.ok) throw new Error("Stats sync failed");
             const data = await res.json();
 
@@ -2319,16 +2370,28 @@ export const AccountSyncService = {
 
     async syncAllAccounts() {
         const accounts = await db.accounts.toArray();
+        const eligible = accounts.filter(acc => !!acc.handle);
+        const results = await Promise.allSettled(
+            eligible.map(acc => this.syncAccountHealth(acc.id))
+        );
         let succeeded = 0;
         let failed = 0;
-        for (const acc of accounts) {
-            if (!acc.handle) continue;
-            const result = await this.syncAccountHealth(acc.id);
-            if (result) succeeded++;
-            else failed++;
+        const failedHandles = [];
+        for (let i = 0; i < results.length; i++) {
+            const r = results[i];
+            if (r.status === 'fulfilled' && r.value) {
+                succeeded++;
+            } else {
+                failed++;
+                failedHandles.push(eligible[i].handle);
+            }
+        }
+        if (failedHandles.length > 0) {
+            console.warn('[AccountSync] Failed to sync:', failedHandles.join(', '));
         }
         try { await CloudSyncService.autoPush(); } catch (e) { console.error('[AccountSync] autoPush failed:', e); }
-        return { total: accounts.length, succeeded, failed };
+        const skippedNoHandle = accounts.length - eligible.length;
+        return { total: eligible.length, succeeded, failed, failedHandles, skippedNoHandle };
     },
 
     async checkShadowBan(accountId) {
@@ -2376,10 +2439,13 @@ export const AccountSyncService = {
 
     async checkAllShadowBans() {
         const accounts = await db.accounts.toArray();
+        const eligible = accounts.filter(acc => !!acc.handle);
+        const results = await Promise.allSettled(
+            eligible.map(acc => this.checkShadowBan(acc.id))
+        );
         let clean = 0, flagged = 0, errors = 0;
-        for (const acc of accounts) {
-            if (!acc.handle) continue;
-            const result = await this.checkShadowBan(acc.id);
+        for (const r of results) {
+            const result = r.status === 'fulfilled' ? r.value : 'error';
             if (result === 'clean') clean++;
             else if (result === 'shadow_banned' || result === 'suspended') flagged++;
             else errors++;
@@ -2407,7 +2473,7 @@ export const PerformanceSyncService = {
             }
 
             const url = `${proxyUrl}/api/scrape/post/${task.redditPostId}${subredditHint ? '?subreddit=' + subredditHint : ''}`;
-            const response = await fetch(url);
+            const response = await fetchWithTimeout(url, {}, 10000);
             if (!response.ok) throw new Error("Sync failed");
 
             const data = await response.json();
@@ -2457,6 +2523,8 @@ export const PerformanceSyncService = {
         let failed = 0;
         let skipped = 0;
 
+        // Pre-process: heal missing postIds and split into syncable vs skipped
+        const syncable = [];
         for (const task of pendingTasks) {
             let postId = task.redditPostId;
 
@@ -2470,14 +2538,27 @@ export const PerformanceSyncService = {
             }
 
             if (postId) {
-                attempted++;
-                const result = await this.syncPostPerformance(task.id);
-                if (result?.ok) succeeded++;
-                else failed++;
-                // Throttle slightly to be nice to proxy/reddit
-                await new Promise(r => setTimeout(r, 1000));
+                syncable.push(task);
             } else {
                 skipped++;
+            }
+        }
+
+        // Process in batches of 5 with 1s gap between batches
+        const BATCH_SIZE = 5;
+        for (let i = 0; i < syncable.length; i += BATCH_SIZE) {
+            const batch = syncable.slice(i, i + BATCH_SIZE);
+            attempted += batch.length;
+            const results = await Promise.allSettled(
+                batch.map(task => this.syncPostPerformance(task.id))
+            );
+            for (const r of results) {
+                if (r.status === 'fulfilled' && r.value?.ok) succeeded++;
+                else failed++;
+            }
+            // Throttle between batches to respect proxy rate limits
+            if (i + BATCH_SIZE < syncable.length) {
+                await new Promise(r => setTimeout(r, 1000));
             }
         }
 
@@ -2512,7 +2593,7 @@ export function generateManagerActionItems(accounts) {
         }
 
         // Rule 13: Burned/suspended — short-circuit, only this rule applies
-        if (isSuspended || account.status === 'burned') {
+        if (isSuspended || phase === 'burned') {
             items.push({
                 accountId,
                 handle,
@@ -2521,6 +2602,36 @@ export function generateManagerActionItems(accounts) {
                 rule: 13
             });
             continue;
+        }
+
+        // Fallback: use warmupStartDate for age when createdUtc is missing
+        if (phase === 'warming' && ageDays === null) {
+            if (account.warmupStartDate) {
+                ageDays = Math.floor((now - new Date(account.warmupStartDate).getTime()) / 86400000);
+            }
+        }
+
+        // Rule 0: Unsynced account — prompt sync
+        // Covers warming accounts with no age AND brand-new accounts with no phase set yet
+        if ((phase === 'warming' && ageDays === null) || (!phase && !account.lastSyncDate)) {
+            items.push({
+                accountId,
+                handle,
+                priority: 'warning',
+                message: `Sync ${handle} — account not yet synced with Reddit`,
+                rule: 0
+            });
+        }
+
+        // Rule 0b: Account has phase but never synced — profile audit won't populate until synced
+        if (phase && !account.lastSyncDate && !account.lastProfileAudit) {
+            items.push({
+                accountId,
+                handle,
+                priority: 'info',
+                message: `Run "Sync Stats" to populate ${handle}'s profile audit`,
+                rule: 0
+            });
         }
 
         // --- Warming Phase Rules (days 0-7) ---
@@ -2570,37 +2681,42 @@ export function generateManagerActionItems(accounts) {
             }
         }
 
-        // --- Ready Phase Checklist (day 7+ or phase=ready/active) ---
-        if (phase === 'ready' || phase === 'active' || (ageDays !== null && ageDays >= 7 && phase !== 'warming')) {
+        // --- Profile Checklist (warming accounts get 'info', ready/active get 'warning') ---
+        // Show profile setup items for ALL synced accounts so VAs can prep during warmup
+        const hasBeenSynced = !!account.lastProfileAudit;
+        const isReadyOrActive = phase === 'ready' || phase === 'active' || (ageDays !== null && ageDays >= 7 && phase !== 'warming');
+        const profilePriority = isReadyOrActive ? 'warning' : 'info';
+
+        if (isReadyOrActive || (phase === 'warming' && hasBeenSynced)) {
             const missing = [];
 
             // Rule 5: No profile link
             if (!account.hasProfileLink) {
-                items.push({ accountId, handle, priority: 'warning', message: `Add deep link to ${handle}'s bio`, rule: 5 });
+                items.push({ accountId, handle, priority: profilePriority, message: `Add deep link to ${handle}'s bio`, rule: 5 });
                 missing.push('profileLink');
             }
 
             // Rule 6: No avatar
             if (!account.hasAvatar) {
-                items.push({ accountId, handle, priority: 'warning', message: `Set custom avatar on ${handle}`, rule: 6 });
+                items.push({ accountId, handle, priority: profilePriority, message: `Set custom avatar on ${handle}`, rule: 6 });
                 missing.push('avatar');
             }
 
             // Rule 7: No banner
             if (!account.hasBanner) {
-                items.push({ accountId, handle, priority: 'warning', message: `Set profile banner on ${handle}`, rule: 7 });
+                items.push({ accountId, handle, priority: profilePriority, message: `Set profile banner on ${handle}`, rule: 7 });
                 missing.push('banner');
             }
 
             // Rule 8: No bio
             if (!account.hasBio) {
-                items.push({ accountId, handle, priority: 'warning', message: `Write bio for ${handle}`, rule: 8 });
+                items.push({ accountId, handle, priority: profilePriority, message: `Write bio for ${handle}`, rule: 8 });
                 missing.push('bio');
             }
 
             // Rule 9: No display name
             if (!account.hasDisplayName) {
-                items.push({ accountId, handle, priority: 'warning', message: `Set display name on ${handle}`, rule: 9 });
+                items.push({ accountId, handle, priority: profilePriority, message: `Set display name on ${handle}`, rule: 9 });
                 missing.push('displayName');
             }
 
@@ -2624,9 +2740,13 @@ export function generateManagerActionItems(accounts) {
         }
 
         // Rule 12: No posts in 3+ days (active accounts only)
+        // Skip if account just entered ready/active phase (< 3 days ago)
         if ((phase === 'ready' || phase === 'active') && account.lastActiveDate) {
             const daysSinceActive = Math.floor((now - new Date(account.lastActiveDate).getTime()) / 86400000);
-            if (daysSinceActive >= 3) {
+            const daysInPhase = account.phaseChangedDate
+                ? Math.floor((now - new Date(account.phaseChangedDate).getTime()) / 86400000)
+                : null;
+            if (daysSinceActive >= 3 && (daysInPhase === null || daysInPhase >= 3)) {
                 items.push({
                     accountId,
                     handle,

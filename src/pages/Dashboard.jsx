@@ -87,16 +87,20 @@ export function Dashboard() {
     if (!metrics) return <div style={{ padding: '48px', textAlign: 'center', color: 'var(--text-secondary)' }}>Loading Analytics...</div>;
 
     const {
-        totalModels, activeAccounts, totalAccounts,
+        totalModels,
         agencyTotalViews, agencyAvgViews, agencyRemovalRate, leaderboard
     } = metrics;
 
-    const healthyAccounts = leaderboard.reduce((acc, m) => acc + (m.metrics.accountHealth?.activeCount || 0), 0);
-    const suspendedAccounts = leaderboard.reduce((acc, m) => acc + (m.metrics.accountHealth?.suspendedCount || 0), 0);
-
     // Filtered accounts (exclude warming when toggle is on)
-    const warmingIds = new Set((accountsAll || []).filter(a => (a.phase || 'ready') === 'warming').map(a => a.id));
+    const warmingIds = new Set((accountsAll || []).filter(a => {
+        const phase = (a.phase || '').toLowerCase();
+        return phase === 'warming' || (!phase && !a.lastSyncDate);
+    }).map(a => a.id));
     const filteredAccounts = hideWarming ? (accountsAll || []).filter(a => !warmingIds.has(a.id)) : (accountsAll || []);
+
+    // Account counts derived from live data + warming filter
+    const activeAccounts = filteredAccounts.filter(a => a.status === 'active').length;
+    const totalAccounts = filteredAccounts.length;
 
     // Health score breakdown
     const healthCounts = (() => {
@@ -200,78 +204,116 @@ export function Dashboard() {
         setSyncing(true);
         try {
             const { PerformanceSyncService, AccountSyncService, AccountLifecycleService, CloudSyncService } = await import('../services/growthEngine');
+
+            // Acquire lock to prevent background CloudSyncHandler from racing
+            const gotLock = await CloudSyncService.acquireLock();
+            if (!gotLock) {
+                alert('A sync is already in progress. Please wait and try again.');
+                setSyncing(false);
+                return;
+            }
+
             const parts = [];
 
-            // Step 1: Pull latest from cloud first (gets VA-submitted data)
-            const cloudEnabled = await CloudSyncService.isEnabled();
-            if (cloudEnabled) {
+            try {
+                // Step 1: Pull latest from cloud first (gets VA-submitted data)
+                const cloudEnabled = await CloudSyncService.isEnabled();
+                if (cloudEnabled) {
+                    try {
+                        await CloudSyncService.pullCloudToLocal();
+                        parts.push('Cloud pull: synced.');
+                    } catch (e) {
+                        parts.push('Cloud pull: failed (' + e.message + ')');
+                    }
+                }
+
+                // Step 2: Evaluate account lifecycle phases
                 try {
-                    await CloudSyncService.pullCloudToLocal();
-                    parts.push('Cloud pull: synced.');
+                    await AccountLifecycleService.evaluateAccountPhases();
+                    parts.push('Phases: evaluated.');
                 } catch (e) {
-                    parts.push('Cloud pull: failed (' + e.message + ')');
+                    parts.push('Phases: failed (' + e.message + ')');
                 }
-            }
 
-            // Step 2: Evaluate account lifecycle phases
-            try {
-                await AccountLifecycleService.evaluateAccountPhases();
-                parts.push('Phases: evaluated.');
-            } catch (e) {
-                parts.push('Phases: failed (' + e.message + ')');
-            }
-
-            // Step 3: Sync account health from Reddit
-            const accountResult = await AccountSyncService.syncAllAccounts();
-            if (accountResult.total === 0) {
-                parts.push('Accounts: none found.');
-            } else if (accountResult.failed > 0) {
-                parts.push(`Accounts: ${accountResult.succeeded}/${accountResult.total} synced (${accountResult.failed} failed).`);
-            } else {
-                parts.push(`Accounts: ${accountResult.succeeded}/${accountResult.total} synced.`);
-            }
-
-            // Step 3b: Re-evaluate phases with fresh data (catches warming→ready transitions)
-            try {
-                await AccountLifecycleService.evaluateAccountPhases();
-            } catch (e) { /* non-critical, already ran once above */ }
-
-            // Step 4: Sync Reddit post stats
-            const stats = await PerformanceSyncService.syncAllPendingPerformance();
-            if (stats.scanned === 0) {
-                // Show task breakdown so user understands WHY there's nothing to sync
-                const allTasks = await db.tasks.toArray();
-                const statusCounts = {};
-                allTasks.forEach(t => { statusCounts[t.status || 'unknown'] = (statusCounts[t.status || 'unknown'] || 0) + 1; });
-                const breakdown = Object.entries(statusCounts).map(([s, c]) => `${s}: ${c}`).join(', ');
-                parts.push(`Posts: 0 to check.`);
-                if (allTasks.length > 0) {
-                    parts.push(`Task breakdown: ${breakdown}`);
-                    parts.push('(Only "closed" or "failed" tasks get synced. VAs must post and paste the Reddit URL first.)');
-                } else {
-                    parts.push('No tasks exist yet. Generate a daily plan on the Tasks page first.');
+                // Step 3: Sync account health from Reddit
+                try {
+                    const accountResult = await AccountSyncService.syncAllAccounts();
+                    if (accountResult.total === 0 && !accountResult.skippedNoHandle) {
+                        parts.push('Accounts: none found.');
+                    } else if (accountResult.failed > 0) {
+                        const failedNames = accountResult.failedHandles?.length
+                            ? ` [${accountResult.failedHandles.join(', ')}]`
+                            : '';
+                        parts.push(`Accounts: ${accountResult.succeeded}/${accountResult.total} synced (${accountResult.failed} failed${failedNames}).`);
+                    } else {
+                        parts.push(`Accounts: ${accountResult.succeeded}/${accountResult.total} synced.`);
+                    }
+                    if (accountResult.skippedNoHandle > 0) {
+                        parts.push(`(${accountResult.skippedNoHandle} account${accountResult.skippedNoHandle > 1 ? 's' : ''} skipped — no handle set)`);
+                    }
+                } catch (e) {
+                    parts.push('Accounts: failed (' + e.message + ')');
                 }
-            } else {
-                parts.push(`Posts: ${stats.attempted} checked, ${stats.succeeded} succeeded, ${stats.failed} failed.`);
-                if (stats.skipped > 0) parts.push(`(${stats.skipped} skipped — no post ID)`);
+
+                // Step 3b: Re-evaluate phases with fresh data (catches warming→ready transitions)
+                try {
+                    await AccountLifecycleService.evaluateAccountPhases();
+                } catch (e) { /* non-critical, already ran once above */ }
+
+                // Step 4: Sync Reddit post stats
+                try {
+                    const stats = await PerformanceSyncService.syncAllPendingPerformance();
+                    if (stats.scanned === 0) {
+                        const allTasks = await db.tasks.toArray();
+                        const statusCounts = {};
+                        allTasks.forEach(t => { statusCounts[t.status || 'unknown'] = (statusCounts[t.status || 'unknown'] || 0) + 1; });
+                        const breakdown = Object.entries(statusCounts).map(([s, c]) => `${s}: ${c}`).join(', ');
+                        parts.push(`Posts: 0 to check.`);
+                        if (allTasks.length > 0) {
+                            parts.push(`Task breakdown: ${breakdown}`);
+                            parts.push('(Only "closed" or "failed" tasks get synced. VAs must post and paste the Reddit URL first.)');
+                        } else {
+                            parts.push('No tasks exist yet. Generate a daily plan on the Tasks page first.');
+                        }
+                    } else {
+                        parts.push(`Posts: ${stats.attempted} checked, ${stats.succeeded} succeeded, ${stats.failed} failed.`);
+                        if (stats.skipped > 0) parts.push(`(${stats.skipped} skipped — no post ID)`);
+                    }
+                } catch (e) {
+                    parts.push('Post sync: failed (' + e.message + ')');
+                }
+
+                // Step 5: Take daily snapshot
+                try {
+                    await SnapshotService.takeDailySnapshot();
+                    parts.push('Snapshot: saved.');
+                } catch (e) {
+                    parts.push('Snapshot: failed (' + e.message + ')');
+                }
+
+                // Step 6: Push updated data back to cloud
+                if (cloudEnabled) {
+                    try {
+                        await CloudSyncService.pushLocalToCloud();
+                        parts.push('Cloud push: synced.');
+                    } catch (e) {
+                        parts.push('Cloud push: failed (' + e.message + ')');
+                    }
+                }
+
+                alert(parts.join('\n'));
+            } finally {
+                CloudSyncService.releaseLock();
             }
 
-            // Step 4: Take daily snapshot
+            // Refresh dashboard metrics after sync (outside lock — not critical)
             try {
-                await SnapshotService.takeDailySnapshot();
-                parts.push('Snapshot: saved.');
+                const data = await AnalyticsEngine.getAgencyMetrics();
+                setMetrics(data);
             } catch (e) {
-                parts.push('Snapshot: failed (' + e.message + ')');
+                console.error('[Dashboard] Metrics refresh failed:', e);
             }
 
-            // Step 5: Push updated data back to cloud
-            if (cloudEnabled) {
-                try { await CloudSyncService.pushLocalToCloud(); } catch (e) { /* non-critical */ }
-            }
-
-            alert(parts.join('\n'));
-            const data = await AnalyticsEngine.getAgencyMetrics();
-            setMetrics(data);
             setSyncing(false);
         } catch (err) {
             alert("Sync error: " + err.message);
@@ -388,7 +430,7 @@ export function Dashboard() {
                     </div>
                 </div>
 
-                <ManagerActionItems accounts={accountsAll || []} />
+                <ManagerActionItems accounts={filteredAccounts} />
 
                 {/* 14-Day Trends */}
                 {snapshots.length >= 2 && (
