@@ -5,6 +5,8 @@ import { useLiveQuery } from 'dexie-react-hooks';
 export function Library() {
     const models = useLiveQuery(() => db.models.toArray());
     const assets = useLiveQuery(() => db.assets.toArray());
+    const tasks = useLiveQuery(() => db.tasks.toArray());
+    const performances = useLiveQuery(() => db.performances.toArray());
 
     const [selectedModelId, setSelectedModelId] = useState('');
 
@@ -217,6 +219,27 @@ export function Library() {
         }
     }
 
+    // Per-asset performance stats: assetId → { posts, totalViews, removed, avgViews }
+    const assetStats = React.useMemo(() => {
+        const map = new Map();
+        if (!tasks || !performances) return map;
+        const perfByTaskId = new Map(performances.map(p => [p.taskId, p]));
+        for (const t of tasks) {
+            if (!t.assetId) continue;
+            if (!map.has(t.assetId)) map.set(t.assetId, { posts: 0, totalViews: 0, removed: 0 });
+            const bucket = map.get(t.assetId);
+            const perf = perfByTaskId.get(t.id);
+            if (!perf) continue;
+            bucket.posts += 1;
+            bucket.totalViews += Number(perf.views24h || 0);
+            if (perf.removed) bucket.removed += 1;
+        }
+        for (const [id, stats] of map.entries()) {
+            stats.avgViews = stats.posts > 0 ? Math.round(stats.totalViews / stats.posts) : 0;
+        }
+        return map;
+    }, [tasks, performances]);
+
     // Filter assets for the current UI
     const filteredAssets = assets?.filter(a => {
         const matchesModel = selectedModelId === 'all' || a.modelId === Number(selectedModelId);
@@ -428,6 +451,17 @@ export function Library() {
                                                     />
                                                     • Used: {asset.timesUsed}
                                                 </div>
+                                                {(() => {
+                                                    const s = assetStats.get(asset.id);
+                                                    if (!s || s.posts === 0) return null;
+                                                    return (
+                                                        <div style={{ fontSize: '0.75rem', marginBottom: '8px', display: 'flex', gap: '8px', color: 'var(--text-secondary)' }}>
+                                                            <span title="Average views per post">👁 {s.avgViews.toLocaleString()} avg</span>
+                                                            <span title="Total posts with this asset">📝 {s.posts}</span>
+                                                            {s.removed > 0 && <span style={{ color: '#f44336' }} title="Removed posts">🗑 {s.removed}</span>}
+                                                        </div>
+                                                    );
+                                                })()}
 
                                                 {asset.assetType === 'video' && (
                                                     <div style={{ marginBottom: '12px' }}>
