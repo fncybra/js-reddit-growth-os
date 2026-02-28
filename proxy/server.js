@@ -265,6 +265,11 @@ app.get('/api/scrape/user/stats/:username', async (req, res) => {
         const response = await axiosWithRetry(url, {}, { proxyInfo });
 
         const data = response.data.data;
+        const sub = data.subreddit || {};
+        // Reddit stores bio in subreddit.description (full) and subreddit.public_description (short)
+        const bioFull = sub.description || '';
+        const bioShort = sub.public_description || '';
+        const bioText = bioFull || bioShort;
         res.json({
             name: data.name,
             totalKarma: data.total_karma,
@@ -276,11 +281,12 @@ app.get('/api/scrape/user/stats/:username', async (req, res) => {
             // Profile audit fields — from Reddit's about.json
             icon_img: data.icon_img || '',
             snoovatar_img: data.snoovatar_img || '',
-            banner_img: (data.subreddit && data.subreddit.banner_img) || '',
-            description: (data.subreddit && data.subreddit.public_description) || '',
-            display_name: (data.subreddit && data.subreddit.title) || '',
+            banner_img: sub.banner_img || '',
+            description: bioText,
+            display_name: sub.title || '',
             has_verified_email: data.has_verified_email || false,
-            has_profile_link: /https?:\/\//i.test((data.subreddit && data.subreddit.public_description) || '')
+            // Check for links in bio text OR Reddit's dedicated profile URL field
+            has_profile_link: /https?:\/\//i.test(bioText) || !!(sub.url && sub.url !== `/user/${cleanName}/` && /https?:\/\//i.test(sub.url))
         });
     } catch (error) {
         console.error("Account Stats Scrape Error:", error.message);
