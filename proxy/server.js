@@ -299,7 +299,22 @@ app.get('/api/scrape/user/stats/:username', async (req, res) => {
         const hasBanner = bannerImg.length > 0 || bannerBg.length > 0;
 
         // Profile link: check social_links array, bio text URLs, or subreddit url field
-        const socialLinks = Array.isArray(sub.social_links) ? sub.social_links : [];
+        // old.reddit.com doesn't include social_links — fetch from www.reddit.com if needed
+        let socialLinks = Array.isArray(sub.social_links) ? sub.social_links : [];
+        if (socialLinks.length === 0) {
+            try {
+                const newRedditRes = await axiosWithRetry(
+                    `https://www.reddit.com/user/${cleanName}/about.json`,
+                    { 'User-Agent': 'GrowthOS/1.0 (Profile Audit)' },
+                    { proxyInfo }
+                );
+                const newSub = newRedditRes.data?.data?.subreddit || {};
+                socialLinks = Array.isArray(newSub.social_links) ? newSub.social_links : [];
+                console.log(`[ProfileAudit] ${cleanName} www.reddit social_links:`, JSON.stringify(socialLinks));
+            } catch (e) {
+                console.log(`[ProfileAudit] ${cleanName} www.reddit fetch failed: ${e.message}`);
+            }
+        }
         const hasLink = socialLinks.length > 0
             || /https?:\/\//i.test(bioText)
             || !!(sub.url && sub.url !== `/user/${cleanName}/` && /https?:\/\//i.test(sub.url));

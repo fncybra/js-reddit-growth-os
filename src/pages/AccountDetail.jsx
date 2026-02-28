@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../db/db';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, ArrowUp, User, CheckCircle, XCircle, AlertTriangle, ExternalLink, Heart, ShieldCheck, ClipboardCheck } from 'lucide-react';
+import { ArrowLeft, ArrowUp, User, CheckCircle, XCircle, AlertTriangle, ExternalLink, Heart, ShieldCheck, ClipboardCheck, RefreshCw } from 'lucide-react';
 import { AnalyticsEngine, AccountSyncService, CloudSyncService } from '../services/growthEngine';
 
 export function AccountDetail() {
@@ -10,6 +10,7 @@ export function AccountDetail() {
     const accountId = Number(id);
     const [stats, setStats] = useState(null);
     const [checkingShadow, setCheckingShadow] = useState(false);
+    const [syncingAccount, setSyncingAccount] = useState(false);
 
     const account = useLiveQuery(() => db.accounts.get(accountId), [accountId]);
     const model = useLiveQuery(
@@ -206,9 +207,26 @@ export function AccountDetail() {
                                     <span style={{ fontSize: '1.05rem', fontWeight: 600 }}>Profile Audit</span>
                                     <span style={{ fontSize: '1.3rem', fontWeight: 700, color: pColor }}>{profileScore}%</span>
                                 </div>
-                                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                                    {account.lastProfileAudit ? `Last audit: ${new Date(account.lastProfileAudit).toLocaleDateString()}` : 'Not audited yet'}
-                                </span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                                        {account.lastProfileAudit ? `Last audit: ${new Date(account.lastProfileAudit).toLocaleDateString()}` : 'Not audited yet'}
+                                    </span>
+                                    <button
+                                        className="btn btn-outline"
+                                        disabled={syncingAccount}
+                                        onClick={async () => {
+                                            setSyncingAccount(true);
+                                            try {
+                                                await AccountSyncService.syncAccountHealth(accountId);
+                                            } catch (e) { console.error('Sync failed:', e); }
+                                            setSyncingAccount(false);
+                                        }}
+                                        style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+                                    >
+                                        <RefreshCw size={12} style={{ marginRight: '4px' }} className={syncingAccount ? 'spin' : ''} />
+                                        {syncingAccount ? 'Syncing...' : 'Sync'}
+                                    </button>
+                                </div>
                             </div>
                             <div style={{ width: '100%', height: '6px', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: '3px', overflow: 'hidden', marginBottom: '14px' }}>
                                 <div style={{ width: `${profileScore}%`, height: '100%', backgroundColor: pColor, borderRadius: '3px', transition: 'width 0.5s ease' }} />
