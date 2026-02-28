@@ -21,3 +21,9 @@ export async function getSupabaseClient() {
     return supabaseClientInstance;
 }
 
+// Call this after changing Supabase URL/key in Settings so the next
+// getSupabaseClient() creates a fresh client with the new credentials.
+export function resetSupabaseClient() {
+    supabaseClientInstance = null;
+}
+

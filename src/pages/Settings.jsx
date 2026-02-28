@@ -75,6 +75,9 @@ export function Settings() {
                 await SettingsService.updateSetting(key, finalValue);
             }
         }
+        // Reset cached Supabase client so new credentials take effect immediately
+        const { resetSupabaseClient } = await import('../db/supabase');
+        resetSupabaseClient();
         alert('Settings saved successfully.');
     }
 
