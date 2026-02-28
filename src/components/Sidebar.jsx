@@ -14,6 +14,7 @@ import {
   CloudOff,
   BookOpen,
   Repeat,
+  Link2,
 } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
@@ -28,6 +29,7 @@ const navItems = [
   { path: '/library', label: 'Content Library', icon: ImageIcon },
   { path: '/repurpose', label: 'Repurpose Ready', icon: Repeat },
   { path: '/tasks', label: 'Post Tasks', icon: CheckSquare },
+  { path: '/links', label: 'Link Tracker', icon: Link2 },
   { path: '/sop', label: 'Training SOP', icon: BookOpen },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
