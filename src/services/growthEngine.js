@@ -1,4 +1,5 @@
 import { db } from '../db/db.js';
+import { generateId } from '../db/generateId.js';
 import { subDays, isAfter, startOfDay, differenceInDays } from 'date-fns';
 
 const fetchWithTimeout = async (url, options = {}, timeoutMs = 5000) => {
@@ -83,7 +84,7 @@ export const SettingsService = {
         if (existing) {
             await db.settings.update(existing.id, { value });
         } else {
-            await db.settings.add({ key, value });
+            await db.settings.add({ id: generateId(), key, value });
         }
     },
     async getProxyUrl() {
@@ -164,7 +165,7 @@ export const TitleGeneratorService = {
 
             // Call OpenRouter if the key is available
             const settings = await SettingsService.getSettings();
-            const includeVoiceProfile = Number(settings.useVoiceProfile || 0) === 1;
+            const includeVoiceProfile = Number(settings.useVoiceProfile ?? 1) === 1;
             if (settings.openRouterApiKey) {
                 try {
                     // Randomizer DNA - prevents the LLM from using the same sentence structures repeatedly
@@ -192,12 +193,8 @@ Inputs for this task:
 - Subreddit Rules & Formatting Requirements: 
 ${rulesSummary || 'No specific formatting rules found.'}
 ${requiredFlair ? `- Required Flair/Tag: You MUST include [${requiredFlair}] at the start or inside your title.` : ''}
-- Asset context: single ${assetType} post (not a carousel). Never mention swipe/slides/first pic/second pic/gallery/carousel/before-after.
+- Asset context: single ${assetType} post (not a carousel/comparison). BANNED words: swipe, slides, first pic, second pic, gallery, carousel, before and after, vs, versus, comparison, left or right, "1 2 or 3", any numbered choices. This is ONE ${assetType} only — never imply multiple images exist.
 ${angleTag ? `- Visual angle/theme hint for this asset: ${angleTag}` : ''}
-${includeVoiceProfile && modelVoiceProfile ? `- Model Voice Profile (must match): ${modelVoiceProfile}` : ''}
-${includeVoiceProfile && accountVoiceOverride ? `- Account Voice Override (must match): ${accountVoiceOverride}` : ''}
-
-If voice profile includes identity anchors (age/hair/state/niche keywords), keep wording aligned to those anchors and never contradict them.
 
 - Top 50 Viral Titles from this exact subreddit (Your Tone DNA):
 ${JSON.stringify(topTitles)}
@@ -236,6 +233,24 @@ Generate exactly one title that:
 STRUCTURAL RANDOMIZER FOR THIS ENTIRE TASK:
 You MUST adopt this specific style for this exact title: "${randomAngle}"
 
+${includeVoiceProfile && modelVoiceProfile ? `MANDATORY PERSONA ENFORCEMENT (DO NOT SKIP):
+You are writing AS this specific person. Your title MUST sound like it was written by someone with this exact identity:
+${modelVoiceProfile}
+${accountVoiceOverride ? `Account-specific voice override (takes priority): ${accountVoiceOverride}` : ''}
+CRITICAL — "Age" and "Pregnancy weeks" (or "Current state") are COMPLETELY DIFFERENT fields with DIFFERENT numbers. "Age: 28" or "Age (years old): 28" means the person is 28 YEARS OLD — this is NOT a pregnancy week number. "Pregnancy weeks: 18 weeks" or "Current state: 18 weeks" means she is 18 WEEKS pregnant. NEVER mix these two numbers. NEVER use the Age number as weeks. The pregnancy week count is ONLY from the "Pregnancy weeks" or "Current state" field.
+
+Rules:
+- If the persona says "MILF" or gives an age like 30+, the title MUST reflect a mature woman's perspective (e.g. "mommy", "older", references to experience/age)
+- If the persona gives an age, and you mention age in the title, use EXACTLY that age. Never invent a different age.
+- If the persona says "pregnant", the title MUST reference pregnancy, bump, belly, expecting, etc.
+- If the persona's "Pregnancy weeks" or "Current state" mentions a specific number (e.g. "18 weeks"), you MUST use EXACTLY that number if you mention weeks in the title. NEVER invent or change the week number. The week number comes ONLY from "Pregnancy weeks" / "Current state", NOT from "Age". If uncertain, omit weeks entirely rather than guessing.
+- If the persona says "bratty" tone, write with attitude and sass
+- If the persona says "sweet" tone, write with warmth and softness
+- If the persona says "dominant" tone, write with commands and control
+- If identity anchors mention hair color, body type, ethnicity — weave them naturally into the title when possible
+- The persona identity OVERRIDES the structural randomizer above if they conflict. The randomizer controls HOW you write; the persona controls WHO is speaking.
+- NEVER contradict the persona (e.g. don't write "barely legal" for a MILF persona, don't write "tiny" for a curvy persona, don't write "32 weeks" if the persona says "18 weeks", don't use the Age number as a week number)
+` : ''}
 FINAL COMPLIANCE CHECK BEFORE OUTPUTTING:
 - If there are rules above stipulating a required tag or word, is it in your title? If not, rewrite it so it is.
 - Did you add an [f] or (f) tag without being told to? Remove it.
@@ -458,6 +473,9 @@ export const TitleGuardService = {
             /\bsubscribe\b/i,
             /\bapi\s*error\b/i,
             /\berror\s*\d{2,4}\b/i,
+            /\bvs\.?\b/i,
+            /\bversus\b/i,
+            /\d\s*,\s*\d\s+(or|and)\s+\d/i,
         ];
 
         if (bannedPatterns.some(rx => rx.test(lower))) return true;
@@ -473,12 +491,27 @@ export const TitleGuardService = {
         const lower = String(candidate || '').toLowerCase();
         if (!lower) return true;
 
+        // Multi-image / carousel language — always reject for single-asset posts
         if (/\bswipe\b|\bslides?\b|\bcarousel\b|\bfirst\s+pic\b|\bsecond\s+pic\b|\bbefore\s*(and|&)\s*after\b/.test(lower)) {
             return true;
         }
 
+        // Comparison / "vs" language implies 2+ images (e.g. "19 vs 29 weeks", "1, 2 or 3?")
+        if (/\bvs\.?\b|\bversus\b|\bcompare\b|\bcomparison\b|\bwhich\s+one\b|\bleft\s+or\s+right\b|\bpic\s*\d\b/.test(lower)) {
+            return true;
+        }
+        // Numbered choices like "1, 2 or 3?" or "option 1 or 2" — implies multiple images
+        if (/\b\d\s*,\s*\d\s+(or|and)\s+\d\b/.test(lower)) {
+            return true;
+        }
+
         const assetType = String(context?.assetType || 'image').toLowerCase();
+        // Image post shouldn't mention video language
         if (assetType === 'image' && /\bvideo\b|\bclip\b|\bwatch\b/.test(lower)) {
+            return true;
+        }
+        // Video post shouldn't mention photo-only language
+        if (assetType === 'video' && /\bpic\b|\bphoto\b|\bselfie\b|\bsnapshot\b/.test(lower)) {
             return true;
         }
 
@@ -556,7 +589,50 @@ export const SubredditLifecycleService = {
                 }
             }
 
+            // Learn peak posting hour from best-performing posts
+            try {
+                const closedTasks = matchedTasks.filter(t => t.postedAt);
+                if (closedTasks.length >= 3) {
+                    const taskPerf = [];
+                    for (const t of closedTasks) {
+                        const perf = performances.find(p => p.taskId === t.id);
+                        if (perf && !perf.removed) {
+                            taskPerf.push({ hour: new Date(t.postedAt).getUTCHours(), views: perf.views24h || 0 });
+                        }
+                    }
+                    if (taskPerf.length >= 3) {
+                        // Find the hour with highest average views
+                        const hourBuckets = {};
+                        for (const tp of taskPerf) {
+                            if (!hourBuckets[tp.hour]) hourBuckets[tp.hour] = [];
+                            hourBuckets[tp.hour].push(tp.views);
+                        }
+                        let bestHour = null, bestAvg = 0;
+                        for (const [hour, views] of Object.entries(hourBuckets)) {
+                            const avg = views.reduce((a, b) => a + b, 0) / views.length;
+                            if (avg > bestAvg) { bestAvg = avg; bestHour = Number(hour); }
+                        }
+                        if (bestHour != null) updateObj.peakPostHour = bestHour;
+                    }
+                }
+            } catch (e) { console.warn('Peak hour learning failed:', e.message); }
+
             await db.subreddits.update(sub.id, updateObj);
+
+            // Cross-model sharing: if rejected with high removal, warn other models
+            if (updateObj.status === 'rejected' && removalPct >= 40) {
+                try {
+                    const sameName = await db.subreddits.where('name').equals(sub.name).toArray();
+                    for (const otherSub of sameName) {
+                        if (otherSub.id === sub.id) continue; // skip self
+                        if (otherSub.status === 'rejected') continue; // already rejected
+                        // Flag the sub with a cross-model warning
+                        await db.subreddits.update(otherSub.id, {
+                            crossModelWarning: `Rejected for another model (${Math.round(removalPct)}% removal across ${totalTests} tests)`
+                        });
+                    }
+                } catch (e) { console.warn('Cross-model warning failed:', e.message); }
+            }
         }
     }
 };
@@ -686,7 +762,7 @@ export const VerificationService = {
         if (existing) {
             await db.verifications.update(existing.id, { verified: 1, verifiedDate: new Date().toISOString() });
         } else {
-            await db.verifications.add({ accountId, subredditId, verified: 1, verifiedDate: new Date().toISOString() });
+            await db.verifications.add({ id: generateId(), accountId, subredditId, verified: 1, verifiedDate: new Date().toISOString() });
         }
         try { await CloudSyncService.autoPush(['verifications']); } catch (e) { /* non-critical */ }
     },
@@ -713,8 +789,9 @@ export const VerificationService = {
 
 export const DailyPlanGenerator = {
     // Automatically generates structured daily posting plans across multiple accounts
-    async generateDailyPlan(modelId, targetDate = new Date()) {
-        console.log('DailyPlanGenerator: Starting generation for model', modelId);
+    async generateDailyPlan(modelId, targetDate = new Date(), options = {}) {
+        const { totalTarget } = options;
+        console.log('DailyPlanGenerator: Starting generation for model', modelId, totalTarget != null ? `(target: ${totalTarget} total posts)` : '');
 
         const settings = await SettingsService.getSettings();
         // Evaluate account lifecycle phases before selecting accounts
@@ -822,6 +899,7 @@ export const DailyPlanGenerator = {
                         }
                     }
                     if (assetsToAdd.length > 0) {
+                        assetsToAdd.forEach(a => { a.id = generateId(); });
                         await db.assets.bulkAdd(assetsToAdd);
                         console.log(`DailyPlanGenerator: Auto - synced ${assetsToAdd.length} new files from Drive`);
                     }
@@ -856,17 +934,45 @@ export const DailyPlanGenerator = {
         // 2. Spread tasks evenly across accounts via round-robin
         // Calculate total available sub slots and fair share per account
         const totalAvailableSubs = provenSubs.length + testingSubs.length + fallbackSubs.length;
+        const totalExistingToday = allModelTasksToday.filter(t => t.taskType === 'post' || !t.taskType).length;
+
+        // When totalTarget is provided, distribute the remaining target across accounts
+        // instead of using per-account dailyCap
+        let accountTargets = null;
+        if (totalTarget != null && activeAccounts.length > 0) {
+            const totalToGenerate = Math.max(0, totalTarget - totalExistingToday);
+            if (totalToGenerate <= 0) {
+                console.log('DailyPlanGenerator: Already at or above target, nothing to generate');
+                return await db.tasks.where('modelId').equals(modelId).filter(t => t.date === todayStr).toArray();
+            }
+            // Distribute evenly across accounts, with remainder going to first accounts
+            const perAccount = Math.floor(totalToGenerate / activeAccounts.length);
+            const remainder = totalToGenerate % activeAccounts.length;
+            accountTargets = new Map();
+            activeAccounts.forEach((acc, i) => {
+                const accountExisting = allModelTasksToday.filter(t => t.accountId === acc.id).length;
+                accountTargets.set(acc.id, perAccount + (i < remainder ? 1 : 0) + accountExisting);
+            });
+        }
+
         const fairSharePerAccount = activeAccounts.length > 0
             ? Math.max(1, Math.floor(totalAvailableSubs / activeAccounts.length))
             : 0;
 
         for (const account of activeAccounts) {
             const accountTasksToday = allModelTasksToday.filter(t => t.accountId === account.id);
-            const rawQuota = account.dailyCap || settings.dailyPostCap;
-            // Cap at fair share to ensure even spread when subs are limited
-            const accountQuota = totalAvailableSubs < (rawQuota * activeAccounts.length)
-                ? Math.min(rawQuota, fairSharePerAccount)
-                : rawQuota;
+
+            let accountQuota;
+            if (accountTargets) {
+                // Use the distributed target for this account
+                accountQuota = accountTargets.get(account.id) || 0;
+            } else {
+                const rawQuota = account.dailyCap || settings.dailyPostCap;
+                // Cap at fair share to ensure even spread when subs are limited
+                accountQuota = totalAvailableSubs < (rawQuota * activeAccounts.length)
+                    ? Math.min(rawQuota, fairSharePerAccount)
+                    : rawQuota;
+            }
             const tasksToGenerate = accountQuota - accountTasksToday.length;
 
             if (tasksToGenerate <= 0) continue;
@@ -1027,6 +1133,27 @@ export const DailyPlanGenerator = {
                     }
                 }
 
+                // 4. Emergency Pass: IGNORE cooldown entirely rather than skip the subreddit
+                // Better to reuse an older asset than generate no task at all
+                if (!selectedAsset) {
+                    console.warn(`[DailyPlan] All assets on cooldown for r/${sub.name} — ignoring cooldown to avoid empty slot`);
+                    const emergencyOrder = [...shuffledAssets].sort((a, b) => {
+                        const aGen = (a.angleTag || 'general') === 'general';
+                        const bGen = (b.angleTag || 'general') === 'general';
+                        return (bGen ? 1 : 0) - (aGen ? 1 : 0);
+                    });
+                    for (const asset of emergencyOrder) {
+                        const timesUsedToday = usedAssetsInSession.get(asset.id) || 0;
+                        if (timesUsedToday >= 5) continue;
+                        selectedAsset = asset;
+                        break;
+                    }
+                }
+
+                if (!selectedAsset) {
+                    console.error(`[DailyPlan] SKIPPED r/${sub.name} — every asset hit 5 uses/day limit. Upload more content to Library!`);
+                }
+
                 if (selectedAsset) {
                     usedAssetsInSession.set(selectedAsset.id, (usedAssetsInSession.get(selectedAsset.id) || 0) + 1);
 
@@ -1164,32 +1291,10 @@ export const DailyPlanGenerator = {
             finalNewTasks.push(one);
         }
 
-        // Generate engagement tasks for active accounts that got posting tasks
-        const allSubsForEngagement = [...provenSubs, ...testingSubs, ...fallbackSubs];
-        const accountsGettingPosts = new Set(finalNewTasks.map(t => t.accountId));
-        const engagementTypes = ['comment', 'upvote'];
+        // Engagement (commenting/upvoting) is done manually on feed — no auto-generated engagement tasks.
+        // Only warming accounts get warmup tasks below since they can't post yet.
 
-        for (const accId of accountsGettingPosts) {
-            const shuffledSubs = [...allSubsForEngagement].sort(() => Math.random() - 0.5);
-            const engagementCount = Math.min(2 + Math.floor(Math.random() * 2), shuffledSubs.length); // 2-3 tasks
-            for (let i = 0; i < engagementCount; i++) {
-                const sub = shuffledSubs[i];
-                const type = engagementTypes[i % engagementTypes.length];
-                finalNewTasks.push({
-                    date: todayStr,
-                    modelId,
-                    accountId: accId,
-                    subredditId: sub.id,
-                    assetId: null,
-                    title: type === 'comment'
-                        ? `Engage: Comment on a top post in r/${sub.name}`
-                        : `Engage: Upvote & browse r/${sub.name}`,
-                    taskType: type,
-                    postingWindow: 'Anytime',
-                    status: 'generated'
-                });
-            }
-        }
+        const allSubsForEngagement = [...provenSubs, ...testingSubs, ...fallbackSubs];
 
         // Generate warmup-only tasks for warming accounts
         for (const warmAcc of warmingAccounts) {
@@ -1217,28 +1322,46 @@ export const DailyPlanGenerator = {
             }
         }
 
-        // Assign staggered scheduledTime per account (10-min gaps between posts from same account)
+        // ========== SMART POST TIMING ==========
+        // Schedule posts at each subreddit's peak hour instead of a fixed 9AM start.
+        // Falls back to NSFW defaults (20:00 UTC = evening US) if no data.
         const postInterval = Number(settings.postInterval || 10);
-        const accountTimeSlots = new Map();
-        // Start times staggered: first account at 9:00, second at 9:05, etc.
-        const baseHour = 9;
-        const accountList = [...new Set(finalNewTasks.map(t => t.accountId))];
-        accountList.forEach((accId, idx) => {
-            const offsetMinutes = idx * 5; // Offset each account's start by 5 min
-            accountTimeSlots.set(accId, baseHour * 60 + offsetMinutes);
-        });
+        const defaultPeakHour = 20; // 8PM UTC (evening US — peak NSFW window)
 
+        // Build lookup: subredditId → peakPostHour (0-23)
+        const allSubIds = [...new Set(finalNewTasks.map(t => t.subredditId).filter(Boolean))];
+        const subPeakMap = new Map();
+        for (const sid of allSubIds) {
+            const sub = await db.subreddits.get(sid);
+            subPeakMap.set(sid, sub?.peakPostHour != null ? sub.peakPostHour : defaultPeakHour);
+        }
+
+        // Sort tasks: posts by peak hour (earliest first), then engagement/warmup at end
+        const taskOrder = (t) => {
+            if (t.taskType !== 'post') return 2400; // engagement/warmup go last
+            return subPeakMap.get(t.subredditId) ?? defaultPeakHour;
+        };
+        finalNewTasks.sort((a, b) => taskOrder(a) - taskOrder(b));
+
+        // Stagger per account, starting from each task's subreddit peak hour
+        const accountTimeSlots = new Map();
         for (const task of finalNewTasks) {
-            const currentMinutes = accountTimeSlots.get(task.accountId) || baseHour * 60;
-            const hours = Math.floor(currentMinutes / 60);
-            const mins = currentMinutes % 60;
+            const peakHour = task.taskType === 'post'
+                ? (subPeakMap.get(task.subredditId) ?? defaultPeakHour)
+                : 9; // engagement/warmup start in morning
+            const peakMinutes = peakHour * 60;
+            const currentMinutes = accountTimeSlots.get(task.accountId);
+            // Use whichever is later: the peak hour or the account's next available slot
+            const startMinutes = currentMinutes != null ? Math.max(currentMinutes, peakMinutes) : peakMinutes;
+            const hours = Math.floor(startMinutes / 60) % 24;
+            const mins = startMinutes % 60;
             task.scheduledTime = `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
-            // Engagement/warmup tasks don't need strict stagger, but posts do
             const gap = task.taskType === 'post' ? postInterval : 5;
-            accountTimeSlots.set(task.accountId, currentMinutes + gap);
+            accountTimeSlots.set(task.accountId, startMinutes + gap);
         }
 
         if (finalNewTasks.length > 0) { // Finalize
+            finalNewTasks.forEach(t => { t.id = generateId(); });
             await db.tasks.bulkAdd(finalNewTasks);
             console.log(`DailyPlanGenerator: Generated ${finalNewTasks.length} tasks for model ${modelId}`);
 
@@ -1697,7 +1820,9 @@ export const CompetitorService = {
         const existing = await db.competitors.where('modelId').equals(modelId)
             .and(c => c.handle.toLowerCase() === cleanHandle.toLowerCase()).first();
         if (existing) return existing;
-        const id = await db.competitors.add({
+        const id = generateId();
+        await db.competitors.add({
+            id,
             modelId,
             handle: cleanHandle,
             addedDate: new Date().toISOString(),
@@ -1826,7 +1951,7 @@ export const SnapshotService = {
         if (existing) {
             await db.dailySnapshots.update(existing.id, snapshot);
         } else {
-            await db.dailySnapshots.add(snapshot);
+            await db.dailySnapshots.add({ id: generateId(), ...snapshot });
         }
         return snapshot;
     },
@@ -1846,6 +1971,41 @@ export const CloudSyncService = {
     async isEnabled() {
         const settings = await SettingsService.getSettings();
         return !!(settings.supabaseUrl && settings.supabaseAnonKey);
+    },
+
+    // Cache of known cloud columns per table (populated on first push)
+    _cloudColumns: {},
+
+    async _getCloudColumns(supabase, table) {
+        if (this._cloudColumns[table]) return this._cloudColumns[table];
+        try {
+            const { data, error } = await supabase.from(table).select('*').limit(1);
+            if (error) {
+                // Table might not exist — return null so caller can skip
+                if (/schema cache|relation.*does not exist|not found/i.test(error.message || '')) return null;
+                return null;
+            }
+            if (data && data.length > 0) {
+                this._cloudColumns[table] = new Set(Object.keys(data[0]));
+            } else {
+                // Empty table — try inserting a dummy to discover columns from error, or just allow all
+                this._cloudColumns[table] = null; // null = don't filter
+            }
+        } catch (e) {
+            this._cloudColumns[table] = null;
+        }
+        return this._cloudColumns[table];
+    },
+
+    _stripUnknownColumns(rows, knownColumns) {
+        if (!knownColumns) return rows; // null = allow all (empty table)
+        return rows.map(row => {
+            const clean = {};
+            for (const key of Object.keys(row)) {
+                if (knownColumns.has(key)) clean[key] = row[key];
+            }
+            return clean;
+        });
     },
 
     async acquireLock() {
@@ -1907,6 +2067,25 @@ export const CloudSyncService = {
 
             if (cleanData.length === 0) continue;
 
+            // For settings: match local rows to cloud by `key` to avoid unique constraint violation
+            if (table === 'settings') {
+                try {
+                    const { data: cloudSettings } = await supabase.from('settings').select('id, key');
+                    if (cloudSettings && cloudSettings.length > 0) {
+                        const cloudByKey = new Map(cloudSettings.map(s => [s.key, s.id]));
+                        cleanData = cleanData.map(row => {
+                            const cloudId = cloudByKey.get(row.key);
+                            if (cloudId !== undefined && cloudId !== row.id) {
+                                return { ...row, id: cloudId };
+                            }
+                            return row;
+                        });
+                    }
+                } catch (e) {
+                    console.warn('[CloudSync] Could not pre-fetch cloud settings for merge:', e.message);
+                }
+            }
+
             // For tasks: fetch cloud versions first to avoid downgrading status
             if (table === 'tasks') {
                 try {
@@ -1931,28 +2110,25 @@ export const CloudSyncService = {
                 }
             }
 
+            // Discover valid cloud columns for this table (once, cached)
+            const cloudCols = await this._getCloudColumns(supabase, table);
+            if (cloudCols === null && !this._cloudColumns[table]) {
+                // Null with no cache entry means table doesn't exist in cloud
+                // If we got null but have a cache entry, it means empty table (allow all)
+                if (!(table in this._cloudColumns)) {
+                    console.warn(`[CloudSync] Table "${table}" not in cloud schema, skipping push.`);
+                    continue;
+                }
+            }
+
+            // Strip columns that don't exist in cloud schema (prevents 400 errors)
+            cleanData = this._stripUnknownColumns(cleanData, cloudCols);
+
             // Batch upsert in chunks of 500 to avoid Supabase payload limits
             const BATCH_SIZE = 500;
             for (let i = 0; i < cleanData.length; i += BATCH_SIZE) {
                 const batch = cleanData.slice(i, i + BATCH_SIZE);
-                let payload = batch;
-                let { error } = await supabase.from(table).upsert(payload);
-                let guard = 0;
-                while (error && /Could not find the '([^']+)' column/i.test(String(error.message || '')) && guard < 10) {
-                    const match = String(error.message || '').match(/Could not find the '([^']+)' column/i);
-                    const missingCol = match?.[1];
-                    if (!missingCol) break;
-                    payload = payload.map(row => {
-                        const { [missingCol]: _drop, ...rest } = row;
-                        return rest;
-                    });
-                    const retry = await supabase.from(table).upsert(payload);
-                    error = retry.error;
-                    guard += 1;
-                    if (!error) {
-                        console.warn(`[CloudSync] ${table}.${missingCol} missing in cloud schema, pushed without column`);
-                    }
-                }
+                let { error } = await supabase.from(table).upsert(batch);
                 if (error) {
                     // Table doesn't exist in Supabase yet — skip it, don't crash
                     if (/schema cache|relation.*does not exist|not found/i.test(error.message || '')) {
@@ -1963,6 +2139,17 @@ export const CloudSyncService = {
                     if (/violates foreign key|foreign key constraint|insert or update on table/i.test(error.message || '')) {
                         console.warn(`[CloudSync] FK violation in ${table}, skipping batch: ${error.message}`);
                         continue;
+                    }
+                    // Unknown column slipped through — try stripping it (fallback)
+                    if (/Could not find the '([^']+)' column/i.test(String(error.message || ''))) {
+                        const match = String(error.message).match(/Could not find the '([^']+)' column/i);
+                        if (match?.[1]) {
+                            const col = match[1];
+                            console.warn(`[CloudSync] ${table}.${col} missing in cloud, stripping and retrying`);
+                            const stripped = batch.map(row => { const { [col]: _, ...rest } = row; return rest; });
+                            const retry = await supabase.from(table).upsert(stripped);
+                            if (!retry.error) continue;
+                        }
                     }
                     console.error(`Sync Error(${table}): `, error.message);
                     throw new Error(`Failed to push to ${table}: ${error.message}`);
@@ -2087,12 +2274,30 @@ export const CloudSyncService = {
                 ];
                 cloudData = cloudData.map(remote => {
                     const local = localById.get(remote.id);
-                    if (!local) return remote;
                     const merged = { ...remote };
-                    for (const field of profileFields) {
-                        if ((merged[field] === undefined || merged[field] === null) && local[field] !== undefined && local[field] !== null) {
-                            merged[field] = local[field];
+                    // Preserve local fields if cloud doesn't have them
+                    if (local) {
+                        for (const field of profileFields) {
+                            if ((merged[field] === undefined || merged[field] === null) && local[field] !== undefined && local[field] !== null) {
+                                merged[field] = local[field];
+                            }
                         }
+                    }
+                    // Default phase for accounts that have never had one set (fresh from cloud)
+                    if (!merged.phase) {
+                        const now = Date.now();
+                        const ageDays = merged.createdUtc ? Math.floor((now - Number(merged.createdUtc) * 1000) / 86400000) : null;
+                        const karma = Number(merged.totalKarma || 0);
+                        if (merged.isSuspended) {
+                            merged.phase = 'burned';
+                        } else if (ageDays !== null && ageDays >= 7 && karma >= 100) {
+                            merged.phase = 'active';
+                        } else if (ageDays !== null && ageDays >= 7) {
+                            merged.phase = 'ready';
+                        } else {
+                            merged.phase = 'warming';
+                        }
+                        merged.phaseChangedDate = merged.phaseChangedDate || new Date().toISOString();
                     }
                     return merged;
                 });
@@ -2194,6 +2399,7 @@ export const DriveSyncService = {
             const exists = await db.assets.where('driveFileId').equals(file.id).first();
             if (!exists) {
                 await db.assets.add({
+                    id: generateId(),
                     modelId: Number(model.id),
                     assetType: file.mimeType.startsWith('image/') ? 'image' : 'video',
                     angleTag: file.mappedTag || 'general',
@@ -2249,6 +2455,13 @@ export const AccountLifecycleService = {
                         phase = 'burned';
                     } else if (ageDays >= minWarmupDays && karma >= minWarmupKarma) {
                         phase = 'ready';
+                        // Stagger rest rotation with existing sibling accounts
+                        const siblings = accounts.filter(a =>
+                            a.modelId === acc.modelId && a.id !== acc.id &&
+                            (a.phase === 'active' || a.phase === 'ready')
+                        );
+                        updates.consecutiveActiveDays = siblings.length % maxConsecutiveActiveDays;
+                        updates.restVariance = Math.floor(Math.random() * 3) - 1;
                     } else {
                         phase = 'warming';
                         updates.warmupStartDate = new Date(acc.createdUtc * 1000).toISOString();
@@ -2267,7 +2480,7 @@ export const AccountLifecycleService = {
                     newPhase = 'burned';
                 }
             }
-            // warming → ready: old enough + enough karma
+            // warming → ready: old enough + enough karma (with staggered start)
             else if (phase === 'warming') {
                 const warmupStart = acc.warmupStartDate ? new Date(acc.warmupStartDate) : (acc.createdUtc ? new Date(acc.createdUtc * 1000) : null);
                 const accountAge = warmupStart ? differenceInDays(today, startOfDay(warmupStart)) : 999;
@@ -2275,17 +2488,33 @@ export const AccountLifecycleService = {
 
                 if (accountAge >= minWarmupDays && karma >= minWarmupKarma) {
                     newPhase = 'ready';
+                    // Stagger: count how many sibling accounts are already active/ready
+                    // and offset this account's consecutiveActiveDays so rest periods rotate
+                    const siblings = accounts.filter(a =>
+                        a.modelId === acc.modelId && a.id !== acc.id &&
+                        (a.phase === 'active' || a.phase === 'ready')
+                    );
+                    const staggerOffset = siblings.length % maxConsecutiveActiveDays;
+                    updates.consecutiveActiveDays = staggerOffset;
+                    updates.restVariance = Math.floor(Math.random() * 3) - 1;
                 }
             }
-            // active → resting: too many consecutive active days
+            // active → resting: too many consecutive active days (with ±1 day randomness)
             else if (phase === 'active') {
                 const consecutive = acc.consecutiveActiveDays || 0;
-                if (consecutive >= maxConsecutiveActiveDays) {
+                // Add ±1 day variance per cycle so rest patterns look human
+                const variance = (acc.restVariance != null) ? acc.restVariance : 0;
+                if (consecutive >= maxConsecutiveActiveDays + variance) {
                     newPhase = 'resting';
+                    // Randomize rest duration too: base ±1 day (min 1)
+                    const restJitter = Math.random() < 0.5 ? -1 : (Math.random() < 0.5 ? 0 : 1);
+                    const actualRestDays = Math.max(1, restDurationDays + restJitter);
                     const restUntil = new Date(today);
-                    restUntil.setDate(restUntil.getDate() + restDurationDays);
+                    restUntil.setDate(restUntil.getDate() + actualRestDays);
                     updates.restUntilDate = restUntil.toISOString();
                     updates.consecutiveActiveDays = 0;
+                    // Set new random variance for next active cycle (-1, 0, or +1)
+                    updates.restVariance = Math.floor(Math.random() * 3) - 1;
                 }
             }
             // resting → ready: rest period over
@@ -2496,13 +2725,13 @@ export const PerformanceSyncService = {
                 await db.performances.update(performance.id, updateObj);
             } else {
                 await db.performances.add({
+                    id: generateId(),
                     taskId,
                     ...updateObj
                 });
             }
 
             await SubredditLifecycleService.evaluateSubreddits(task.modelId);
-            await CloudSyncService.autoPush();
 
             return { ok: true, data };
         } catch (err) {
@@ -2690,8 +2919,8 @@ export function generateManagerActionItems(accounts) {
         if (isReadyOrActive || (phase === 'warming' && hasBeenSynced)) {
             const missing = [];
 
-            // Rule 5: No profile link
-            if (!account.hasProfileLink) {
+            // Rule 5: No profile link (Reddit blocks this before day 7)
+            if (!account.hasProfileLink && ageDays !== null && ageDays >= 7) {
                 items.push({ accountId, handle, priority: profilePriority, message: `Add deep link to ${handle}'s bio`, rule: 5 });
                 missing.push('profileLink');
             }

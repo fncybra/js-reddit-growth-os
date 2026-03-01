@@ -8,7 +8,6 @@ import {
   Image as ImageIcon,
   CheckSquare,
   Settings,
-  Activity,
   Telescope,
   Cloud,
   CloudOff,
@@ -39,8 +38,11 @@ export function Sidebar() {
     <div className="sidebar">
       <div className="sidebar-header">
         <div className="sidebar-logo">
-          <Activity size={24} color="var(--accent-primary)" />
-          JS Growth OS
+          <svg viewBox="0 0 20 20" width="28" height="28" style={{ flexShrink: 0 }}>
+            <circle cx="10" cy="10" r="10" fill="#FF4500" />
+            <path d="M16.67 10a1.46 1.46 0 0 0-2.47-1 7.12 7.12 0 0 0-3.85-1.23l.65-3.08 2.14.45a1.04 1.04 0 1 0 .12-.61l-2.39-.52a.35.35 0 0 0-.41.27l-.73 3.45a7.14 7.14 0 0 0-3.92 1.23 1.46 1.46 0 1 0-1.6 2.39 2.87 2.87 0 0 0 0 .44c0 2.24 2.61 4.06 5.83 4.06s5.83-1.82 5.83-4.06a2.87 2.87 0 0 0 0-.44 1.46 1.46 0 0 0 .8-1.35zM7.27 11.17a1.04 1.04 0 1 1 1.04 1.04 1.04 1.04 0 0 1-1.04-1.04zm5.92 2.77a3.58 3.58 0 0 1-2.25.68 3.58 3.58 0 0 1-2.25-.68.35.35 0 1 1 .5-.49 2.9 2.9 0 0 0 1.75.52 2.9 2.9 0 0 0 1.75-.52.35.35 0 1 1 .5.49zm-.18-1.73a1.04 1.04 0 1 1 1.04-1.04 1.04 1.04 0 0 1-1.04 1.04z" fill="#FFF" />
+          </svg>
+          <span>Reddit Growth OS</span>
         </div>
       </div>
       <nav className="sidebar-nav">

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { db } from '../db/db';
+import { generateId } from '../db/generateId';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { AccountSyncService, AnalyticsEngine } from '../services/growthEngine';
 import { Smartphone, RefreshCw, AlertTriangle, Trash2, ShieldCheck } from 'lucide-react';
@@ -42,6 +43,22 @@ export function Accounts() {
     const models = useLiveQuery(() => db.models.toArray());
     const accounts = useLiveQuery(() => db.accounts.toArray());
 
+    // Engagement ratio: count post vs engagement/warmup tasks per account (last 30 days)
+    const engagementRatios = useLiveQuery(async () => {
+        if (!accounts) return {};
+        const cutoff = new Date(Date.now() - 30 * 86400000).toISOString();
+        const recentTasks = await db.tasks.filter(t => t.status === 'closed' && t.date >= cutoff).toArray();
+        const ratios = {};
+        for (const acc of accounts) {
+            const accTasks = recentTasks.filter(t => t.accountId === acc.id);
+            const posts = accTasks.filter(t => t.taskType === 'post' || (!t.taskType && !/^(Engage|Warmup):/i.test(t.title))).length;
+            const engagement = accTasks.filter(t => (t.taskType && t.taskType !== 'post') || /^(Engage|Warmup):/i.test(t.title)).length;
+            const total = posts + engagement;
+            ratios[acc.id] = { posts, engagement, total, ratio: total > 0 ? (engagement / total * 100) : 0 };
+        }
+        return ratios;
+    }, [accounts]);
+
     const [selectedModelId, setSelectedModelId] = useState('');
     const [phaseFilter, setPhaseFilter] = useState('all');
 
@@ -60,8 +77,44 @@ export function Accounts() {
 
     async function handleRefreshAll() {
         setSyncing(true);
-        await AccountSyncService.syncAllAccounts();
+        try {
+            const result = await AccountSyncService.syncAllAccounts();
+            const msg = result.failed > 0
+                ? `Synced ${result.succeeded}/${result.total} accounts. Failed: ${(result.failedHandles || []).join(', ') || result.failed}`
+                : `All ${result.succeeded} accounts synced successfully.`;
+            alert(msg);
+        } catch (e) {
+            alert('Sync failed: ' + e.message);
+        }
         setSyncing(false);
+    }
+
+    async function handleSyncSingleAccount(acc) {
+        const handle = acc.handle || `Account #${acc.id}`;
+        try {
+            const { SettingsService } = await import('../services/growthEngine');
+            const proxyUrl = await SettingsService.getProxyUrl();
+            const cleanHandle = handle.replace(/^(u\/|\/u\/)/i, '').trim();
+            const url = `${proxyUrl}/api/scrape/user/stats/${cleanHandle}`;
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
+            const res = await fetch(url, { signal: controller.signal });
+            clearTimeout(timeoutId);
+
+            if (!res.ok) {
+                const body = await res.text().catch(() => '');
+                alert(`SYNC FAIL for ${handle}\nHTTP ${res.status}: ${body || res.statusText}\nURL: ${url}`);
+                return;
+            }
+
+            const data = await res.json();
+            // Write to DB directly
+            await AccountSyncService.syncAccountHealth(acc.id);
+            alert(`SYNC OK for ${handle}\nKarma: ${data.totalKarma}, Suspended: ${data.isSuspended}\nAvatar: ${data.has_custom_avatar}, Banner: ${data.has_banner}\nBio: ${!!data.description}, Link: ${data.has_profile_link}\nCreated: ${data.created ? new Date(data.created * 1000).toLocaleDateString() : 'N/A'}`);
+        } catch (err) {
+            alert(`SYNC ERROR for ${handle}\n${err.name}: ${err.message}\n\nThis could mean:\n- Proxy is down or unreachable\n- Request timed out (10s)\n- Network/CORS issue`);
+        }
     }
 
     async function handleCheckAllShadowBans() {
@@ -121,7 +174,9 @@ export function Accounts() {
         e.preventDefault();
         if (!formData.handle || !selectedModelId) return;
 
+        const newId = generateId();
         await db.accounts.add({
+            id: newId,
             ...formData,
             modelId: Number(selectedModelId),
             dailyCap: Number(formData.dailyCap),
@@ -129,6 +184,9 @@ export function Accounts() {
             phaseChangedDate: new Date().toISOString(),
             warmupStartDate: new Date().toISOString()
         });
+
+        // Fire-and-forget initial sync to populate createdUtc, karma, profile fields
+        AccountSyncService.syncAccountHealth(newId).catch(() => {});
 
         try {
             const { CloudSyncService } = await import('../services/growthEngine');
@@ -182,71 +240,67 @@ export function Accounts() {
                 </div>
             </header>
             <div className="page-content">
-                <div className="grid-cards mb-6" style={{ marginBottom: '32px' }}>
-                    <div className="card">
-                        <h2 style={{ fontSize: '1.1rem', marginBottom: '16px' }}>Add New Account</h2>
-                        <form onSubmit={handleSubmit}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
-                                <div className="input-group" style={{ marginBottom: 0 }}>
-                                    <label className="input-label">Reddit Handle / Username</label>
-                                    <input className="input-field" value={formData.handle} onChange={e => setFormData({ ...formData, handle: e.target.value })} placeholder="u/username" required />
-                                </div>
-                                <div className="input-group" style={{ marginBottom: 0 }}>
-                                    <label className="input-label">Assign to Model</label>
-                                    <select
-                                        className="input-field"
-                                        value={selectedModelId}
-                                        onChange={e => setSelectedModelId(e.target.value)}
-                                        required
-                                    >
-                                        <option value="" disabled>Select a Model</option>
-                                        {models?.map(m => (
-                                            <option key={m.id} value={m.id}>{m.name}</option>
-                                        ))}
-                                    </select>
-                                </div>
+                <div className="card" style={{ marginBottom: '32px', maxWidth: '820px' }}>
+                    <h2 style={{ fontSize: '1.15rem', fontWeight: 600, marginBottom: '20px' }}>Add New Account</h2>
+                    <form onSubmit={handleSubmit}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                            <div className="input-group">
+                                <label className="input-label">Reddit Handle</label>
+                                <input className="input-field" value={formData.handle} onChange={e => setFormData({ ...formData, handle: e.target.value })} placeholder="u/username" required />
                             </div>
+                            <div className="input-group">
+                                <label className="input-label">Assign to Model</label>
+                                <select className="input-field" value={selectedModelId} onChange={e => setSelectedModelId(e.target.value)} required>
+                                    <option value="" disabled>Select a Model</option>
+                                    {models?.map(m => (
+                                        <option key={m.id} value={m.id}>{m.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                            <div className="input-group">
+                                <label className="input-label">Daily Post Cap</label>
+                                <input type="number" className="input-field" value={formData.dailyCap} onChange={e => setFormData({ ...formData, dailyCap: e.target.value })} />
+                            </div>
+                            <div className="input-group">
+                                <label className="input-label">Initial Status</label>
+                                <select className="input-field" value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value })}>
+                                    <option value="warming">Warming</option>
+                                    <option value="active">Active</option>
+                                    <option value="cooldown">Cooldown</option>
+                                </select>
+                            </div>
+                            <div className="input-group">
+                                <label className="input-label">CQS Status</label>
+                                <select className="input-field" value={formData.cqsStatus} onChange={e => setFormData({ ...formData, cqsStatus: e.target.value })}>
+                                    <option value="Highest">Highest</option>
+                                    <option value="High">High</option>
+                                    <option value="Moderate">Moderate</option>
+                                    <option value="Low">Low</option>
+                                    <option value="Lowest">Lowest</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div style={{ borderTop: '1px solid var(--border-light)', margin: '20px 0 0', paddingTop: '20px' }}>
+                            <div style={{ fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: '16px' }}>Optional</div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
                                 <div className="input-group">
-                                    <label className="input-label">Daily Post Cap</label>
-                                    <input type="number" className="input-field" value={formData.dailyCap} onChange={e => setFormData({ ...formData, dailyCap: e.target.value })} />
-                                </div>
-                                <div className="input-group">
-                                    <label className="input-label">Initial Status</label>
-                                    <select className="input-field" value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value })}>
-                                        <option value="warming">Warming</option>
-                                        <option value="active">Active</option>
-                                        <option value="cooldown">Cooldown</option>
-                                    </select>
-                                </div>
-                                <div className="input-group">
-                                    <label className="input-label">CQS Status (Manual)</label>
-                                    <select className="input-field" value={formData.cqsStatus} onChange={e => setFormData({ ...formData, cqsStatus: e.target.value })}>
-                                        <option value="Highest">Highest</option>
-                                        <option value="High">High</option>
-                                        <option value="Moderate">Moderate</option>
-                                        <option value="Low">Low</option>
-                                        <option value="Lowest">Lowest</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
-                                <div className="input-group" style={{ marginBottom: 0 }}>
-                                    <label className="input-label">Proxy Info (Override)</label>
+                                    <label className="input-label">Proxy Override</label>
                                     <input className="input-field" value={formData.proxyInfo} onChange={e => setFormData({ ...formData, proxyInfo: e.target.value })} placeholder="IP:Port:User:Pass" />
                                 </div>
-                                <div className="input-group" style={{ marginBottom: 0 }}>
-                                    <label className="input-label">VA PIN (Account-Only, Optional)</label>
+                                <div className="input-group">
+                                    <label className="input-label">VA PIN</label>
                                     <input className="input-field" value={formData.vaPin} onChange={e => setFormData({ ...formData, vaPin: e.target.value })} placeholder="e.g. 7788" />
                                 </div>
-                                <div className="input-group" style={{ marginBottom: 0 }}>
-                                    <label className="input-label">Notes (Optional)</label>
-                                    <input className="input-field" value={formData.notes} onChange={e => setFormData({ ...formData, notes: e.target.value })} placeholder="..." />
+                                <div className="input-group">
+                                    <label className="input-label">Notes</label>
+                                    <input className="input-field" value={formData.notes} onChange={e => setFormData({ ...formData, notes: e.target.value })} placeholder="Any notes..." />
                                 </div>
                             </div>
-                            <button type="submit" className="btn btn-primary" style={{ marginTop: '8px' }}>Add Account</button>
-                        </form>
-                    </div>
+                        </div>
+                        <button type="submit" className="btn btn-primary" style={{ marginTop: '20px' }}>Add Account</button>
+                    </form>
                 </div>
 
                 <div className="card">
@@ -286,9 +340,9 @@ export function Accounts() {
                                         <th>Daily Cap</th>
                                         <th>Status</th>
                                         <th>CQS</th>
+                                        <th>Engage %</th>
                                         <th>VA PIN</th>
                                         <th>Proxy</th>
-                                        <th>Last Sync</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -301,6 +355,15 @@ export function Accounts() {
                                                         <a href={`https://reddit.com/user/${acc.handle.replace(/^(u\/|\/u\/)/i, '')}`} target="_blank" rel="noreferrer" style={{ color: 'var(--primary-color)', textDecoration: 'none' }}>
                                                             {acc.handle}
                                                         </a>
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-outline"
+                                                            style={{ padding: '2px 6px', fontSize: '0.7rem' }}
+                                                            onClick={() => handleSyncSingleAccount(acc)}
+                                                            title="Test sync this account"
+                                                        >
+                                                            <RefreshCw size={12} />
+                                                        </button>
                                                         <button
                                                             type="button"
                                                             className="btn btn-outline"
@@ -359,13 +422,14 @@ export function Accounts() {
                                                 <td>
                                                     <select
                                                         className="input-field"
-                                                        value={acc.status || 'active'}
+                                                        value={acc.isSuspended || (acc.phase || '').toLowerCase() === 'burned' ? 'burned' : (acc.status || 'active')}
                                                         style={{ width: '110px', padding: '4px 8px', fontSize: '0.8rem' }}
                                                         onChange={(e) => updateAccountPatch(acc.id, { status: e.target.value })}
                                                     >
                                                         <option value="warming">warming</option>
                                                         <option value="active">active</option>
                                                         <option value="cooldown">cooldown</option>
+                                                        <option value="burned">burned</option>
                                                     </select>
                                                 </td>
                                                 <td>
@@ -381,6 +445,21 @@ export function Accounts() {
                                                         <option value="Low">Low</option>
                                                         <option value="Lowest">Lowest</option>
                                                     </select>
+                                                </td>
+                                                <td>
+                                                    {(() => {
+                                                        const r = engagementRatios?.[acc.id];
+                                                        if (!r || r.total === 0) return <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>--</span>;
+                                                        const pct = r.ratio;
+                                                        // Reddit wants 9:1 = 90% engagement. Below 50% is risky.
+                                                        const color = pct >= 50 ? 'var(--status-success)' : pct >= 30 ? 'var(--status-warning)' : 'var(--status-danger)';
+                                                        return (
+                                                            <div style={{ fontSize: '0.8rem' }} title={`${r.engagement} engagement / ${r.posts} posts (last 30d)`}>
+                                                                <span style={{ color, fontWeight: 600 }}>{Math.round(pct)}%</span>
+                                                                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{r.engagement}e / {r.posts}p</div>
+                                                            </div>
+                                                        );
+                                                    })()}
                                                 </td>
                                                 <td>
                                                     <input
@@ -407,9 +486,6 @@ export function Accounts() {
                                                             updateAccountPatch(acc.id, { proxyInfo: next });
                                                         }}
                                                     />
-                                                </td>
-                                                <td style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                                                    {acc.lastSyncDate ? new Date(acc.lastSyncDate).toLocaleDateString() : 'Never'}
                                                 </td>
                                             </tr>
                                         );
