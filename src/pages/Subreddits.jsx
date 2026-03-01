@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { db } from '../db/db';
+import { generateId } from '../db/generateId';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { SubredditGuardService, VerificationService } from '../services/growthEngine';
 
@@ -51,6 +52,7 @@ export function Subreddits() {
         }
 
         await db.subreddits.add({
+            id: generateId(),
             ...formData,
             name: formData.name.replace(/^(r\/|\/r\/)/i, ''),
             modelId: Number(selectedModelId),
@@ -369,6 +371,7 @@ export function Subreddits() {
                                         <th>Tests</th>
                                         <th>Avg 24h</th>
                                         <th>Removal %</th>
+                                        <th>Peak</th>
                                         <th>Posting Gate</th>
                                         <th>Verified</th>
                                         <th>Action</th>
@@ -430,6 +433,11 @@ export function Subreddits() {
                                                         }`}>
                                                         {sub.status.replace('_', ' ')}
                                                     </span>
+                                                    {sub.crossModelWarning && (
+                                                        <div style={{ fontSize: '0.65rem', color: 'var(--status-warning)', marginTop: '4px' }} title={sub.crossModelWarning}>
+                                                            cross-model flag
+                                                        </div>
+                                                    )}
                                                 </td>
                                                 <td>
                                                     <input
@@ -470,6 +478,9 @@ export function Subreddits() {
                                                 <td>{tests}</td>
                                                 <td>{avg24h?.toLocaleString() || 0}</td>
                                                 <td style={{ color: removalPct > 20 ? 'var(--status-danger)' : 'inherit' }}>{Number(removalPct || 0).toFixed(1)}%</td>
+                                                <td style={{ fontSize: '0.8rem', color: sub.peakPostHour != null ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                                                    {sub.peakPostHour != null ? `${String(sub.peakPostHour).padStart(2, '0')}:00` : '--'}
+                                                </td>
                                                 <td style={{ fontSize: '0.75rem' }}>
                                                     {sub.cooldownUntil && new Date(sub.cooldownUntil) > new Date() ? (
                                                         <span style={{ color: 'var(--status-warning)' }}>Cooldown until {new Date(sub.cooldownUntil).toLocaleDateString()}</span>

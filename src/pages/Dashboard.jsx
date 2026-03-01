@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../db/db';
+import { generateId } from '../db/generateId';
 import { AnalyticsEngine, AccountLifecycleService, SnapshotService } from '../services/growthEngine';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Link } from 'react-router-dom';
@@ -10,7 +11,7 @@ export function Dashboard() {
     const [metrics, setMetrics] = useState(null);
     const [syncing, setSyncing] = useState(false);
     const [snapshots, setSnapshots] = useState([]);
-    const [hideWarming, setHideWarming] = useState(true);
+    const [hideWarming, setHideWarming] = useState(false);
     const models = useLiveQuery(() => db.models.toArray());
     const accountsAll = useLiveQuery(() => db.accounts.toArray());
     const subredditsAll = useLiveQuery(() => db.subreddits.toArray());
@@ -46,15 +47,31 @@ export function Dashboard() {
                     <p style={{ color: 'var(--text-secondary)', marginTop: '12px', marginBottom: '24px' }}>
                         To get started, please add your first Model.
                     </p>
-                    <div style={{ display: 'flex', gap: '16px', justifyContent: 'center' }}>
+                    <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
                         <Link to="/models" className="btn btn-primary">Go to Models</Link>
                         <button className="btn btn-outline" onClick={async () => {
                             try {
-                                const modelId = await db.models.add({
-                                    name: 'Mia pregnant', primaryNiche: 'Fitness', weeklyViewTarget: 50000, weeklyPostTarget: 50, status: 'active'
+                                setSyncing(true);
+                                const { CloudSyncService } = await import('../services/growthEngine');
+                                await CloudSyncService.pullCloudToLocal();
+                                alert('Cloud restore complete! Reloading...');
+                                window.location.reload();
+                            } catch (err) {
+                                alert('Restore failed: ' + err.message);
+                            } finally {
+                                setSyncing(false);
+                            }
+                        }} disabled={syncing}>
+                            {syncing ? 'Restoring...' : 'Restore from Cloud'}
+                        </button>
+                        <button className="btn btn-outline" onClick={async () => {
+                            try {
+                                const modelId = generateId();
+                                await db.models.add({
+                                    id: modelId, name: 'Mia pregnant', primaryNiche: 'Fitness', weeklyViewTarget: 50000, weeklyPostTarget: 50, status: 'active'
                                 });
                                 await db.accounts.add({
-                                    modelId, handle: 'u/miapreggo', dailyCap: 10, status: 'active', cqsStatus: 'High', removalRate: 0, notes: 'Auto-seeded'
+                                    id: generateId(), modelId, handle: 'u/miapreggo', dailyCap: 10, status: 'active', cqsStatus: 'High', removalRate: 0, notes: 'Auto-seeded'
                                 });
                                 const res = await fetch('/reddit_sfw_selfie_subs.csv');
                                 if (!res.ok) throw new Error("Could not find CSV in public folder");
@@ -67,9 +84,10 @@ export function Dashboard() {
                                         modelId, name: nameRaw, url: parts[1] || '', status: 'testing', nicheTag: 'sfw selfie', riskLevel: 'low', contentComplexity: 'general', totalTests: 0, avg24hViews: 0, removalPct: 0, lastTestedDate: null
                                     };
                                 }).filter(s => s.name !== 'unknown');
+                                subsToInsert.forEach(s => { s.id = generateId(); });
                                 await db.subreddits.bulkAdd(subsToInsert);
                                 await db.assets.add({
-                                    modelId, assetType: 'image', angleTag: 'auto_seeded_asset', locationTag: '', reuseCooldownSetting: 30, approved: 1, lastUsedDate: null, timesUsed: 0, fileBlob: null, fileName: 'mia_seeded.png'
+                                    id: generateId(), modelId, assetType: 'image', angleTag: 'auto_seeded_asset', locationTag: '', reuseCooldownSetting: 30, approved: 1, lastUsedDate: null, timesUsed: 0, fileBlob: null, fileName: 'mia_seeded.png'
                                 });
                                 alert(`Success! Created Model, Account, and imported ${subsToInsert.length} Subreddits.`);
                             } catch (err) {
@@ -102,17 +120,21 @@ export function Dashboard() {
     const activeAccounts = filteredAccounts.filter(a => a.status === 'active').length;
     const totalAccounts = filteredAccounts.length;
 
-    // Health score breakdown
+    // Health score breakdown — exclude burned/suspended from "healthy" count
     const healthCounts = (() => {
-        if (!filteredAccounts.length) return { healthy: 0, warning: 0, critical: 0 };
-        let healthy = 0, warning = 0, critical = 0;
+        if (!filteredAccounts.length) return { healthy: 0, warning: 0, critical: 0, burned: 0 };
+        let healthy = 0, warning = 0, critical = 0, burned = 0;
         for (const acc of filteredAccounts) {
+            if (acc.isSuspended || (acc.phase || '').toLowerCase() === 'burned') {
+                burned++;
+                continue;
+            }
             const score = AnalyticsEngine.computeAccountHealthScore(acc);
             if (score >= 80) healthy++;
             else if (score >= 50) warning++;
             else critical++;
         }
-        return { healthy, warning, critical };
+        return { healthy, warning, critical, burned };
     })();
 
     const accountSubredditLeaders = (() => {
@@ -393,10 +415,10 @@ export function Dashboard() {
                             <Users size={14} /> Accounts
                         </div>
                         <div style={{ fontSize: '2rem', fontWeight: '700' }}>
-                            {activeAccounts}
+                            {totalAccounts}
                         </div>
                         <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                            {totalAccounts} total · {totalModels} model{totalModels !== 1 ? 's' : ''}
+                            {activeAccounts} active · {totalModels} model{totalModels !== 1 ? 's' : ''}
                         </div>
                     </div>
 
@@ -410,10 +432,11 @@ export function Dashboard() {
                             </span>
                             <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>healthy</span>
                         </div>
-                        <div style={{ fontSize: '0.8rem', marginTop: '4px', display: 'flex', gap: '10px' }}>
+                        <div style={{ fontSize: '0.8rem', marginTop: '4px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                             {healthCounts.warning > 0 && <span style={{ color: '#ff9800' }}>{healthCounts.warning} warning</span>}
                             {healthCounts.critical > 0 && <span style={{ color: '#f44336' }}>{healthCounts.critical} critical</span>}
-                            {healthCounts.warning === 0 && healthCounts.critical === 0 && <span style={{ color: 'var(--text-secondary)' }}>All accounts healthy</span>}
+                            {healthCounts.burned > 0 && <span style={{ color: '#9e9e9e' }}>{healthCounts.burned} burned</span>}
+                            {healthCounts.warning === 0 && healthCounts.critical === 0 && healthCounts.burned === 0 && <span style={{ color: 'var(--text-secondary)' }}>All accounts healthy</span>}
                         </div>
                     </div>
 
@@ -547,13 +570,15 @@ export function Dashboard() {
                                                 </span>
                                             </td>
                                             <td>
-                                                {ms.status === 'critical'
-                                                    ? <span className="badge badge-danger" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><XCircle size={12} /> Risky</span>
-                                                    : ms.status === 'healthy'
-                                                        ? <span className="badge badge-success" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><CheckCircle size={12} /> Healthy</span>
-                                                        : <span className="badge badge-warning">Watch</span>
+                                                {m.tasksCompleted === 0
+                                                    ? <span className="badge" style={{ backgroundColor: 'var(--surface-color)', color: 'var(--text-secondary)', border: '1px solid var(--border-color)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>New</span>
+                                                    : ms.status === 'critical'
+                                                        ? <span className="badge badge-danger" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><XCircle size={12} /> Risky</span>
+                                                        : ms.status === 'healthy'
+                                                            ? <span className="badge badge-success" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><CheckCircle size={12} /> Healthy</span>
+                                                            : <span className="badge badge-warning">Watch</span>
                                                 }
-                                                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '4px' }}>Score {ms.healthScore}</div>
+                                                {m.tasksCompleted > 0 && <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '4px' }}>Score {ms.healthScore}</div>}
                                             </td>
                                             <td>
                                                 <Link to={`/model/${model.id}`} className="btn btn-outline" style={{ padding: '4px 10px', fontSize: '0.8rem' }}>

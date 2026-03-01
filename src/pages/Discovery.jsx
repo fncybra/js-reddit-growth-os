@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { db } from '../db/db';
+import { generateId } from '../db/generateId';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Search, Loader2, Download, RefreshCw, Trash2, Plus, Eye } from 'lucide-react';
 import { CompetitorService } from '../services/growthEngine';
@@ -199,6 +200,7 @@ export function Discovery() {
                 await new Promise(r => setTimeout(r, 200));
             }
 
+            subsToAdd.forEach(s => { s.id = generateId(); });
             await db.subreddits.bulkAdd(subsToAdd);
             setSelectedSubs(new Set());
             alert(`Successfully added ${subsToAdd.length} subreddits with rules & compliance data.`);

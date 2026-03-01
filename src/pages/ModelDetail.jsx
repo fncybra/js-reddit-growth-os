@@ -297,16 +297,19 @@ export function ModelDetail() {
                                                         src={`${proxyUrl}/api/drive/thumb/${asset.driveFileId}`}
                                                         alt={asset.fileName}
                                                         style={{ width: '40px', height: '40px', borderRadius: '6px', objectFit: 'cover', border: '1px solid var(--border-color)' }}
+                                                        onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
                                                     />
                                                 ) : asset.thumbnailUrl ? (
                                                     <img
                                                         src={asset.thumbnailUrl}
                                                         alt={asset.fileName}
                                                         style={{ width: '40px', height: '40px', borderRadius: '6px', objectFit: 'cover', border: '1px solid var(--border-color)' }}
+                                                        onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
                                                     />
-                                                ) : (
-                                                    <div style={{ width: '40px', height: '40px', borderRadius: '6px', backgroundColor: 'var(--surface-color)', border: '1px solid var(--border-color)' }} />
-                                                )}
+                                                ) : null}
+                                                <div style={{ width: '40px', height: '40px', borderRadius: '6px', backgroundColor: 'var(--surface-color)', border: '1px solid var(--border-color)', display: (!asset.driveFileId && !asset.thumbnailUrl) ? 'flex' : 'none', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', color: 'var(--text-secondary)' }}>
+                                                    {asset.assetType === 'video' ? 'VID' : 'IMG'}
+                                                </div>
                                             </td>
                                             <td style={{ maxWidth: '280px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={asset.fileName}>{asset.fileName}</td>
                                             <td>{asset.assetType}</td>

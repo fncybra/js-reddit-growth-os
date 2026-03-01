@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../db/db';
+import { generateId } from '../db/generateId';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { extractRedditPostIdFromUrl, SubredditGuardService, TitleGeneratorService } from '../services/growthEngine';
 
@@ -552,10 +553,10 @@ export function VADashboard() {
 }
 
 function VATaskCard({ task, index, onPosted, cooldownActive, vaName }) {
-    const asset = useLiveQuery(() => db.assets.get(task.assetId), [task.assetId]);
-    const subreddit = useLiveQuery(() => db.subreddits.get(task.subredditId), [task.subredditId]);
-    const account = useLiveQuery(() => db.accounts.get(task.accountId), [task.accountId]);
-    const model = useLiveQuery(() => db.models.get(task.modelId), [task.modelId]);
+    const asset = useLiveQuery(() => task.assetId ? db.assets.get(task.assetId) : null, [task.assetId]);
+    const subreddit = useLiveQuery(() => task.subredditId ? db.subreddits.get(task.subredditId) : null, [task.subredditId]);
+    const account = useLiveQuery(() => task.accountId ? db.accounts.get(task.accountId) : null, [task.accountId]);
+    const model = useLiveQuery(() => task.modelId ? db.models.get(task.modelId) : null, [task.modelId]);
     const performance = useLiveQuery(() => db.performances.where({ taskId: task.id }).first(), [task.id]);
 
     const [redditUrl, setRedditUrl] = useState('');
@@ -697,6 +698,7 @@ function VATaskCard({ task, index, onPosted, cooldownActive, vaName }) {
 
         // 2. Add Performance Record
         await db.performances.add({
+            id: generateId(),
             taskId: task.id,
             views24h: 0,
             removed: 0,
@@ -774,7 +776,7 @@ function VATaskCard({ task, index, onPosted, cooldownActive, vaName }) {
                 removed: 1,
                 notes: reason
             };
-            await db.performances.add(perfInsert);
+            await db.performances.add({ id: generateId(), ...perfInsert });
 
             try {
                 await SubredditGuardService.recordPostingError(task.subredditId, reason, {

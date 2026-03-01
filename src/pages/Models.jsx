@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { db } from '../db/db';
+import { generateId } from '../db/generateId';
 import { useLiveQuery } from 'dexie-react-hooks';
 
 export function Models() {
@@ -17,11 +18,11 @@ export function Models() {
         const note = String(input.voiceNotes || '').trim();
 
         const anchors = [];
-        if (age) anchors.push(`Age: ${age}`);
+        if (age) anchors.push(`Age (years old): ${age}`);
         if (hair) anchors.push(`Hair: ${hair}`);
         if (body) anchors.push(`Body: ${body}`);
         if (ethnicity) anchors.push(`Ethnicity/Vibe: ${ethnicity}`);
-        if (state) anchors.push(`Current state: ${state}`);
+        if (state) anchors.push(`Pregnancy weeks: ${state}`);
         if (nicheKeywords) anchors.push(`Niche keywords: ${nicheKeywords}`);
 
         const line = `Archetype: ${archetype}; Tone: ${tone}; Energy: ${energy}; No-go: ${noGo}; Anchors: ${anchors.length > 0 ? anchors.join(' | ') : 'none provided'}.`;
@@ -40,7 +41,9 @@ export function Models() {
         e.preventDefault();
         if (!formData.name) return;
 
-        const newModelId = await db.models.add({
+        const newModelId = generateId();
+        await db.models.add({
+            id: newModelId,
             ...formData,
             voiceProfile: buildVoiceSummary(formData),
             weeklyViewTarget: Number(formData.weeklyViewTarget),
@@ -195,105 +198,112 @@ export function Models() {
         }
     }
 
+    const sectionStyle = { borderTop: '1px solid var(--border-light)', margin: '20px 0 0', paddingTop: '20px' };
+    const sectionTitle = { fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: '16px' };
+    const row2 = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' };
+    const row3 = { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' };
+
     return (
         <>
             <header className="page-header">
                 <h1 className="page-title">Models</h1>
             </header>
             <div className="page-content">
-                <div className="grid-cards mb-6" style={{ marginBottom: '32px' }}>
-                    <div className="card">
-                        <h2 style={{ fontSize: '1.1rem', marginBottom: '16px' }}>Add New Model</h2>
-                        <form onSubmit={handleSubmit}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                                <div className="input-group">
-                                    <label className="input-label">Model Name</label>
-                                    <input className="input-field" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} placeholder="e.g. Jane Doe" required />
-                                </div>
-                                <div className="input-group">
-                                    <label className="input-label">Primary Niche</label>
-                                    <input className="input-field" value={formData.primaryNiche} onChange={e => setFormData({ ...formData, primaryNiche: e.target.value })} placeholder="e.g. Fitness" />
-                                </div>
+                <div className="card" style={{ marginBottom: '32px', maxWidth: '820px' }}>
+                    <h2 style={{ fontSize: '1.15rem', fontWeight: 600, marginBottom: '20px' }}>Add New Model</h2>
+                    <form onSubmit={handleSubmit}>
+                        <div style={row2}>
+                            <div className="input-group">
+                                <label className="input-label">Model Name</label>
+                                <input className="input-field" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} placeholder="e.g. Jane Doe" required />
                             </div>
+                            <div className="input-group">
+                                <label className="input-label">Primary Niche</label>
+                                <input className="input-field" value={formData.primaryNiche} onChange={e => setFormData({ ...formData, primaryNiche: e.target.value })} placeholder="e.g. Fitness" />
+                            </div>
+                        </div>
 
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                        <div style={row2}>
+                            <div className="input-group">
+                                <label className="input-label">Weekly View Target</label>
+                                <input type="number" className="input-field" value={formData.weeklyViewTarget} onChange={e => setFormData({ ...formData, weeklyViewTarget: e.target.value })} />
+                            </div>
+                            <div className="input-group">
+                                <label className="input-label">Weekly Post Target</label>
+                                <input type="number" className="input-field" value={formData.weeklyPostTarget} onChange={e => setFormData({ ...formData, weeklyPostTarget: e.target.value })} />
+                            </div>
+                        </div>
+
+                        <div style={sectionStyle}>
+                            <div style={sectionTitle}>Google Drive Integration</div>
+                            <div style={row2}>
                                 <div className="input-group">
-                                    <label className="input-label">Weekly View Target</label>
-                                    <input type="number" className="input-field" value={formData.weeklyViewTarget} onChange={e => setFormData({ ...formData, weeklyViewTarget: e.target.value })} />
-                                </div>
-                                <div className="input-group">
-                                    <label className="input-label">Weekly Post Target</label>
-                                    <input type="number" className="input-field" value={formData.weeklyPostTarget} onChange={e => setFormData({ ...formData, weeklyPostTarget: e.target.value })} />
-                                </div>
-                            </div>
-
-                            <div style={{ borderTop: '1px solid var(--border-color)', margin: '16px 0', paddingTop: '16px' }}>
-                                <h3 style={{ fontSize: '0.9rem', marginBottom: '12px', color: 'var(--text-secondary)' }}>Google Drive Integration (Optional)</h3>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                                    <div className="input-group">
-                                        <label className="input-label">Source Folder ID</label>
-                                        <input className="input-field" value={formData.driveFolderId} onChange={e => setFormData({ ...formData, driveFolderId: e.target.value })} placeholder="Google Drive Folder ID" />
-                                    </div>
-                                    <div className="input-group">
-                                        <label className="input-label">"Used" Folder ID</label>
-                                        <input className="input-field" value={formData.usedFolderId} onChange={e => setFormData({ ...formData, usedFolderId: e.target.value })} placeholder="Google Drive Folder ID" />
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div style={{ borderTop: '1px solid var(--border-color)', margin: '16px 0', paddingTop: '16px' }}>
-                                <h3 style={{ fontSize: '0.9rem', marginBottom: '12px', color: 'var(--text-secondary)' }}>Scaling Optimization & Access</h3>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
-                                    <div className="input-group">
-                                        <label className="input-label">Dedicated VA Login PIN</label>
-                                        <input className="input-field" value={formData.vaPin} onChange={e => setFormData({ ...formData, vaPin: e.target.value })} placeholder="e.g. 5555" />
-                                    </div>
-                                    <div className="input-group">
-                                        <label className="input-label">RedGifs Profile URL</label>
-                                        <input className="input-field" value={formData.redgifsProfile} onChange={e => setFormData({ ...formData, redgifsProfile: e.target.value })} placeholder="https://www.redgifs.com/users/your_name" />
-                                    </div>
-                                    <div className="input-group">
-                                        <label className="input-label">Default Proxy (IP:Port:User:Pass)</label>
-                                        <input className="input-field" value={formData.proxyInfo} onChange={e => setFormData({ ...formData, proxyInfo: e.target.value })} placeholder="Optional defaults for VA" />
-                                    </div>
-                                </div>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                                    <div className="input-group">
-                                        <label className="input-label">RedGifs Upload Endpoint</label>
-                                        <input className="input-field" value={formData.redgifsUploadEndpoint} onChange={e => setFormData({ ...formData, redgifsUploadEndpoint: e.target.value })} placeholder="https://.../redgifs/upload" />
-                                    </div>
-                                    <div className="input-group">
-                                        <label className="input-label">RedGifs API Token</label>
-                                        <input type="password" className="input-field" value={formData.redgifsApiToken} onChange={e => setFormData({ ...formData, redgifsApiToken: e.target.value })} placeholder="Model-specific token" />
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div style={{ borderTop: '1px solid var(--border-color)', margin: '16px 0', paddingTop: '16px' }}>
-                                <h3 style={{ fontSize: '0.9rem', marginBottom: '12px', color: 'var(--text-secondary)' }}>AI Persona Builder (Brain-Dead Inputs)</h3>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
-                                    <div className="input-group"><label className="input-label">Archetype</label><select className="input-field" value={formData.voiceArchetype} onChange={e => setFormData({ ...formData, voiceArchetype: e.target.value })}><option value="general">General</option><option value="milf">MILF</option><option value="pregnant">Pregnant</option><option value="girl-next-door">Girl Next Door</option><option value="alt">Alt</option></select></div>
-                                    <div className="input-group"><label className="input-label">Tone</label><select className="input-field" value={formData.voiceTone} onChange={e => setFormData({ ...formData, voiceTone: e.target.value })}><option value="teasing">Teasing</option><option value="sweet">Sweet</option><option value="bratty">Bratty</option><option value="dominant">Dominant</option></select></div>
-                                    <div className="input-group"><label className="input-label">Energy</label><select className="input-field" value={formData.voiceEnergy} onChange={e => setFormData({ ...formData, voiceEnergy: e.target.value })}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></div>
-                                    <div className="input-group"><label className="input-label">Hard No Style</label><select className="input-field" value={formData.voiceNoGo} onChange={e => setFormData({ ...formData, voiceNoGo: e.target.value })}><option value="no-cta">No CTA bait</option><option value="no-swipe">No swipe/carousel text</option><option value="no-promo">No promo wording</option></select></div>
-                                </div>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
-                                    <div className="input-group"><label className="input-label">Age</label><input className="input-field" value={formData.identityAge} onChange={e => setFormData({ ...formData, identityAge: e.target.value })} placeholder="e.g. 33" /></div>
-                                    <div className="input-group"><label className="input-label">Hair Color</label><input className="input-field" value={formData.identityHairColor} onChange={e => setFormData({ ...formData, identityHairColor: e.target.value })} placeholder="e.g. blonde / redhead" /></div>
-                                    <div className="input-group"><label className="input-label">Body Type</label><input className="input-field" value={formData.identityBodyType} onChange={e => setFormData({ ...formData, identityBodyType: e.target.value })} placeholder="e.g. petite, curvy, athletic" /></div>
-                                    <div className="input-group"><label className="input-label">Ethnicity/Vibe</label><input className="input-field" value={formData.identityEthnicity} onChange={e => setFormData({ ...formData, identityEthnicity: e.target.value })} placeholder="optional" /></div>
-                                    <div className="input-group"><label className="input-label">Current State</label><input className="input-field" value={formData.identityCurrentState} onChange={e => setFormData({ ...formData, identityCurrentState: e.target.value })} placeholder="e.g. 38 weeks pregnant" /></div>
-                                    <div className="input-group"><label className="input-label">Niche Keywords</label><input className="input-field" value={formData.identityNicheKeywords} onChange={e => setFormData({ ...formData, identityNicheKeywords: e.target.value })} placeholder="e.g. milf, pregnant, tanlines" /></div>
+                                    <label className="input-label">Source Folder ID</label>
+                                    <input className="input-field" value={formData.driveFolderId} onChange={e => setFormData({ ...formData, driveFolderId: e.target.value })} placeholder="Paste Google Drive folder ID" />
                                 </div>
                                 <div className="input-group">
-                                    <label className="input-label">Optional One-Line Note</label>
-                                    <input className="input-field" value={formData.voiceNotes} onChange={e => setFormData({ ...formData, voiceNotes: e.target.value })} placeholder="e.g. keep titles short and playful" />
+                                    <label className="input-label">"Used" Folder ID</label>
+                                    <input className="input-field" value={formData.usedFolderId} onChange={e => setFormData({ ...formData, usedFolderId: e.target.value })} placeholder="Paste Google Drive folder ID" />
                                 </div>
                             </div>
+                        </div>
 
-                            <button type="submit" className="btn btn-primary" style={{ marginTop: '8px' }}>Create Model</button>
-                        </form>
-                    </div>
+                        <div style={sectionStyle}>
+                            <div style={sectionTitle}>Scaling & Access</div>
+                            <div style={row2}>
+                                <div className="input-group">
+                                    <label className="input-label">VA Login PIN</label>
+                                    <input className="input-field" value={formData.vaPin} onChange={e => setFormData({ ...formData, vaPin: e.target.value })} placeholder="e.g. 5555" />
+                                </div>
+                                <div className="input-group">
+                                    <label className="input-label">Default Proxy</label>
+                                    <input className="input-field" value={formData.proxyInfo} onChange={e => setFormData({ ...formData, proxyInfo: e.target.value })} placeholder="IP:Port:User:Pass" />
+                                </div>
+                            </div>
+                            <div style={row2}>
+                                <div className="input-group">
+                                    <label className="input-label">RedGifs Profile URL</label>
+                                    <input className="input-field" value={formData.redgifsProfile} onChange={e => setFormData({ ...formData, redgifsProfile: e.target.value })} placeholder="https://redgifs.com/users/..." />
+                                </div>
+                                <div className="input-group">
+                                    <label className="input-label">RedGifs API Token</label>
+                                    <input type="password" className="input-field" value={formData.redgifsApiToken} onChange={e => setFormData({ ...formData, redgifsApiToken: e.target.value })} placeholder="Model-specific token" />
+                                </div>
+                            </div>
+                            <div className="input-group">
+                                <label className="input-label">RedGifs Upload Endpoint</label>
+                                <input className="input-field" value={formData.redgifsUploadEndpoint} onChange={e => setFormData({ ...formData, redgifsUploadEndpoint: e.target.value })} placeholder="https://.../redgifs/upload" />
+                            </div>
+                        </div>
+
+                        <div style={sectionStyle}>
+                            <div style={sectionTitle}>AI Persona Builder</div>
+                            <div style={row2}>
+                                <div className="input-group"><label className="input-label">Archetype</label><select className="input-field" value={formData.voiceArchetype} onChange={e => setFormData({ ...formData, voiceArchetype: e.target.value })}><option value="general">General</option><option value="milf">MILF</option><option value="pregnant">Pregnant</option><option value="girl-next-door">Girl Next Door</option><option value="alt">Alt</option></select></div>
+                                <div className="input-group"><label className="input-label">Tone</label><select className="input-field" value={formData.voiceTone} onChange={e => setFormData({ ...formData, voiceTone: e.target.value })}><option value="teasing">Teasing</option><option value="sweet">Sweet</option><option value="bratty">Bratty</option><option value="dominant">Dominant</option></select></div>
+                            </div>
+                            <div style={row2}>
+                                <div className="input-group"><label className="input-label">Energy</label><select className="input-field" value={formData.voiceEnergy} onChange={e => setFormData({ ...formData, voiceEnergy: e.target.value })}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></div>
+                                <div className="input-group"><label className="input-label">Hard No Style</label><select className="input-field" value={formData.voiceNoGo} onChange={e => setFormData({ ...formData, voiceNoGo: e.target.value })}><option value="no-cta">No CTA bait</option><option value="no-swipe">No swipe/carousel text</option><option value="no-promo">No promo wording</option></select></div>
+                            </div>
+                            <div style={row3}>
+                                <div className="input-group"><label className="input-label">Age</label><input className="input-field" value={formData.identityAge} onChange={e => setFormData({ ...formData, identityAge: e.target.value })} placeholder="e.g. 33" /></div>
+                                <div className="input-group"><label className="input-label">Hair Color</label><input className="input-field" value={formData.identityHairColor} onChange={e => setFormData({ ...formData, identityHairColor: e.target.value })} placeholder="e.g. blonde" /></div>
+                                <div className="input-group"><label className="input-label">Body Type</label><input className="input-field" value={formData.identityBodyType} onChange={e => setFormData({ ...formData, identityBodyType: e.target.value })} placeholder="e.g. curvy" /></div>
+                            </div>
+                            <div style={row3}>
+                                <div className="input-group"><label className="input-label">Ethnicity / Vibe</label><input className="input-field" value={formData.identityEthnicity} onChange={e => setFormData({ ...formData, identityEthnicity: e.target.value })} placeholder="optional" /></div>
+                                <div className="input-group"><label className="input-label">Current State</label><input className="input-field" value={formData.identityCurrentState} onChange={e => setFormData({ ...formData, identityCurrentState: e.target.value })} placeholder="e.g. 38 weeks" /></div>
+                                <div className="input-group"><label className="input-label">Niche Keywords</label><input className="input-field" value={formData.identityNicheKeywords} onChange={e => setFormData({ ...formData, identityNicheKeywords: e.target.value })} placeholder="e.g. milf, tanlines" /></div>
+                            </div>
+                            <div className="input-group">
+                                <label className="input-label">One-Line Note</label>
+                                <input className="input-field" value={formData.voiceNotes} onChange={e => setFormData({ ...formData, voiceNotes: e.target.value })} placeholder="e.g. keep titles short and playful" />
+                            </div>
+                        </div>
+
+                        <button type="submit" className="btn btn-primary" style={{ marginTop: '20px' }}>Create Model</button>
+                    </form>
                 </div>
 
                 <div className="card">
@@ -359,35 +369,37 @@ export function Models() {
                                                                 <input className="input-field" value={editingModel.usedFolderId} onChange={e => setEditingModel({ ...editingModel, usedFolderId: e.target.value })} placeholder="Paste folder ID from Google Drive URL" />
                                                             </div>
                                                         </div>
-                                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
                                                             <div className="input-group">
-                                                                <label className="input-label" style={{ fontSize: '0.8rem' }}>🔐 VA Login PIN</label>
+                                                                <label className="input-label" style={{ fontSize: '0.8rem' }}>VA Login PIN</label>
                                                                 <input className="input-field" value={editingModel.vaPin} onChange={e => setEditingModel({ ...editingModel, vaPin: e.target.value })} placeholder="e.g 5555" />
                                                             </div>
                                                             <div className="input-group">
-                                                                <label className="input-label" style={{ fontSize: '0.8rem' }}>📼 RedGifs Profile URL</label>
-                                                                <input className="input-field" value={editingModel.redgifsProfile} onChange={e => setEditingModel({ ...editingModel, redgifsProfile: e.target.value })} />
-                                                            </div>
-                                                            <div className="input-group">
-                                                                <label className="input-label" style={{ fontSize: '0.8rem' }}>🌐 Default Proxy</label>
+                                                                <label className="input-label" style={{ fontSize: '0.8rem' }}>Default Proxy</label>
                                                                 <input className="input-field" value={editingModel.proxyInfo} onChange={e => setEditingModel({ ...editingModel, proxyInfo: e.target.value })} />
                                                             </div>
                                                         </div>
                                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
                                                             <div className="input-group">
-                                                                <label className="input-label" style={{ fontSize: '0.8rem' }}>📡 RedGifs Upload Endpoint</label>
-                                                                <input className="input-field" value={editingModel.redgifsUploadEndpoint || ''} onChange={e => setEditingModel({ ...editingModel, redgifsUploadEndpoint: e.target.value })} placeholder="https://.../redgifs/upload" />
+                                                                <label className="input-label" style={{ fontSize: '0.8rem' }}>RedGifs Profile URL</label>
+                                                                <input className="input-field" value={editingModel.redgifsProfile} onChange={e => setEditingModel({ ...editingModel, redgifsProfile: e.target.value })} />
                                                             </div>
                                                             <div className="input-group">
-                                                                <label className="input-label" style={{ fontSize: '0.8rem' }}>🔑 RedGifs API Token</label>
+                                                                <label className="input-label" style={{ fontSize: '0.8rem' }}>RedGifs API Token</label>
                                                                 <input type="password" className="input-field" value={editingModel.redgifsApiToken || ''} onChange={e => setEditingModel({ ...editingModel, redgifsApiToken: e.target.value })} placeholder="Model-specific token" />
                                                             </div>
                                                         </div>
+                                                        <div className="input-group" style={{ marginBottom: '12px' }}>
+                                                            <label className="input-label" style={{ fontSize: '0.8rem' }}>RedGifs Upload Endpoint</label>
+                                                            <input className="input-field" value={editingModel.redgifsUploadEndpoint || ''} onChange={e => setEditingModel({ ...editingModel, redgifsUploadEndpoint: e.target.value })} placeholder="https://.../redgifs/upload" />
+                                                        </div>
                                                         <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '12px', marginTop: '12px' }}>
                                                             <h4 style={{ fontSize: '0.85rem', marginBottom: '8px', color: 'var(--text-secondary)' }}>AI Persona Builder</h4>
-                                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
                                                                 <div className="input-group"><label className="input-label" style={{ fontSize: '0.8rem' }}>Archetype</label><select className="input-field" value={editingModel.voiceArchetype} onChange={e => setEditingModel({ ...editingModel, voiceArchetype: e.target.value })}><option value="general">General</option><option value="milf">MILF</option><option value="pregnant">Pregnant</option><option value="girl-next-door">Girl Next Door</option><option value="alt">Alt</option></select></div>
                                                                 <div className="input-group"><label className="input-label" style={{ fontSize: '0.8rem' }}>Tone</label><select className="input-field" value={editingModel.voiceTone} onChange={e => setEditingModel({ ...editingModel, voiceTone: e.target.value })}><option value="teasing">Teasing</option><option value="sweet">Sweet</option><option value="bratty">Bratty</option><option value="dominant">Dominant</option></select></div>
+                                                            </div>
+                                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
                                                                 <div className="input-group"><label className="input-label" style={{ fontSize: '0.8rem' }}>Energy</label><select className="input-field" value={editingModel.voiceEnergy} onChange={e => setEditingModel({ ...editingModel, voiceEnergy: e.target.value })}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></div>
                                                                 <div className="input-group"><label className="input-label" style={{ fontSize: '0.8rem' }}>Hard No Style</label><select className="input-field" value={editingModel.voiceNoGo} onChange={e => setEditingModel({ ...editingModel, voiceNoGo: e.target.value })}><option value="no-cta">No CTA bait</option><option value="no-swipe">No swipe/carousel text</option><option value="no-promo">No promo wording</option></select></div>
                                                             </div>

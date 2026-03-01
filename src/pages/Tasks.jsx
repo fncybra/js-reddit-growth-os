@@ -1,12 +1,22 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../db/db';
+import { generateId } from '../db/generateId';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { CloudSyncService, DailyPlanGenerator, SettingsService, SubredditLifecycleService, TitleGeneratorService } from '../services/growthEngine';
+
+const ACCOUNT_COLORS = [
+    '#6366f1', '#ec4899', '#14b8a6', '#f59e0b', '#8b5cf6',
+    '#ef4444', '#06b6d4', '#84cc16', '#f97316', '#a855f7',
+    '#10b981', '#e11d48',
+];
 
 export function Tasks() {
     const models = useLiveQuery(() => db.models.toArray());
     const [selectedModelId, setSelectedModelId] = useState('');
     const [proxyUrl, setProxyUrl] = useState('https://js-reddit-proxy-production.up.railway.app');
+    const [selectedAccountId, setSelectedAccountId] = useState('ALL');
+    const [groupByAccount, setGroupByAccount] = useState(true);
+    const [collapsedGroups, setCollapsedGroups] = useState(new Set());
 
     useEffect(() => {
         if (models && models.length > 0 && !selectedModelId) {
@@ -23,6 +33,17 @@ export function Tasks() {
     }, []);
 
     const activeModelId = Number(selectedModelId);
+
+    // Reset account filter when model changes
+    useEffect(() => {
+        setSelectedAccountId('ALL');
+        setCollapsedGroups(new Set());
+    }, [activeModelId]);
+
+    const modelAccounts = useLiveQuery(
+        () => activeModelId ? db.accounts.where('modelId').equals(activeModelId).toArray() : [],
+        [activeModelId]
+    );
 
     const taskBundle = useLiveQuery(
         async () => {
@@ -45,7 +66,11 @@ export function Tasks() {
         [activeModelId]
     );
 
-    const tasks = taskBundle?.tasks || [];
+    const allTasks = taskBundle?.tasks || [];
+    const tasks = selectedAccountId === 'ALL'
+        ? allTasks
+        : allTasks.filter(t => Number(t.accountId) === Number(selectedAccountId));
+
     const queueDateLabel = taskBundle?.queueDate
         ? new Date(taskBundle.queueDate).toLocaleDateString()
         : new Date().toLocaleDateString();
@@ -53,6 +78,7 @@ export function Tasks() {
     const [generating, setGenerating] = useState(false);
     const [clearing, setClearing] = useState(false);
     const [fixingTitles, setFixingTitles] = useState(false);
+    const [postTarget, setPostTarget] = useState('');
 
     const planCapacity = useLiveQuery(
         async () => {
@@ -70,12 +96,36 @@ export function Tasks() {
             start.setHours(0, 0, 0, 0);
             const todayIso = start.toISOString();
             const tasksToday = modelTasks.filter(t => t.date === todayIso);
+            const postTasksToday = tasksToday.filter(t => t.taskType === 'post' || !t.taskType);
 
-            const desiredRemaining = activeAccounts.reduce((sum, account) => {
+            const perAccountBreakdown = activeAccounts.map(account => {
                 const already = tasksToday.filter(t => Number(t.accountId) === Number(account.id)).length;
                 const cap = Number(account.dailyCap || settings.dailyPostCap || 0);
-                return sum + Math.max(0, cap - already);
-            }, 0);
+                const remaining = Math.max(0, cap - already);
+
+                const accountSubs = subreddits.filter(s => {
+                    if (s.status === 'rejected') return false;
+                    return !s.accountId || Number(s.accountId) === Number(account.id);
+                });
+                const provenSubs = accountSubs.filter(s => s.status === 'proven').length;
+                const testingSubs = accountSubs.filter(s => s.status === 'testing').length;
+
+                return {
+                    accountId: account.id,
+                    handle: account.handle || `Account #${account.id}`,
+                    cap,
+                    already,
+                    remaining,
+                    provenSubs,
+                    testingSubs,
+                };
+            });
+
+            // Use user's target if set, otherwise sum of per-account remaining
+            const targetNum = postTarget !== '' ? Number(postTarget) : null;
+            const desiredRemaining = targetNum != null
+                ? Math.max(0, targetNum - postTasksToday.length)
+                : perAccountBreakdown.reduce((sum, a) => sum + a.remaining, 0);
 
             const usedSubIdsToday = new Set(tasksToday.map(t => Number(t.subredditId)).filter(Boolean));
             const candidateSubs = subreddits.filter(s => {
@@ -96,16 +146,18 @@ export function Tasks() {
 
             return {
                 desiredRemaining,
+                existingPosts: postTasksToday.length,
                 activeAccounts: activeAccounts.length,
                 candidateSubreddits: candidateSubs.length,
                 repeatsEnabled,
                 perSubCap,
                 estimatedMax,
                 willShortfall: desiredRemaining > estimatedMax,
-                shortfallBy: Math.max(0, desiredRemaining - estimatedMax)
+                shortfallBy: Math.max(0, desiredRemaining - estimatedMax),
+                perAccountBreakdown,
             };
         },
-        [activeModelId, tasks?.length]
+        [activeModelId, allTasks?.length, postTarget]
     );
 
     const isBadTitle = (title) => {
@@ -124,7 +176,8 @@ export function Tasks() {
 
         setGenerating(true);
         try {
-            await DailyPlanGenerator.generateDailyPlan(activeModelId);
+            const target = postTarget !== '' ? Number(postTarget) : undefined;
+            await DailyPlanGenerator.generateDailyPlan(activeModelId, new Date(), target != null ? { totalTarget: target } : {});
         } catch (e) {
             alert("Error generating plan: " + e.message);
         } finally {
@@ -133,16 +186,18 @@ export function Tasks() {
     }
 
     async function handleClearTodayTasks() {
-        if (!activeModelId || !tasks || tasks.length === 0) return;
-        const confirmed = window.confirm('Clear all tasks for this model and date? This will also remove linked outcomes.');
+        if (!activeModelId) return;
+        const confirmed = window.confirm('Clear ALL tasks for this model? This will also remove linked outcomes.');
         if (!confirmed) return;
 
         try {
             setClearing(true);
-            const taskIds = tasks.map(t => t.id);
+            // Clear ALL tasks for this model (not just latest date) to prevent stale tasks piling up
+            const allModelTasks = await db.tasks.where('modelId').equals(activeModelId).toArray();
+            const taskIds = allModelTasks.map(t => t.id);
 
             if (taskIds.length === 0) {
-                alert('No tasks to clear for this date.');
+                alert('No tasks to clear.');
                 return;
             }
 
@@ -166,7 +221,7 @@ export function Tasks() {
                 await CloudSyncService.deleteMultipleFromCloud('tasks', chunk);
             }
 
-            alert(`Cleared ${taskIds.length} task(s) for today.`);
+            alert(`Cleared ${taskIds.length} task(s).`);
         } catch (e) {
             alert('Failed to clear tasks: ' + e.message);
         } finally {
@@ -175,7 +230,7 @@ export function Tasks() {
     }
 
     async function handleFixBadTitles() {
-        const badTasks = (tasks || []).filter(t => isBadTitle(t.title));
+        const badTasks = (allTasks || []).filter(t => isBadTitle(t.title));
         if (badTasks.length === 0) {
             alert('No API-error titles found in this queue.');
             return;
@@ -185,8 +240,8 @@ export function Tasks() {
             setFixingTitles(true);
             for (const task of badTasks) {
                 const [subreddit, asset, siblingTasks] = await Promise.all([
-                    db.subreddits.get(task.subredditId),
-                    db.assets.get(task.assetId),
+                    task.subredditId ? db.subreddits.get(task.subredditId) : null,
+                    task.assetId ? db.assets.get(task.assetId) : null,
                     db.tasks.where('modelId').equals(task.modelId).toArray(),
                 ]);
 
@@ -224,16 +279,43 @@ export function Tasks() {
         }
     }
 
+    function toggleGroup(accountId) {
+        setCollapsedGroups(prev => {
+            const next = new Set(prev);
+            if (next.has(accountId)) next.delete(accountId);
+            else next.add(accountId);
+            return next;
+        });
+    }
+
+    // Group tasks by accountId for grouped view
+    const groupedTasks = useMemo(() => {
+        if (!tasks || tasks.length === 0) return [];
+        const groups = {};
+        for (const task of tasks) {
+            const key = task.accountId || 0;
+            if (!groups[key]) groups[key] = [];
+            groups[key].push(task);
+        }
+        return Object.entries(groups).map(([accountId, tasks]) => ({
+            accountId: Number(accountId),
+            tasks: tasks.sort((a, b) => (a.scheduledTime || '99:99').localeCompare(b.scheduledTime || '99:99')),
+        }));
+    }, [tasks]);
+
     if (!models || models.length === 0) {
         return <div className="page-content"><div className="card">Please create a Model first.</div></div>;
     }
+
+    const sortedTasks = [...(tasks || [])].sort((a, b) => (a.scheduledTime || '99:99').localeCompare(b.scheduledTime || '99:99'));
+    const showGrouped = groupByAccount && selectedAccountId === 'ALL' && groupedTasks.length > 1;
 
     return (
         <>
             <header className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                     <h1 className="page-title">Daily Operations (Tasks)</h1>
-                    <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                         Model:
                         <select
                             className="input-field"
@@ -245,14 +327,35 @@ export function Tasks() {
                                 <option key={m.id} value={m.id}>{m.name}</option>
                             ))}
                         </select>
-                        • Queue Date: <strong>{queueDateLabel}</strong>
+                        Account:
+                        <select
+                            className="input-field"
+                            style={{ padding: '4px 8px', fontSize: '0.9rem', width: 'auto', display: 'inline-block' }}
+                            value={selectedAccountId}
+                            onChange={e => setSelectedAccountId(e.target.value)}
+                        >
+                            <option value="ALL">All Accounts</option>
+                            {(modelAccounts || []).map(acc => (
+                                <option key={acc.id} value={acc.id}>
+                                    {acc.handle || `Account #${acc.id}`}
+                                </option>
+                            ))}
+                        </select>
+                        <button
+                            className="btn btn-outline"
+                            style={{ padding: '2px 10px', fontSize: '0.8rem' }}
+                            onClick={() => setGroupByAccount(g => !g)}
+                        >
+                            {groupByAccount ? 'Grouped' : 'Flat'}
+                        </button>
+                        {' '} Queue Date: <strong>{queueDateLabel}</strong>
                     </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <button
                         className="btn btn-outline"
                         onClick={handleFixBadTitles}
-                        disabled={generating || clearing || fixingTitles || !tasks || tasks.length === 0}
+                        disabled={generating || clearing || fixingTitles || !allTasks || allTasks.length === 0}
                         style={{ color: '#fbbf24', borderColor: '#fbbf24' }}
                     >
                         {fixingTitles ? 'Fixing Titles...' : 'Fix API Titles'}
@@ -260,11 +363,29 @@ export function Tasks() {
                     <button
                         className="btn btn-outline"
                         onClick={handleClearTodayTasks}
-                        disabled={generating || clearing || !tasks || tasks.length === 0}
+                        disabled={generating || clearing || !allTasks || allTasks.length === 0}
                         style={{ color: 'var(--status-danger)', borderColor: 'var(--status-danger)' }}
                     >
                         {clearing ? 'Clearing...' : 'Clear Tasks'}
                     </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>Total Posts:</label>
+                        <input
+                            type="number"
+                            min="1"
+                            max="200"
+                            className="input-field"
+                            style={{ width: '65px', padding: '6px 8px', fontSize: '0.9rem', textAlign: 'center' }}
+                            value={postTarget}
+                            onChange={e => setPostTarget(e.target.value)}
+                            placeholder={String(allTasks?.filter(t => t.taskType === 'post' || !t.taskType).length || 0)}
+                        />
+                        {postTarget !== '' && allTasks && (
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                                ({allTasks.filter(t => t.taskType === 'post' || !t.taskType).length} exist{Number(postTarget) > allTasks.filter(t => t.taskType === 'post' || !t.taskType).length ? `, +${Number(postTarget) - allTasks.filter(t => t.taskType === 'post' || !t.taskType).length} new` : ''})
+                            </span>
+                        )}
+                    </div>
                     <button
                         className="btn btn-primary"
                         onClick={handleGenerate}
@@ -291,58 +412,138 @@ export function Tasks() {
                                 Not enough attached subreddit capacity to fill all requested posts. Attach more subreddits or reduce caps.
                             </div>
                         )}
+                        {planCapacity.perAccountBreakdown && planCapacity.perAccountBreakdown.length > 0 && (
+                            <div style={{ marginTop: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '10px' }}>
+                                <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '6px' }}>Per-Account Breakdown:</div>
+                                {planCapacity.perAccountBreakdown.map(a => (
+                                    <div key={a.accountId} style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <span style={{
+                                            display: 'inline-block',
+                                            width: '8px',
+                                            height: '8px',
+                                            borderRadius: '50%',
+                                            backgroundColor: ACCOUNT_COLORS[a.accountId % ACCOUNT_COLORS.length],
+                                        }} />
+                                        <span style={{ fontWeight: 500 }}>{a.handle}</span>
+                                        {' '}&mdash; {a.remaining} remaining (cap {a.cap}, {a.already} existing) &bull; {a.provenSubs} proven + {a.testingSubs} testing subs
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 )}
-                <div className="card">
-                    <h2 style={{ fontSize: '1.1rem', marginBottom: '16px' }}>Today's Tasks ({tasks?.length || 0})</h2>
-                    {tasks?.length === 0 ? (
-                        <div style={{ color: 'var(--text-secondary)' }}>No tasks for today. Click "Generate Daily Plan" to begin.</div>
-                    ) : (
-                        <div className="data-table-container">
-                            <table className="data-table">
-                                <thead>
-                                    <tr>
-                                        <th>Time</th>
-                                        <th>Type</th>
-                                        <th>Task Details</th>
-                                        <th>Media Asset</th>
-                                        <th>Target Subreddit</th>
-                                        <th>Status</th>
-                                        <th>24h Outcome</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {[...(tasks || [])].sort((a, b) => (a.scheduledTime || '99:99').localeCompare(b.scheduledTime || '99:99')).map(task => (
-                                        <TaskRow key={task.id} task={task} activeModelId={activeModelId} proxyUrl={proxyUrl} />
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
-                </div>
+                {showGrouped ? (
+                    // Grouped view: one card per account
+                    groupedTasks.map(group => {
+                        const acc = (modelAccounts || []).find(a => Number(a.id) === group.accountId);
+                        const handle = acc?.handle || `Account #${group.accountId}`;
+                        const color = ACCOUNT_COLORS[group.accountId % ACCOUNT_COLORS.length];
+                        const isCollapsed = collapsedGroups.has(group.accountId);
+
+                        return (
+                            <div className="card" key={group.accountId} style={{ marginBottom: '12px' }}>
+                                <div
+                                    style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', userSelect: 'none' }}
+                                    onClick={() => toggleGroup(group.accountId)}
+                                >
+                                    <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                                        {isCollapsed ? '\u25B6' : '\u25BC'}
+                                    </span>
+                                    <span style={{
+                                        display: 'inline-block',
+                                        padding: '2px 10px',
+                                        borderRadius: '12px',
+                                        backgroundColor: color,
+                                        color: '#fff',
+                                        fontSize: '0.8rem',
+                                        fontWeight: 600,
+                                    }}>
+                                        {handle}
+                                    </span>
+                                    <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                                        {group.tasks.length} task{group.tasks.length !== 1 ? 's' : ''}
+                                    </span>
+                                </div>
+                                {!isCollapsed && (
+                                    <div className="data-table-container" style={{ marginTop: '10px' }}>
+                                        <table className="data-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Time</th>
+                                                    <th>Type</th>
+                                                    <th>Task Details</th>
+                                                    <th>Media Asset</th>
+                                                    <th>Target Subreddit</th>
+                                                    <th>Status</th>
+                                                    <th>24h Outcome</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {group.tasks.map(task => (
+                                                    <TaskRow key={task.id} task={task} activeModelId={activeModelId} proxyUrl={proxyUrl} />
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })
+                ) : (
+                    // Flat view or single-account selected
+                    <div className="card">
+                        <h2 style={{ fontSize: '1.1rem', marginBottom: '16px' }}>Today's Tasks ({tasks?.length || 0})</h2>
+                        {tasks?.length === 0 ? (
+                            <div style={{ color: 'var(--text-secondary)' }}>No tasks for today. Click "Generate Daily Plan" to begin.</div>
+                        ) : (
+                            <div className="data-table-container">
+                                <table className="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Time</th>
+                                            <th>Account</th>
+                                            <th>Type</th>
+                                            <th>Task Details</th>
+                                            <th>Media Asset</th>
+                                            <th>Target Subreddit</th>
+                                            <th>Status</th>
+                                            <th>24h Outcome</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {sortedTasks.map(task => (
+                                            <TaskRow key={task.id} task={task} activeModelId={activeModelId} proxyUrl={proxyUrl} showAccount />
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
         </>
     );
 }
 
 const TASK_TYPE_ICONS = {
-    post: { icon: '📝', label: 'Post' },
-    comment: { icon: '💬', label: 'Comment' },
-    upvote: { icon: '👍', label: 'Upvote' },
-    engage: { icon: '🤝', label: 'Engage' },
-    warmup: { icon: '🧊', label: 'Warmup' },
+    post: { icon: '\uD83D\uDCDD', label: 'Post' },
+    comment: { icon: '\uD83D\uDCAC', label: 'Comment' },
+    upvote: { icon: '\uD83D\uDC4D', label: 'Upvote' },
+    engage: { icon: '\uD83E\uDD1D', label: 'Engage' },
+    warmup: { icon: '\uD83E\uDDCA', label: 'Warmup' },
 };
 
-function TaskRow({ task, activeModelId, proxyUrl }) {
+function TaskRow({ task, activeModelId, proxyUrl, showAccount }) {
     const [outcome, setOutcome] = useState({ views: '', removed: false });
     const [saved, setSaved] = useState(false);
     const [mediaFailed, setMediaFailed] = useState(false);
     const [heicPreviewUrl, setHeicPreviewUrl] = useState('');
 
     // Load related data
-    const subreddit = useLiveQuery(() => db.subreddits.get(task.subredditId), [task.subredditId]);
-    const performance = useLiveQuery(() => db.performances.where({ taskId: task.id }).first(), [task.id]);
-    const asset = useLiveQuery(() => db.assets.get(task.assetId), [task.assetId]);
+    const subreddit = useLiveQuery(() => task.subredditId ? db.subreddits.get(task.subredditId) : null, [task.subredditId]);
+    const performance = useLiveQuery(() => task.id ? db.performances.where({ taskId: task.id }).first() : null, [task.id]);
+    const asset = useLiveQuery(() => task.assetId ? db.assets.get(task.assetId) : null, [task.assetId]);
+    const account = useLiveQuery(() => task.accountId ? db.accounts.get(task.accountId) : null, [task.accountId]);
 
     useEffect(() => {
         if (performance) {
@@ -361,6 +562,7 @@ function TaskRow({ task, activeModelId, proxyUrl }) {
             });
         } else {
             await db.performances.add({
+                id: generateId(),
                 taskId: task.id,
                 views24h: Number(outcome.views),
                 removed: outcome.removed ? 1 : 0,
@@ -446,14 +648,32 @@ function TaskRow({ task, activeModelId, proxyUrl }) {
         || asset?.originalUrl
         || null;
 
-    const isEngagement = task.taskType && task.taskType !== 'post';
+    const isEngagement = (task.taskType && task.taskType !== 'post') || /^(Engage|Warmup):/i.test(task.title);
     const typeInfo = TASK_TYPE_ICONS[task.taskType] || TASK_TYPE_ICONS.post;
+
+    const accountColor = task.accountId ? ACCOUNT_COLORS[task.accountId % ACCOUNT_COLORS.length] : '#666';
 
     return (
         <tr style={{ opacity: saved ? 0.7 : 1, transition: 'opacity 0.2s', borderBottom: '1px solid var(--border-color)' }}>
             <td style={{ verticalAlign: 'middle', textAlign: 'center', fontSize: '0.85rem', fontWeight: 600, color: 'var(--primary-color)', whiteSpace: 'nowrap' }}>
-                {task.scheduledTime || '—'}
+                {task.scheduledTime || '\u2014'}
             </td>
+            {showAccount && (
+                <td style={{ verticalAlign: 'middle' }}>
+                    <span style={{
+                        display: 'inline-block',
+                        padding: '2px 8px',
+                        borderRadius: '10px',
+                        backgroundColor: accountColor,
+                        color: '#fff',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        whiteSpace: 'nowrap',
+                    }}>
+                        {account?.handle || (task.accountId ? `#${task.accountId}` : '\u2014')}
+                    </span>
+                </td>
+            )}
             <td style={{ verticalAlign: 'middle', textAlign: 'center', fontSize: '1.1rem' }} title={typeInfo.label}>
                 <div>{typeInfo.icon}</div>
                 <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)' }}>{typeInfo.label}</div>
@@ -469,12 +689,14 @@ function TaskRow({ task, activeModelId, proxyUrl }) {
                         ) : asset.assetType === 'video' && previewUrl && !mediaFailed ? (
                             <video src={previewUrl} style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '4px', border: '1px solid var(--border-color)' }} onError={() => setMediaFailed(true)} />
                         ) : (
-                            <div style={{ width: '60px', height: '60px', backgroundColor: 'var(--surface-color)', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>No File</div>
+                            <div style={{ width: '60px', height: '60px', backgroundColor: 'var(--surface-color)', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.6rem', textAlign: 'center', padding: '4px' }}>{isHeic ? 'HEIC' : (asset.assetType === 'video' ? 'VID' : 'IMG')}</div>
                         )}
                         <div style={{ fontSize: '0.85rem', width: '120px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={asset.fileName}>
                             {asset.fileName || asset.angleTag}
                         </div>
                     </div>
+                ) : isEngagement ? (
+                    <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>N/A</span>
                 ) : (
                     <span style={{ color: 'var(--status-danger)' }}>Asset Missing</span>
                 )}
@@ -518,7 +740,7 @@ function TaskRow({ task, activeModelId, proxyUrl }) {
                             onClick={handleDeleteTask}
                             title="Delete task"
                         >
-                            🗑️
+                            {'\uD83D\uDDD1\uFE0F'}
                         </button>
                     </div>
                 ) : (
@@ -551,7 +773,7 @@ function TaskRow({ task, activeModelId, proxyUrl }) {
                             onClick={handleDeleteTask}
                             title="Delete task"
                         >
-                            🗑️
+                            {'\uD83D\uDDD1\uFE0F'}
                         </button>
                     </div>
                 )}

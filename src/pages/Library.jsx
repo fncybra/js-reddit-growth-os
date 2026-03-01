@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { db } from '../db/db';
+import { generateId } from '../db/generateId';
 import { useLiveQuery } from 'dexie-react-hooks';
 
 export function Library() {
@@ -143,6 +144,7 @@ export function Library() {
 
         if (assetsToAdd.length > 0) {
             try {
+                assetsToAdd.forEach(a => { a.id = generateId(); });
                 await db.assets.bulkAdd(assetsToAdd);
                 const { CloudSyncService } = await import('../services/growthEngine');
                 await CloudSyncService.autoPush(['assets']);
