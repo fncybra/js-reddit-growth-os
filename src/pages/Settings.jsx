@@ -67,7 +67,7 @@ export function Settings() {
         for (const [key, value] of Object.entries(settings)) {
             // Handle mixing types: vaPin stays string, others are numbers, api key is string
             let finalValue = value;
-            const textKeys = ['vaPin', 'openRouterApiKey', 'aiBaseUrl', 'openRouterModel', 'supabaseUrl', 'supabaseAnonKey', 'proxyUrl', 'telegramBotToken', 'telegramChatId', 'lastTelegramReportDate'];
+            const textKeys = ['vaPin', 'openRouterApiKey', 'aiBaseUrl', 'openRouterModel', 'supabaseUrl', 'supabaseAnonKey', 'proxyUrl', 'telegramBotToken', 'telegramChatId', 'telegramThreadId', 'lastTelegramReportDate'];
             if (!textKeys.includes(key) && value !== '') {
                 finalValue = Number(value);
             }
@@ -331,6 +331,17 @@ export function Settings() {
                                 />
                                 <small style={{ color: 'var(--text-secondary)' }}>Send a message to <b>@userinfobot</b> on Telegram to get your chat ID.</small>
                             </div>
+                            <div className="input-group">
+                                <label className="input-label">Topic Thread ID <small>(optional)</small></label>
+                                <input
+                                    type="text"
+                                    className="input-field"
+                                    placeholder="e.g. 227"
+                                    value={settings.telegramThreadId || ''}
+                                    onChange={e => setSettings({ ...settings, telegramThreadId: e.target.value })}
+                                />
+                                <small style={{ color: 'var(--text-secondary)' }}>For forum groups with topics. Leave blank for regular chats/groups.</small>
+                            </div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '16px' }}>
                                 <button onClick={handleSave} className="btn btn-primary">Save</button>
                                 <button
@@ -339,13 +350,14 @@ export function Settings() {
                                     onClick={async () => {
                                         const token = (settings.telegramBotToken || '').trim();
                                         const chatId = (settings.telegramChatId || '').trim();
+                                        const threadId = (settings.telegramThreadId || '').trim();
                                         if (!token || !chatId) {
                                             alert('Please enter both Bot Token and Chat ID first.');
                                             return;
                                         }
                                         try {
                                             const { TelegramService } = await import('../services/growthEngine');
-                                            await TelegramService.sendTestMessage(token, chatId);
+                                            await TelegramService.sendTestMessage(token, chatId, threadId);
                                             alert('Test message sent! Check your Telegram.');
                                         } catch (e) {
                                             alert('Failed to send test message: ' + e.message);

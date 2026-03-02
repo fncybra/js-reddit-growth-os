@@ -71,6 +71,7 @@ export const SettingsService = {
             useVoiceProfile: 1,
             telegramBotToken: '',
             telegramChatId: '',
+            telegramThreadId: '',
             telegramAutoSendHour: 20,
             lastTelegramReportDate: ''
         };
@@ -3001,17 +3002,19 @@ export function generateManagerActionItems(accounts) {
 // ─── Telegram Daily Reports ───────────────────────────────────────────
 
 export const TelegramService = {
-    async sendMessage(botToken, chatId, text) {
+    async sendMessage(botToken, chatId, text, threadId) {
         const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+        const payload = {
+            chat_id: chatId,
+            text,
+            parse_mode: 'HTML',
+            disable_web_page_preview: true
+        };
+        if (threadId) payload.message_thread_id = Number(threadId);
         const res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                chat_id: chatId,
-                text,
-                parse_mode: 'HTML',
-                disable_web_page_preview: true
-            })
+            body: JSON.stringify(payload)
         });
         if (!res.ok) {
             const body = await res.json().catch(() => ({}));
@@ -3123,8 +3126,9 @@ export const TelegramService = {
             if (!token || !chatId) {
                 return { sent: false, reason: 'Telegram not configured' };
             }
+            const threadId = (settings.telegramThreadId || '').trim();
             const report = await this.buildReport();
-            await this.sendMessage(token, chatId, report);
+            await this.sendMessage(token, chatId, report, threadId);
             return { sent: true };
         } catch (e) {
             console.error('[TelegramService] sendDailyReport failed:', e);
@@ -3132,8 +3136,8 @@ export const TelegramService = {
         }
     },
 
-    async sendTestMessage(botToken, chatId) {
+    async sendTestMessage(botToken, chatId, threadId) {
         const text = '✅ <b>Reddit Growth OS</b> — Telegram integration is working!';
-        await this.sendMessage(botToken, chatId, text);
+        await this.sendMessage(botToken, chatId, text, threadId);
     }
 };
