@@ -928,10 +928,7 @@ app.get('/api/scrape/threads/user/stats/:username', async (req, res) => {
 
         if (!hasUserInTitle || isGenericPage) {
             console.log(`[ThreadsScrape] ${cleanName}: not found (title="${ogTitle.slice(0, 80)}", htmlLen=${html.length})`);
-            // Grab first 500 chars around any og: meta tag for debugging
-            const ogSnippet = (html.match(/og:(title|description)[^>]{0,200}/i) || [''])[0].slice(0, 200);
-            const titleSnippet = (html.match(/<title[^>]*>[^<]{0,200}/i) || [''])[0].slice(0, 200);
-            return res.json({ exists: false, username: cleanName, status: 'not_found', _debug: { ogTitle: ogTitle.slice(0, 120), htmlLen: html.length, ogSnippet, titleSnippet } });
+            return res.json({ exists: false, username: cleanName, status: 'not_found' });
         }
 
         // Parse follower count from og:description (e.g. "5.4M Followers" or "1,234 Followers")
@@ -942,7 +939,8 @@ app.get('/api/scrape/threads/user/stats/:username', async (req, res) => {
         }
 
         // Extract display name from og:title: "Display Name (@user) • Threads, Say more"
-        const displayNameMatch = ogTitle.match(/^(.+?)\s*\(@/);
+        // The @ may be HTML-encoded as &#064; in the meta tag
+        const displayNameMatch = ogTitle.match(/^(.+?)\s*\((?:@|&#064;)/);
         const displayName = displayNameMatch ? displayNameMatch[1].trim() : '';
 
         // Decode HTML entities in description for biography
