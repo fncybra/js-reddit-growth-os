@@ -67,7 +67,7 @@ export function Settings() {
         for (const [key, value] of Object.entries(settings)) {
             // Handle mixing types: vaPin stays string, others are numbers, api key is string
             let finalValue = value;
-            const textKeys = ['vaPin', 'openRouterApiKey', 'aiBaseUrl', 'openRouterModel', 'supabaseUrl', 'supabaseAnonKey', 'proxyUrl'];
+            const textKeys = ['vaPin', 'openRouterApiKey', 'aiBaseUrl', 'openRouterModel', 'supabaseUrl', 'supabaseAnonKey', 'proxyUrl', 'telegramBotToken', 'telegramChatId', 'lastTelegramReportDate'];
             if (!textKeys.includes(key) && value !== '') {
                 finalValue = Number(value);
             }
@@ -306,6 +306,55 @@ export function Settings() {
                             >
                                 {syncing ? 'Syncing...' : 'Force Sync All Posts Now'}
                             </button>
+                        </div>
+                        <div className="card">
+                            <h2 style={{ fontSize: '1.2rem', marginBottom: '20px' }}>Telegram Notifications</h2>
+                            <div className="input-group">
+                                <label className="input-label">Bot Token</label>
+                                <input
+                                    type="password"
+                                    className="input-field"
+                                    placeholder="123456:ABC-DEF..."
+                                    value={settings.telegramBotToken || ''}
+                                    onChange={e => setSettings({ ...settings, telegramBotToken: e.target.value })}
+                                />
+                                <small style={{ color: 'var(--text-secondary)' }}>Create a bot via <b>@BotFather</b> on Telegram and paste the token here.</small>
+                            </div>
+                            <div className="input-group">
+                                <label className="input-label">Chat ID</label>
+                                <input
+                                    type="text"
+                                    className="input-field"
+                                    placeholder="e.g. 123456789"
+                                    value={settings.telegramChatId || ''}
+                                    onChange={e => setSettings({ ...settings, telegramChatId: e.target.value })}
+                                />
+                                <small style={{ color: 'var(--text-secondary)' }}>Send a message to <b>@userinfobot</b> on Telegram to get your chat ID.</small>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '16px' }}>
+                                <button onClick={handleSave} className="btn btn-primary">Save</button>
+                                <button
+                                    type="button"
+                                    className="btn btn-outline"
+                                    onClick={async () => {
+                                        const token = (settings.telegramBotToken || '').trim();
+                                        const chatId = (settings.telegramChatId || '').trim();
+                                        if (!token || !chatId) {
+                                            alert('Please enter both Bot Token and Chat ID first.');
+                                            return;
+                                        }
+                                        try {
+                                            const { TelegramService } = await import('../services/growthEngine');
+                                            await TelegramService.sendTestMessage(token, chatId);
+                                            alert('Test message sent! Check your Telegram.');
+                                        } catch (e) {
+                                            alert('Failed to send test message: ' + e.message);
+                                        }
+                                    }}
+                                >
+                                    Send Test Message
+                                </button>
+                            </div>
                         </div>
                         <div className="card" style={{ border: '1px solid var(--status-danger)' }}>
                             <h2 style={{ fontSize: '1.2rem', marginBottom: '8px', color: 'var(--status-danger)' }}>Danger Zone</h2>

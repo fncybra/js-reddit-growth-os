@@ -1,13 +1,46 @@
 import React, { useEffect, useRef } from 'react';
-import { CloudSyncService } from '../services/growthEngine';
+import { CloudSyncService, SettingsService } from '../services/growthEngine';
 
 export function CloudSyncHandler() {
     const hasRun = useRef(false);
     const cycleRef = useRef(false);
+    const tgCheckRef = useRef(false);
 
     useEffect(() => {
         if (hasRun.current) return;
         hasRun.current = true;
+
+        const checkTelegramAutoSend = async () => {
+            if (tgCheckRef.current) return;
+            tgCheckRef.current = true;
+            try {
+                const settings = await SettingsService.getSettings();
+                const token = (settings.telegramBotToken || '').trim();
+                const chatId = (settings.telegramChatId || '').trim();
+                if (!token || !chatId) return;
+
+                const sendHour = Number(settings.telegramAutoSendHour) || 20;
+                const now = new Date();
+                if (now.getHours() < sendHour) return;
+
+                const today = now.toISOString().slice(0, 10);
+                if (settings.lastTelegramReportDate === today) return;
+
+                console.log('[CloudSync] Auto-sending Telegram daily report...');
+                const { TelegramService } = await import('../services/growthEngine');
+                const result = await TelegramService.sendDailyReport();
+                if (result.sent) {
+                    await SettingsService.updateSetting('lastTelegramReportDate', today);
+                    console.log('[CloudSync] Telegram report sent for', today);
+                } else {
+                    console.warn('[CloudSync] Telegram report not sent:', result.reason);
+                }
+            } catch (err) {
+                console.error('[CloudSync] Telegram auto-send failed:', err);
+            } finally {
+                tgCheckRef.current = false;
+            }
+        };
 
         const runCycle = async () => {
             if (cycleRef.current) return;
@@ -30,6 +63,9 @@ export function CloudSyncHandler() {
                 CloudSyncService.releaseLock();
                 cycleRef.current = false;
             }
+
+            // Check Telegram auto-send after each sync cycle (outside lock)
+            checkTelegramAutoSend();
         };
 
         runCycle();
