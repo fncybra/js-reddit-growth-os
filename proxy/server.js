@@ -926,8 +926,8 @@ app.get('/api/scrape/threads/user/stats/:username', async (req, res) => {
         const isGenericPage = /Threads.*Log in/i.test(ogTitle) || (!ogTitle && html.length < 100000);
 
         if (!hasUserInTitle || isGenericPage) {
-            console.log(`[ThreadsScrape] ${cleanName}: not found (title="${ogTitle.slice(0, 80)}")`);
-            return res.json({ exists: false, username: cleanName, status: 'not_found' });
+            console.log(`[ThreadsScrape] ${cleanName}: not found (title="${ogTitle.slice(0, 80)}", htmlLen=${html.length})`);
+            return res.json({ exists: false, username: cleanName, status: 'not_found', _debug: { ogTitle: ogTitle.slice(0, 120), htmlLen: html.length } });
         }
 
         // Parse follower count from og:description (e.g. "5.4M Followers" or "1,234 Followers")
