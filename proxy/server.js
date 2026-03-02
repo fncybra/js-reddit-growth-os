@@ -883,13 +883,19 @@ app.get('/api/scrape/threads/user/stats/:username', async (req, res) => {
         const url = `https://www.threads.com/@${cleanName}`;
         const proxyInfo = getRequestProxyInfo(req);
 
+        // Fetch directly (no residential proxy) — Threads blocks residential proxies
+        // but allows datacenter IPs (Railway server). Same pattern as Reddit profile link scrape.
         let response;
         try {
-            response = await axiosWithRetry(url, {
-                'Accept': 'text/html,application/xhtml+xml',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            }, { proxyInfo });
+            response = await axios.get(url, {
+                headers: {
+                    'Accept': 'text/html,application/xhtml+xml',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                },
+                timeout: 15000,
+                maxRedirects: 5,
+            });
         } catch (err) {
             const status = err?.response?.status;
             if (status === 404) {
