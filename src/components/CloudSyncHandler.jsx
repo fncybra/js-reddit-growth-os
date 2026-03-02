@@ -19,10 +19,7 @@ export function CloudSyncHandler() {
                 const chatId = (settings.telegramChatId || '').trim();
                 if (!token || !chatId) return;
 
-                const sendHour = Number(settings.telegramAutoSendHour) || 20;
                 const now = new Date();
-                if (now.getHours() < sendHour) return;
-
                 const today = now.toISOString().slice(0, 10);
                 if (settings.lastTelegramReportDate === today) return;
 
