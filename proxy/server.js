@@ -873,6 +873,9 @@ app.post('/api/drive/move', async (req, res) => {
 });
 
 // Proxy endpoint for Threads Profile Scraping (Health Patrol)
+// Uses og:title and og:description meta tags to detect active vs dead accounts.
+// Active profile:  og:title = "Display Name (@user) • Threads, Say more"
+// Dead/missing:    og:title = "Threads • Log in" (generic login page)
 app.get('/api/scrape/threads/user/stats/:username', async (req, res) => {
     try {
         const { username } = req.params;
@@ -900,35 +903,55 @@ app.get('/api/scrape/threads/user/stats/:username', async (req, res) => {
 
         const html = typeof response.data === 'string' ? response.data : '';
 
-        // Parse embedded JSON from <script type="application/json" data-sjs> tags
-        let userData = null;
-        const scriptRegex = /<script[^>]*type="application\/json"[^>]*data-sjs[^>]*>([\s\S]*?)<\/script>/gi;
-        let match;
-        while ((match = scriptRegex.exec(html)) !== null) {
-            try {
-                const jsonStr = match[1].trim();
-                if (!jsonStr) continue;
-                const parsed = JSON.parse(jsonStr);
-                // Recursively search for user data object
-                const found = findThreadsUserData(parsed, cleanName);
-                if (found) { userData = found; break; }
-            } catch (_) { /* skip unparseable scripts */ }
-        }
+        // Extract og:title — active profiles have "@username" in title
+        const ogTitleMatch = html.match(/<meta\s+property="og:title"\s+content="([^"]*)"/i);
+        const ogTitle = ogTitleMatch ? ogTitleMatch[1] : '';
 
-        if (!userData) {
-            // Page loaded but no user data found — account is dead/suspended/deleted
-            console.log(`[ThreadsScrape] ${cleanName}: no user data found in page HTML (${html.length} bytes)`);
+        // Extract og:description — active profiles have "X Followers" in description
+        const ogDescMatch = html.match(/<meta\s+property="og:description"\s+content="([^"]*)"/i);
+        const ogDesc = ogDescMatch ? ogDescMatch[1] : '';
+
+        // Extract og:image for profile pic
+        const ogImgMatch = html.match(/<meta\s+property="og:image"\s+content="([^"]*)"/i);
+        const ogImg = ogImgMatch ? ogImgMatch[1] : '';
+
+        // Dead account detection: if og:title is generic "Threads" login page, account doesn't exist
+        const hasUserInTitle = ogTitle.includes(`@${cleanName}`) || ogTitle.toLowerCase().includes(cleanName.toLowerCase());
+        const isGenericPage = /Threads.*Log in/i.test(ogTitle) || (!ogTitle && html.length < 100000);
+
+        if (!hasUserInTitle || isGenericPage) {
+            console.log(`[ThreadsScrape] ${cleanName}: not found (title="${ogTitle.slice(0, 80)}")`);
             return res.json({ exists: false, username: cleanName, status: 'not_found' });
         }
 
-        console.log(`[ThreadsScrape] ${cleanName}: found profile data, followers=${userData.followerCount}`);
+        // Parse follower count from og:description (e.g. "5.4M Followers" or "1,234 Followers")
+        let followerCount = 0;
+        const followerMatch = ogDesc.match(/([\d,.]+[KMB]?)\s*Followers?/i);
+        if (followerMatch) {
+            followerCount = parseFollowerCount(followerMatch[1]);
+        }
+
+        // Extract display name from og:title: "Display Name (@user) • Threads, Say more"
+        const displayNameMatch = ogTitle.match(/^(.+?)\s*\(@/);
+        const displayName = displayNameMatch ? displayNameMatch[1].trim() : '';
+
+        // Decode HTML entities in description for biography
+        const biography = ogDesc
+            .replace(/&#x2022;/g, '•')
+            .replace(/&#064;/g, '@')
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"');
+
+        console.log(`[ThreadsScrape] ${cleanName}: active, followers=${followerCount}`);
         res.json({
             exists: true,
-            username: userData.username || cleanName,
-            followerCount: userData.followerCount || 0,
-            biography: userData.biography || '',
-            profilePicUrl: userData.profilePicUrl || '',
-            isVerified: userData.isVerified || false,
+            username: cleanName,
+            displayName,
+            followerCount,
+            biography,
+            profilePicUrl: ogImg.replace(/&amp;/g, '&'),
             status: 'active',
         });
     } catch (error) {
@@ -937,44 +960,18 @@ app.get('/api/scrape/threads/user/stats/:username', async (req, res) => {
     }
 });
 
-// Recursively search a parsed JSON object for Threads user profile data
-function findThreadsUserData(obj, targetUsername) {
-    if (!obj || typeof obj !== 'object') return null;
-
-    // Look for objects that have username + follower_count (Threads profile shape)
-    if (obj.username && obj.follower_count !== undefined) {
-        return {
-            username: obj.username,
-            followerCount: obj.follower_count,
-            biography: obj.biography || obj.bio_text || '',
-            profilePicUrl: obj.profile_pic_url || obj.hd_profile_pic_url || '',
-            isVerified: obj.is_verified || false,
-        };
-    }
-    // Also check text_post_app_info shape (Meta's internal data format)
-    if (obj.text_post_app_info && obj.username) {
-        return {
-            username: obj.username,
-            followerCount: obj.follower_count || obj.text_post_app_info?.follower_count || 0,
-            biography: obj.biography || '',
-            profilePicUrl: obj.profile_pic_url || '',
-            isVerified: obj.is_verified || false,
-        };
-    }
-
-    // Recurse into arrays and objects
-    if (Array.isArray(obj)) {
-        for (const item of obj) {
-            const found = findThreadsUserData(item, targetUsername);
-            if (found) return found;
-        }
-    } else {
-        for (const key of Object.keys(obj)) {
-            const found = findThreadsUserData(obj[key], targetUsername);
-            if (found) return found;
-        }
-    }
-    return null;
+// Parse human-readable follower counts: "5.4M" → 5400000, "1,234" → 1234
+function parseFollowerCount(str) {
+    if (!str) return 0;
+    const clean = str.replace(/,/g, '');
+    const numMatch = clean.match(/([\d.]+)\s*([KMB])?/i);
+    if (!numMatch) return 0;
+    const num = parseFloat(numMatch[1]);
+    const suffix = (numMatch[2] || '').toUpperCase();
+    if (suffix === 'K') return Math.round(num * 1000);
+    if (suffix === 'M') return Math.round(num * 1000000);
+    if (suffix === 'B') return Math.round(num * 1000000000);
+    return Math.round(num);
 }
 
 // Proxy endpoint for AI Generation (Bypasses Browser CORS / Preflight blocks)
