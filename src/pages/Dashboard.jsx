@@ -323,21 +323,6 @@ export function Dashboard() {
                     }
                 }
 
-                // Step 7: Send Telegram daily report
-                try {
-                    const { TelegramService } = await import('../services/growthEngine');
-                    const tgResult = await TelegramService.sendDailyReport();
-                    if (tgResult.sent) {
-                        parts.push('Telegram: report sent.');
-                        // Stamp today so auto-send doesn't double-fire
-                        await SettingsService.updateSetting('lastTelegramReportDate', new Date().toISOString().slice(0, 10));
-                    } else if (tgResult.reason !== 'Telegram not configured') {
-                        parts.push('Telegram: ' + tgResult.reason);
-                    }
-                } catch (e) {
-                    parts.push('Telegram: failed (' + e.message + ')');
-                }
-
                 alert(parts.join('\n'));
             } finally {
                 CloudSyncService.releaseLock();
