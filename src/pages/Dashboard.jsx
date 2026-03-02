@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../db/db';
 import { generateId } from '../db/generateId';
-import { AnalyticsEngine, AccountLifecycleService, SnapshotService } from '../services/growthEngine';
+import { AnalyticsEngine, AccountLifecycleService, SnapshotService, SettingsService } from '../services/growthEngine';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Link } from 'react-router-dom';
 import { ArrowUp, Users, Shield, AlertTriangle, RefreshCw, Cloud, RefreshCcw, Smartphone, CheckCircle, XCircle } from 'lucide-react';
@@ -321,6 +321,21 @@ export function Dashboard() {
                     } catch (e) {
                         parts.push('Cloud push: failed (' + e.message + ')');
                     }
+                }
+
+                // Step 7: Send Telegram daily report
+                try {
+                    const { TelegramService } = await import('../services/growthEngine');
+                    const tgResult = await TelegramService.sendDailyReport();
+                    if (tgResult.sent) {
+                        parts.push('Telegram: report sent.');
+                        // Stamp today so auto-send doesn't double-fire
+                        await SettingsService.updateSetting('lastTelegramReportDate', new Date().toISOString().slice(0, 10));
+                    } else if (tgResult.reason !== 'Telegram not configured') {
+                        parts.push('Telegram: ' + tgResult.reason);
+                    }
+                } catch (e) {
+                    parts.push('Telegram: failed (' + e.message + ')');
                 }
 
                 alert(parts.join('\n'));

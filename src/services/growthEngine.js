@@ -68,7 +68,11 @@ export const SettingsService = {
             proxyUrl: 'https://js-reddit-proxy-production.up.railway.app',
             openRouterApiKey: 'REDACTED_OPENROUTER_KEY',
             openRouterModel: 'z-ai/glm-5',
-            useVoiceProfile: 1
+            useVoiceProfile: 1,
+            telegramBotToken: '',
+            telegramChatId: '',
+            telegramAutoSendHour: 20,
+            lastTelegramReportDate: ''
         };
         const settingsArr = await db.settings.toArray();
         const settings = { ...defaultSettings };
@@ -2993,3 +2997,143 @@ export function generateManagerActionItems(accounts) {
 
     return items;
 }
+
+// ─── Telegram Daily Reports ───────────────────────────────────────────
+
+export const TelegramService = {
+    async sendMessage(botToken, chatId, text) {
+        const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                chat_id: chatId,
+                text,
+                parse_mode: 'HTML',
+                disable_web_page_preview: true
+            })
+        });
+        if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            throw new Error(body.description || `Telegram API error ${res.status}`);
+        }
+        return res.json();
+    },
+
+    async buildReport() {
+        const accounts = await db.accounts.toArray();
+        const metrics = await AnalyticsEngine.getAgencyMetrics();
+        const actionItems = generateManagerActionItems(accounts);
+
+        // Today's posted accounts
+        const start = new Date();
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(start);
+        end.setDate(end.getDate() + 1);
+        const startIso = start.toISOString();
+        const endIso = end.toISOString();
+        const todayTasks = await db.tasks.filter(t =>
+            t?.date >= startIso && t?.date < endIso && t.status === 'closed'
+        ).toArray();
+
+        const postedAccountIds = [...new Set(todayTasks.map(t => t.accountId).filter(Boolean))];
+        const postedHandles = [];
+        for (const id of postedAccountIds) {
+            const acct = accounts.find(a => a.id === id);
+            if (acct?.handle) postedHandles.push('u/' + acct.handle);
+        }
+
+        // Account phase counts
+        const phases = { warming: 0, ready: 0, active: 0, resting: 0, burned: 0 };
+        for (const a of accounts) {
+            const p = (a.phase || a.status || 'active').toLowerCase();
+            if (phases[p] !== undefined) phases[p]++;
+        }
+
+        // Filter action items to critical + warning
+        const urgent = actionItems.filter(i => i.priority === 'critical' || i.priority === 'warning');
+        const criticalCount = urgent.filter(i => i.priority === 'critical').length;
+        const warningCount = urgent.filter(i => i.priority === 'warning').length;
+
+        // Top performer
+        const topModel = metrics.leaderboard?.[0];
+
+        // Format date
+        const now = new Date();
+        const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+        // Build HTML report
+        const lines = [];
+        lines.push(`<b>Reddit Growth OS — Daily Report</b>`);
+        lines.push(dateStr);
+        lines.push('');
+
+        // Execution
+        const exec = metrics.executionToday;
+        lines.push(`<b>Execution</b>`);
+        lines.push(`Posts completed: ${exec.completed}/${exec.total} (${exec.percent}%)`);
+        lines.push('');
+
+        // Agency KPIs
+        lines.push(`<b>Agency KPIs</b>`);
+        lines.push(`Total upvotes: ${metrics.agencyTotalViews.toLocaleString()} | Avg per post: ${metrics.agencyAvgViews.toLocaleString()}`);
+        lines.push(`Removal rate: ${metrics.agencyRemovalRate}% | Active accounts: ${metrics.activeAccounts}/${metrics.totalAccounts}`);
+        lines.push('');
+
+        // Account status
+        lines.push(`<b>Account Status</b>`);
+        lines.push(`Warming: ${phases.warming} | Ready: ${phases.ready} | Active: ${phases.active} | Resting: ${phases.resting} | Burned: ${phases.burned}`);
+        if (postedHandles.length > 0) {
+            lines.push(`Posted today: ${postedHandles.join(', ')}`);
+        } else {
+            lines.push('Posted today: none');
+        }
+        lines.push('');
+
+        // Action items
+        if (urgent.length > 0) {
+            lines.push(`<b>Action Items</b> (${criticalCount} critical, ${warningCount} warnings)`);
+            const show = urgent.slice(0, 5);
+            for (const item of show) {
+                const icon = item.priority === 'critical' ? '🔴' : '🟡';
+                lines.push(`${icon} ${item.message}`);
+            }
+            if (urgent.length > 5) {
+                lines.push(`...and ${urgent.length - 5} more — check the dashboard`);
+            }
+        } else {
+            lines.push('<b>Action Items</b>: All clear!');
+        }
+        lines.push('');
+
+        // Top performer
+        if (topModel) {
+            lines.push(`<b>Top Performer</b>`);
+            lines.push(`${topModel.name}: ${topModel.metrics.totalViews.toLocaleString()} total views`);
+        }
+
+        return lines.join('\n');
+    },
+
+    async sendDailyReport() {
+        try {
+            const settings = await SettingsService.getSettings();
+            const token = (settings.telegramBotToken || '').trim();
+            const chatId = (settings.telegramChatId || '').trim();
+            if (!token || !chatId) {
+                return { sent: false, reason: 'Telegram not configured' };
+            }
+            const report = await this.buildReport();
+            await this.sendMessage(token, chatId, report);
+            return { sent: true };
+        } catch (e) {
+            console.error('[TelegramService] sendDailyReport failed:', e);
+            return { sent: false, reason: e.message || 'Unknown error' };
+        }
+    },
+
+    async sendTestMessage(botToken, chatId) {
+        const text = '✅ <b>Reddit Growth OS</b> — Telegram integration is working!';
+        await this.sendMessage(botToken, chatId, text);
+    }
+};
