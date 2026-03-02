@@ -16,6 +16,9 @@ import { CloudSyncHandler } from './components/CloudSyncHandler';
 import { SOP } from './pages/SOP';
 import { Repurpose } from './pages/Repurpose';
 import { LinkTracker } from './pages/LinkTracker';
+import { ThreadsDashboard } from './pages/ThreadsDashboard';
+import { AgencyCommandCenter } from './pages/AgencyCommandCenter';
+import { ThreadsSettings } from './pages/ThreadsSettings';
 
 // Error Boundary to catch runtime crashes and show them instead of a black screen
 class ErrorBoundary extends React.Component {
@@ -66,7 +69,10 @@ function App() {
 
           {/* Admin/Agency Mode: Full dashboard */}
           <Route element={<Layout />}>
-            <Route path="/" element={<Dashboard />} />
+            <Route path="/" element={<AgencyCommandCenter />} />
+            <Route path="reddit" element={<Dashboard />} />
+            <Route path="threads" element={<ThreadsDashboard />} />
+            <Route path="threads/settings" element={<ThreadsSettings />} />
             <Route path="discovery" element={<Discovery />} />
             <Route path="models" element={<Models />} />
             <Route path="model/:id" element={<ModelDetail />} />

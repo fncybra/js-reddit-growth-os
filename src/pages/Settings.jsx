@@ -67,7 +67,7 @@ export function Settings() {
         for (const [key, value] of Object.entries(settings)) {
             // Handle mixing types: vaPin stays string, others are numbers, api key is string
             let finalValue = value;
-            const textKeys = ['vaPin', 'openRouterApiKey', 'aiBaseUrl', 'openRouterModel', 'supabaseUrl', 'supabaseAnonKey', 'proxyUrl', 'telegramBotToken', 'telegramChatId', 'telegramThreadId', 'lastTelegramReportDate'];
+            const textKeys = ['vaPin', 'openRouterApiKey', 'aiBaseUrl', 'openRouterModel', 'supabaseUrl', 'supabaseAnonKey', 'proxyUrl', 'telegramBotToken', 'telegramChatId', 'telegramThreadId', 'lastTelegramReportDate', 'airtableApiKey', 'airtableBaseId', 'airtableTableName', 'lastThreadsPatrol'];
             if (!textKeys.includes(key) && value !== '') {
                 finalValue = Number(value);
             }
@@ -78,6 +78,11 @@ export function Settings() {
         // Reset cached Supabase client so new credentials take effect immediately
         const { resetSupabaseClient } = await import('../db/supabase');
         resetSupabaseClient();
+        // Push to cloud immediately so next pull doesn't overwrite with stale values
+        try {
+            const { CloudSyncService } = await import('../services/growthEngine');
+            await CloudSyncService.pushLocalToCloud();
+        } catch (_) { /* offline is fine */ }
         alert('Settings saved successfully.');
     }
 

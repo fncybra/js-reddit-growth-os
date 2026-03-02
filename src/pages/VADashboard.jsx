@@ -141,8 +141,130 @@ const vaResponsiveCss = `
         font-size: 1.35rem;
         letter-spacing: 6px;
     }
+
+    /* Touch targets — min 44px */
+    .va-header-stats button {
+        padding: 8px 14px !important;
+        min-height: 44px !important;
+        font-size: 0.85rem;
+    }
+
+    /* Title buttons: flow below title instead of absolute overlay */
+    .va-title-actions {
+        position: static !important;
+        margin-top: 8px;
+        justify-content: flex-end;
+    }
+
+    /* Subreddit row wrapping */
+    .va-subreddit-row {
+        flex-wrap: wrap;
+    }
+    .va-subreddit-row > a {
+        width: 100%;
+        margin-bottom: 4px;
+    }
+
+    /* Meta-grid label hierarchy */
+    .va-meta-label {
+        font-size: 0.75rem !important;
+        text-transform: uppercase;
+        font-weight: bold !important;
+        letter-spacing: 0.5px;
+        margin-top: 8px;
+        color: #6b7280 !important;
+    }
+    .va-meta-grid > .va-meta-label:first-child {
+        margin-top: 0;
+    }
+
+    /* Completed tasks compact */
+    .va-completed-card {
+        padding: 8px 12px !important;
+        font-size: 0.85rem;
+    }
+}
+
+/* ===== Small phone breakpoint ===== */
+@media (max-width: 480px) {
+    .va-main {
+        padding: 8px;
+    }
+    .va-media-preview {
+        height: 200px;
+    }
+    .va-meta-grid {
+        gap: 2px;
+    }
+    .va-meta-label {
+        font-size: 0.75rem !important;
+    }
+    .va-card-container {
+        border-radius: 4px;
+    }
+    .va-header-wrap {
+        padding: 10px;
+    }
+    .va-task-body {
+        padding: 10px;
+    }
+    .va-header-stats button {
+        padding: 10px 14px !important;
+    }
+}
+
+/* ===== Toast animation ===== */
+@keyframes vaToastIn {
+    from { opacity: 0; transform: translateX(-50%) translateY(20px); }
+    to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+@keyframes vaToastOut {
+    from { opacity: 1; transform: translateX(-50%) translateY(0); }
+    to { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+}
+
+/* ===== Floating sync button (mobile only) ===== */
+.va-sync-fab {
+    display: none;
+}
+@media (max-width: 920px) {
+    .va-sync-fab {
+        display: flex;
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        background: #6366f1;
+        color: #fff;
+        border: none;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        cursor: pointer;
+        box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+        z-index: 100;
+    }
+    .va-sync-fab:active {
+        transform: scale(0.9);
+    }
 }
 `;
+
+function showToast(message, duration = 1500) {
+    const existing = document.getElementById('va-toast');
+    if (existing) existing.remove();
+    const toast = document.createElement('div');
+    toast.id = 'va-toast';
+    toast.textContent = message;
+    toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#10b981;color:#fff;padding:10px 20px;border-radius:8px;font-size:0.9rem;font-weight:bold;z-index:9999;animation:vaToastIn 0.2s ease-out;pointer-events:none;white-space:nowrap;';
+    document.body.appendChild(toast);
+    setTimeout(() => {
+        toast.style.animation = 'vaToastOut 0.3s ease-in forwards';
+        setTimeout(() => toast.remove(), 300);
+    }, duration);
+}
 
 export function VADashboard() {
     const [selectedModelId, setSelectedModelId] = useState('');
@@ -158,6 +280,7 @@ export function VADashboard() {
     const [selectedAccountId, setSelectedAccountId] = useState('ALL');
     const [vaName, setVaName] = useState(() => localStorage.getItem('vaName') || '');
     const [vaNameConfirmed, setVaNameConfirmed] = useState(() => !!localStorage.getItem('vaName'));
+    const [hideCompleted, setHideCompleted] = useState(false);
 
     const models = useLiveQuery(() => db.models.toArray());
     const allAccounts = useLiveQuery(() => db.accounts.toArray());
@@ -270,7 +393,7 @@ export function VADashboard() {
     const tasks = useLiveQuery(
         () => {
             if (!activeModelId) return [];
-            let query = db.tasks.where('modelId').equals(activeModelId).filter(t => t.status !== 'closed' && t.status !== 'failed');
+            let query = db.tasks.where('modelId').equals(activeModelId).filter(t => t.status !== 'failed');
             if (authorizedAccountIds && authorizedAccountIds.length > 0) {
                 const allowed = new Set(authorizedAccountIds.map(Number));
                 query = query.filter(t => allowed.has(Number(t.accountId)));
@@ -364,7 +487,7 @@ export function VADashboard() {
                 await CloudSyncService.deleteMultipleFromCloud('tasks', taskIds.slice(i, i + CHUNK_SIZE));
             }
 
-            alert(`Cleared ${taskIds.length} task(s).`);
+            showToast(`Cleared ${taskIds.length} task(s).`);
         } catch (e) {
             alert('Failed to clear queue: ' + e.message);
         } finally {
@@ -514,7 +637,7 @@ export function VADashboard() {
                             try {
                                 const { CloudSyncService } = await import('../services/growthEngine');
                                 await CloudSyncService.pullCloudToLocal();
-                                alert("Refreshed from cloud!");
+                                showToast('Refreshed from cloud!');
                             } catch (e) { console.error(e); }
                             finally { setSyncing(false); }
                         }}
@@ -532,7 +655,17 @@ export function VADashboard() {
 
             <main className="va-main">
                 <h2 style={{ fontSize: '1.5rem', marginBottom: '8px' }}>Today's Queue</h2>
-                <p style={{ color: '#9ca3af', marginBottom: '24px' }}>Execute the following posts linearly. Mark them done as you go.</p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                    <p style={{ color: '#9ca3af', margin: 0 }}>Execute the following posts linearly. Mark them done as you go.</p>
+                    {tasks?.some(t => t.status === 'closed') && (
+                        <button
+                            onClick={() => setHideCompleted(h => !h)}
+                            style={{ backgroundColor: 'transparent', color: '#9ca3af', border: '1px solid #2d313a', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', whiteSpace: 'nowrap', marginLeft: '12px' }}
+                        >
+                            {hideCompleted ? 'Show Completed' : 'Hide Completed'}
+                        </button>
+                    )}
+                </div>
 
                 {tasks?.length === 0 ? (
                     <div style={{ backgroundColor: '#1a1d24', padding: '48px', textAlign: 'center', borderRadius: '8px', border: '1px solid #2d313a' }}>
@@ -542,12 +675,32 @@ export function VADashboard() {
                     </div>
                 ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                        {tasks?.map((task, index) => (
-                            <VATaskCard key={task.id} task={task} index={index + 1} onPosted={() => setCooldownUntil(Date.now() + (Number(postInterval || 3) * 60 * 1000))} cooldownActive={timeLeft > 0} vaName={vaName} />
-                        ))}
+                        {[...(tasks || [])]
+                            .sort((a, b) => (a.status === 'closed' ? 1 : 0) - (b.status === 'closed' ? 1 : 0))
+                            .filter(t => !hideCompleted || t.status !== 'closed')
+                            .map((task, index) => (
+                                <VATaskCard key={task.id} task={task} index={index + 1} onPosted={() => setCooldownUntil(Date.now() + (Number(postInterval || 3) * 60 * 1000))} cooldownActive={timeLeft > 0} vaName={vaName} />
+                            ))}
                     </div>
                 )}
             </main>
+
+            {/* Floating sync button for mobile */}
+            <button
+                className="va-sync-fab"
+                onClick={async () => {
+                    setSyncing(true);
+                    try {
+                        const { CloudSyncService } = await import('../services/growthEngine');
+                        await CloudSyncService.pullCloudToLocal();
+                        showToast('Synced!');
+                    } catch (e) { console.error(e); }
+                    finally { setSyncing(false); }
+                }}
+                title="Sync from cloud"
+            >
+                {syncing ? '...' : '🔄'}
+            </button>
         </div >
     );
 }
@@ -798,7 +951,7 @@ function VATaskCard({ task, index, onPosted, cooldownActive, vaName }) {
 
     async function copyToClipboard(text, label) {
         navigator.clipboard.writeText(text);
-        alert(`${label} copied to clipboard!`);
+        showToast(`${label} copied!`);
     }
 
     async function handleRegenerateTitle() {
@@ -830,7 +983,7 @@ function VATaskCard({ task, index, onPosted, cooldownActive, vaName }) {
             } catch (err) {
                 console.warn('[VA] Task title cloud sync failed:', err?.message || err);
             }
-            alert('Title regenerated and synced.');
+            showToast('Title regenerated!');
         } catch (err) {
             alert('Failed to regenerate title: ' + err.message);
         } finally {
@@ -844,9 +997,9 @@ function VATaskCard({ task, index, onPosted, cooldownActive, vaName }) {
 
     if (isDone) {
         return (
-            <div style={{ padding: '16px', backgroundColor: '#0f1115', border: '1px dashed #2d313a', borderRadius: '8px', color: '#9ca3af', display: 'flex', alignItems: 'center', gap: '16px', opacity: 0.6 }}>
-                <span style={{ backgroundColor: '#10b98122', color: '#10b981', padding: '4px 8px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold' }}>COMPLETED</span>
-                <span>Task #{index} - r/{subreddit?.name} executed. {task.redditUrl && "Post ID: " + task.redditPostId}</span>
+            <div className="va-completed-card" style={{ padding: '10px 16px', backgroundColor: '#0f1115', border: '1px dashed #2d313a', borderRadius: '8px', color: '#9ca3af', display: 'flex', alignItems: 'center', gap: '10px', opacity: 0.6, flexWrap: 'wrap' }}>
+                <span style={{ backgroundColor: '#10b98122', color: '#10b981', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold', flexShrink: 0 }}>DONE</span>
+                <span style={{ fontSize: '0.85rem', minWidth: 0 }}>#{index} r/{subreddit?.name} {task.redditPostId ? '· ' + task.redditPostId : ''}</span>
             </div>
         );
     }
@@ -928,7 +1081,7 @@ function VATaskCard({ task, index, onPosted, cooldownActive, vaName }) {
                                 onBlur={async (e) => {
                                     if (e.target.value) {
                                         await db.assets.update(asset.id, { externalUrl: e.target.value });
-                                        alert("Link saved to this video forever!");
+                                        showToast('Link saved!');
                                     }
                                 }}
                             />
@@ -949,39 +1102,39 @@ function VATaskCard({ task, index, onPosted, cooldownActive, vaName }) {
                     <div className="va-task-grid">
                         <div>
                             <div className="va-meta-grid">
-                                <div style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Account:</div>
+                                <div className="va-meta-label" style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Account:</div>
                                 <div style={{ fontWeight: 'bold', fontSize: '1.2rem', color: '#6366f1' }}>u/{account?.handle}</div>
 
-                                <div style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Subreddit:</div>
-                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                <div className="va-meta-label" style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Subreddit:</div>
+                                <div className="va-subreddit-row" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                                     <a href={`https://reddit.com/r/${subreddit?.name.replace(/^(r\/|\/r\/)/i, '')}/submit`} target="_blank" rel="noreferrer" style={{ fontWeight: 'bold', fontSize: '1.2rem', color: '#fff', textDecoration: 'underline' }}>
                                         r/{subreddit?.name} ↗
                                     </a>
-                                    <button onClick={() => copyToClipboard(subreddit?.name, 'Subreddit Name')} style={{ backgroundColor: '#2d313a', color: '#ccc', border: 'none', padding: '8px 12px', borderRadius: '4px', fontSize: '0.8rem', cursor: 'pointer' }}>Copy</button>
+                                    <button onClick={() => copyToClipboard(subreddit?.name, 'Subreddit Name')} style={{ backgroundColor: '#2d313a', color: '#ccc', border: 'none', padding: '10px 14px', borderRadius: '4px', fontSize: '0.8rem', cursor: 'pointer' }}>Copy</button>
                                     <span style={{ fontSize: '0.8rem', backgroundColor: '#3b82f644', color: '#3b82f6', padding: '4px 8px', borderRadius: '4px' }}>
                                         {subreddit?.status?.toUpperCase()}
                                     </span>
                                 </div>
 
-                                <div style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Proxy Info:</div>
+                                <div className="va-meta-label" style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Proxy Info:</div>
                                 <div style={{ color: '#fbbf24', fontSize: '1rem', fontWeight: 'bold', fontFamily: 'monospace', wordBreak: 'break-all', backgroundColor: '#fbbf2411', padding: '8px', borderRadius: '4px' }}>
                                     {account?.proxyInfo || model?.proxyInfo || 'USE DEFAULT PROXY'}
                                 </div>
 
-                                <div style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Title:</div>
+                                <div className="va-meta-label" style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Title:</div>
                                 <div style={{ position: 'relative' }}>
                                     <div style={{ color: '#e5e7eb', backgroundColor: '#0f1115', padding: '16px', borderRadius: '4px', border: '1px solid #2d313a', fontSize: '1rem', lineHeight: '1.4' }}>
                                         {task.title}
                                     </div>
-                                    <div style={{ position: 'absolute', bottom: '8px', right: '8px', display: 'flex', gap: '8px' }}>
+                                    <div className="va-title-actions" style={{ position: 'absolute', bottom: '8px', right: '8px', display: 'flex', gap: '8px' }}>
                                         <button
                                             onClick={handleRegenerateTitle}
                                             disabled={regeneratingTitle}
-                                            style={{ backgroundColor: 'transparent', color: '#fbbf24', border: '1px solid #fbbf24', padding: '6px 10px', borderRadius: '4px', fontSize: '0.8rem', cursor: regeneratingTitle ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: regeneratingTitle ? 0.7 : 1 }}
+                                            style={{ backgroundColor: 'transparent', color: '#fbbf24', border: '1px solid #fbbf24', padding: '10px 14px', borderRadius: '4px', fontSize: '0.8rem', cursor: regeneratingTitle ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: regeneratingTitle ? 0.7 : 1 }}
                                         >
                                             {regeneratingTitle ? 'Regenerating...' : 'Regen Title'}
                                         </button>
-                                        <button onClick={() => copyToClipboard(task.title, 'Title')} style={{ backgroundColor: '#6366f1', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', fontSize: '0.8rem', cursor: 'pointer', fontWeight: 'bold' }}>Copy Title</button>
+                                        <button onClick={() => copyToClipboard(task.title, 'Title')} style={{ backgroundColor: '#6366f1', color: '#fff', border: 'none', padding: '10px 14px', borderRadius: '4px', fontSize: '0.8rem', cursor: 'pointer', fontWeight: 'bold' }}>Copy Title</button>
                                     </div>
                                 </div>
                             </div>
@@ -990,6 +1143,8 @@ function VATaskCard({ task, index, onPosted, cooldownActive, vaName }) {
                                 <div style={{ color: '#9ca3af', fontSize: '0.9rem', marginBottom: '8px', fontWeight: 'bold' }}>Post Verification URL:</div>
                                 <input
                                     type="text"
+                                    inputMode="url"
+                                    autoComplete="url"
                                     className="input-field"
                                     placeholder="https://www.reddit.com/r/..."
                                     style={{ backgroundColor: '#0f1115', border: '2px solid #6366f1', color: '#fff', padding: '16px', fontSize: '1rem' }}

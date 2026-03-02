@@ -5,6 +5,7 @@ export function CloudSyncHandler() {
     const hasRun = useRef(false);
     const cycleRef = useRef(false);
     const tgCheckRef = useRef(false);
+    const threadsPatrolRef = useRef(false);
 
     useEffect(() => {
         if (hasRun.current) return;
@@ -36,6 +37,26 @@ export function CloudSyncHandler() {
                 console.error('[CloudSync] Telegram auto-send failed:', err);
             } finally {
                 tgCheckRef.current = false;
+            }
+        };
+
+        const runThreadsPatrol = async () => {
+            if (threadsPatrolRef.current) return;
+            threadsPatrolRef.current = true;
+            const gotLock = await CloudSyncService.acquireLock();
+            if (!gotLock) {
+                threadsPatrolRef.current = false;
+                return;
+            }
+            try {
+                const { ThreadsHealthService } = await import('../services/growthEngine');
+                const result = await ThreadsHealthService.runPatrol();
+                console.log('[ThreadsPatrol] Patrol result:', result);
+            } catch (err) {
+                console.error('[ThreadsPatrol] Patrol failed:', err);
+            } finally {
+                CloudSyncService.releaseLock();
+                threadsPatrolRef.current = false;
             }
         };
 
@@ -76,8 +97,21 @@ export function CloudSyncHandler() {
 
         const cycleIntervalId = setInterval(runCycle, 30000);
 
+        // Threads Health Patrol: 2-min startup delay, then configurable interval (default 15 min)
+        let threadsPatrolIntervalId = null;
+        const threadsStartupTimeout = setTimeout(async () => {
+            // Run first patrol
+            runThreadsPatrol();
+            // Set up recurring interval
+            const settings = await SettingsService.getSettings();
+            const intervalMin = Math.max(5, Math.min(120, Number(settings.threadsPatrolIntervalMinutes) || 15));
+            threadsPatrolIntervalId = setInterval(runThreadsPatrol, intervalMin * 60 * 1000);
+        }, 2 * 60 * 1000);
+
         return () => {
             clearInterval(cycleIntervalId);
+            clearTimeout(threadsStartupTimeout);
+            if (threadsPatrolIntervalId) clearInterval(threadsPatrolIntervalId);
             window.removeEventListener('focus', onFocus);
             document.removeEventListener('visibilitychange', onVisible);
         };

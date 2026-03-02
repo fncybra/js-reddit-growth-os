@@ -73,7 +73,14 @@ export const SettingsService = {
             telegramChatId: '',
             telegramThreadId: '',
             telegramAutoSendHour: 20,
-            lastTelegramReportDate: ''
+            lastTelegramReportDate: '',
+            airtableApiKey: '',
+            airtableBaseId: 'REDACTED_AIRTABLE_BASE_ID',
+            airtableTableName: 'Phone Posting',
+            threadsPatrolEnabled: 1,
+            threadsPatrolIntervalMinutes: 15,
+            threadsPatrolBatchSize: 3,
+            lastThreadsPatrol: ''
         };
         const settingsArr = await db.settings.toArray();
         const settings = { ...defaultSettings };
@@ -3139,5 +3146,407 @@ export const TelegramService = {
     async sendTestMessage(botToken, chatId, threadId) {
         const text = '✅ <b>Reddit Growth OS</b> — Telegram integration is working!';
         await this.sendMessage(botToken, chatId, text, threadId);
+    }
+};
+
+
+// ─── Airtable Integration (Threads Dashboard) ────────────────────────────────
+
+export const AirtableService = {
+    _cache: null,
+    _deviceCache: null,
+    _cacheTime: 0,
+    _deviceCacheTime: 0,
+    _CACHE_TTL: 5 * 60 * 1000, // 5 minutes
+
+    async _getConfig() {
+        const settings = await SettingsService.getSettings();
+        const apiKey = (settings.airtableApiKey || '').trim();
+        const baseId = (settings.airtableBaseId || '').trim();
+        const tableName = (settings.airtableTableName || 'Phone Posting').trim();
+        if (!apiKey || !baseId) throw new Error('Airtable API key and Base ID are required. Configure them in Settings.');
+        return { apiKey, baseId, tableName };
+    },
+
+    async _fetchPaginated(baseId, tableName, apiKey) {
+        const allRecords = [];
+        let offset = null;
+        do {
+            const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`);
+            url.searchParams.set('pageSize', '100');
+            if (offset) url.searchParams.set('offset', offset);
+
+            const res = await fetch(url.toString(), {
+                headers: { 'Authorization': `Bearer ${apiKey}` }
+            });
+            if (!res.ok) {
+                const body = await res.text().catch(() => '');
+                throw new Error(`Airtable API error ${res.status}: ${body}`);
+            }
+            const data = await res.json();
+            allRecords.push(...(data.records || []));
+            offset = data.offset || null;
+        } while (offset);
+        return allRecords;
+    },
+
+    async fetchAllAccounts(forceRefresh = false) {
+        if (!forceRefresh && this._cache && (Date.now() - this._cacheTime < this._CACHE_TTL)) {
+            return this._cache;
+        }
+        const { apiKey, baseId, tableName } = await this._getConfig();
+        const records = await this._fetchPaginated(baseId, tableName, apiKey);
+        const accounts = records.map(r => {
+            const f = r.fields || {};
+            return {
+                id: r.id,
+                username: f['Username'] || '',
+                model: f['Model'] || '',
+                status: f['Status'] || '',
+                followers: Number(f['Followers']) || 0,
+                daysSinceCreation: Number(f['Days Since Creation']) || 0,
+                device: f['Device'] || [],
+                password: f['Password'] || '',
+                twoFA: f['2FA'] || '',
+                vpnLocation: f['VPN Location'] || '',
+                provider: f['Provider'] || '',
+                loginDate: f['Login Date'] || '',
+                daysSinceLogin: Number(f['Days Since Login']) || 0,
+                linkInBio: f['Link in Bio'] || '',
+                creationDate: f['Creation Date'] || '',
+                openThreadsUrl: f['Open Threads'] || '',
+            };
+        });
+        this._cache = accounts;
+        this._cacheTime = Date.now();
+        return accounts;
+    },
+
+    async fetchDevices(forceRefresh = false) {
+        if (!forceRefresh && this._deviceCache && (Date.now() - this._deviceCacheTime < this._CACHE_TTL)) {
+            return this._deviceCache;
+        }
+        const { apiKey, baseId } = await this._getConfig();
+        const records = await this._fetchPaginated(baseId, 'Device', apiKey);
+        const devices = records.map(r => {
+            const f = r.fields || {};
+            return {
+                id: r.id,
+                iphoneUID: f['iPhone UID'] || '',
+                handler: f['Handler'] || '',
+                numberOfAccounts: Number(f['Number of Accounts']) || 0,
+                serialNumber: f['Serial Number'] || '',
+                phoneBrandModel: f['Phone Brand/Model'] || '',
+                fullName: f['Full Name'] || '',
+                workEmail: f['Work Email'] || '',
+            };
+        });
+        this._deviceCache = devices;
+        this._deviceCacheTime = Date.now();
+        return devices;
+    },
+
+    async getThreadsMetrics(accounts) {
+        if (!accounts) accounts = await this.fetchAllAccounts();
+        const total = accounts.length;
+        const statusCounts = {};
+        accounts.forEach(a => {
+            const s = a.status || 'Unknown';
+            statusCounts[s] = (statusCounts[s] || 0) + 1;
+        });
+        return {
+            total,
+            active: statusCounts['Active'] || 0,
+            warmUp: statusCounts['Warm Up'] || 0,
+            settingUp: statusCounts['Setting Up'] || 0,
+            suspended: statusCounts['Suspended'] || 0,
+            dead: (statusCounts['Dead/Shadowbanned'] || 0) + (statusCounts['Dead'] || 0),
+            loginErrors: statusCounts['Login Errors'] || 0,
+            threadsAdded: statusCounts['THREADS ADDED'] || 0,
+            statusCounts,
+        };
+    },
+
+    async getModelBreakdown(accounts) {
+        if (!accounts) accounts = await this.fetchAllAccounts();
+        const models = {};
+        accounts.forEach(a => {
+            const m = a.model || 'Unknown';
+            if (!models[m]) models[m] = { model: m, total: 0, active: 0, suspended: 0, dead: 0, warmUp: 0, loginErrors: 0 };
+            models[m].total++;
+            const s = a.status || '';
+            if (s === 'Active') models[m].active++;
+            else if (s === 'Suspended') models[m].suspended++;
+            else if (s === 'Dead/Shadowbanned' || s === 'Dead') models[m].dead++;
+            else if (s === 'Warm Up') models[m].warmUp++;
+            else if (s === 'Login Errors') models[m].loginErrors++;
+        });
+        return Object.values(models).sort((a, b) => b.total - a.total);
+    },
+
+    async getVAScorecard(accounts, devices) {
+        if (!accounts) accounts = await this.fetchAllAccounts();
+        if (!devices) devices = await this.fetchDevices();
+
+        // Build device ID -> handler map
+        const deviceMap = {};
+        devices.forEach(d => { deviceMap[d.id] = d; });
+
+        // Group accounts by handler via device link
+        const vaMap = {};
+        accounts.forEach(a => {
+            const deviceIds = Array.isArray(a.device) ? a.device : [];
+            let handler = 'Unassigned';
+            let phoneBrand = '';
+            if (deviceIds.length > 0) {
+                const dev = deviceMap[deviceIds[0]];
+                if (dev) {
+                    handler = dev.handler || dev.fullName || 'Unassigned';
+                    phoneBrand = dev.phoneBrandModel || '';
+                }
+            }
+            if (!vaMap[handler]) vaMap[handler] = { handler, phone: phoneBrand, total: 0, active: 0, suspended: 0, dead: 0, loginErrors: 0 };
+            vaMap[handler].total++;
+            const s = a.status || '';
+            if (s === 'Active') vaMap[handler].active++;
+            else if (s === 'Suspended') vaMap[handler].suspended++;
+            else if (s === 'Dead/Shadowbanned' || s === 'Dead') vaMap[handler].dead++;
+            else if (s === 'Login Errors') vaMap[handler].loginErrors++;
+        });
+        return Object.values(vaMap).sort((a, b) => b.total - a.total);
+    },
+
+    async getActionItems(accounts) {
+        if (!accounts) accounts = await this.fetchAllAccounts();
+        const items = [];
+
+        // Login Errors → critical
+        const loginErrors = accounts.filter(a => a.status === 'Login Errors');
+        if (loginErrors.length > 0) {
+            items.push({
+                severity: 'critical',
+                title: `${loginErrors.length} accounts with Login Errors`,
+                detail: loginErrors.slice(0, 5).map(a => a.username).join(', ') + (loginErrors.length > 5 ? '...' : ''),
+            });
+        }
+
+        // No Link in Bio → warning
+        const noLink = accounts.filter(a => a.status === 'Active' && !a.linkInBio);
+        if (noLink.length > 0) {
+            items.push({
+                severity: 'warning',
+                title: `${noLink.length} active accounts missing Link in Bio`,
+                detail: noLink.slice(0, 5).map(a => a.username).join(', ') + (noLink.length > 5 ? '...' : ''),
+            });
+        }
+
+        // Setting Up for 7+ days → info
+        const staleSetup = accounts.filter(a => a.status === 'Setting Up' && a.daysSinceCreation >= 7);
+        if (staleSetup.length > 0) {
+            items.push({
+                severity: 'info',
+                title: `${staleSetup.length} accounts "Setting Up" for 7+ days`,
+                detail: staleSetup.slice(0, 5).map(a => `${a.username} (${a.daysSinceCreation}d)`).join(', ') + (staleSetup.length > 5 ? '...' : ''),
+            });
+        }
+
+        // Stale logins (7+ days since login) → warning
+        const staleLogins = accounts.filter(a => (a.status === 'Active' || a.status === 'Warm Up') && a.daysSinceLogin >= 7);
+        if (staleLogins.length > 0) {
+            items.push({
+                severity: 'warning',
+                title: `${staleLogins.length} active/warmup accounts not logged in 7+ days`,
+                detail: staleLogins.slice(0, 5).map(a => `${a.username} (${a.daysSinceLogin}d)`).join(', ') + (staleLogins.length > 5 ? '...' : ''),
+            });
+        }
+
+        return items;
+    },
+
+    async testConnection() {
+        const { apiKey, baseId, tableName } = await this._getConfig();
+        const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`);
+        url.searchParams.set('pageSize', '1');
+        const res = await fetch(url.toString(), {
+            headers: { 'Authorization': `Bearer ${apiKey}` }
+        });
+        if (!res.ok) {
+            const body = await res.text().catch(() => '');
+            throw new Error(`Airtable API error ${res.status}: ${body}`);
+        }
+        const data = await res.json();
+        return { success: true, recordCount: data.records?.length || 0 };
+    },
+
+    clearCache() {
+        this._cache = null;
+        this._cacheTime = 0;
+    }
+};
+
+
+// ─── Threads Health Patrol (Automated Dead Account Detection) ─────────────────
+
+export const ThreadsHealthService = {
+    _checkedThisSession: new Set(),
+
+    async checkAccountStatus(username) {
+        const proxyUrl = await SettingsService.getProxyUrl();
+        if (!proxyUrl) throw new Error('Proxy URL not configured');
+        const cleanName = String(username || '').replace(/^@/, '').trim();
+        if (!cleanName) return { status: 'error', error: 'Empty username' };
+
+        try {
+            const res = await fetchWithTimeout(
+                `${proxyUrl}/api/scrape/threads/user/stats/${encodeURIComponent(cleanName)}`,
+                {},
+                15000
+            );
+            if (!res.ok) {
+                return { status: 'error', error: `HTTP ${res.status}` };
+            }
+            return await res.json();
+        } catch (err) {
+            return { status: 'error', error: err.message };
+        }
+    },
+
+    async updateAirtableStatus(apiKey, baseId, tableName, recordId, newStatus) {
+        const url = `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}/${recordId}`;
+        const res = await fetch(url, {
+            method: 'PATCH',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ fields: { 'Status': newStatus } }),
+        });
+        if (!res.ok) {
+            const body = await res.text().catch(() => '');
+            throw new Error(`Airtable write failed ${res.status}: ${body}`);
+        }
+        return await res.json();
+    },
+
+    async runPatrol() {
+        const settings = await SettingsService.getSettings();
+        if (!Number(settings.threadsPatrolEnabled)) {
+            console.log('[ThreadsPatrol] Disabled, skipping');
+            return { skipped: true, reason: 'disabled' };
+        }
+
+        const apiKey = (settings.airtableApiKey || '').trim();
+        const baseId = (settings.airtableBaseId || '').trim();
+        const tableName = (settings.airtableTableName || 'Phone Posting').trim();
+        if (!apiKey || !baseId) {
+            console.log('[ThreadsPatrol] Airtable not configured, skipping');
+            return { skipped: true, reason: 'airtable_not_configured' };
+        }
+
+        const batchSize = Math.max(1, Math.min(10, Number(settings.threadsPatrolBatchSize) || 3));
+
+        // Pull accounts from Airtable
+        let accounts;
+        try {
+            accounts = await AirtableService.fetchAllAccounts(true);
+        } catch (err) {
+            console.error('[ThreadsPatrol] Failed to fetch accounts:', err.message);
+            return { skipped: true, reason: 'airtable_fetch_failed', error: err.message };
+        }
+
+        // Filter: skip accounts already marked Dead/Shadowbanned or Dead
+        const checkable = accounts.filter(a => {
+            const s = (a.status || '').toLowerCase();
+            return a.username && s !== 'dead' && s !== 'dead/shadowbanned';
+        });
+
+        if (checkable.length === 0) {
+            console.log('[ThreadsPatrol] No checkable accounts');
+            return { checked: 0, dead: 0, total: accounts.length };
+        }
+
+        // Reset rotation when all accounts have been checked
+        if (this._checkedThisSession.size >= checkable.length) {
+            console.log('[ThreadsPatrol] Full rotation complete, resetting');
+            this._checkedThisSession.clear();
+        }
+
+        // Pick batch: accounts not yet checked this session
+        const unchecked = checkable.filter(a => !this._checkedThisSession.has(a.username));
+        const batch = unchecked.slice(0, batchSize);
+
+        console.log(`[ThreadsPatrol] Checking ${batch.length} accounts (${this._checkedThisSession.size}/${checkable.length} checked this session)`);
+
+        const results = [];
+        const newlyDead = [];
+
+        for (const account of batch) {
+            this._checkedThisSession.add(account.username);
+            try {
+                const result = await this.checkAccountStatus(account.username);
+                results.push({ username: account.username, ...result });
+
+                if (result.status === 'not_found') {
+                    console.log(`[ThreadsPatrol] DEAD detected: ${account.username}`);
+                    newlyDead.push(account);
+                    // Write back to Airtable
+                    try {
+                        await this.updateAirtableStatus(apiKey, baseId, tableName, account.id, 'Dead');
+                        console.log(`[ThreadsPatrol] Updated Airtable: ${account.username} -> Dead`);
+                    } catch (writeErr) {
+                        console.error(`[ThreadsPatrol] Airtable write failed for ${account.username}:`, writeErr.message);
+                    }
+                } else if (result.status === 'rate_limited') {
+                    console.warn('[ThreadsPatrol] Rate limited, stopping batch early');
+                    break;
+                }
+
+                // 3-second delay between requests
+                if (batch.indexOf(account) < batch.length - 1) {
+                    await new Promise(r => setTimeout(r, 3000));
+                }
+            } catch (err) {
+                console.error(`[ThreadsPatrol] Error checking ${account.username}:`, err.message);
+                results.push({ username: account.username, status: 'error', error: err.message });
+            }
+        }
+
+        // Send Telegram alert if any new dead accounts detected
+        if (newlyDead.length > 0) {
+            try {
+                const token = (settings.telegramBotToken || '').trim();
+                const chatId = (settings.telegramChatId || '').trim();
+                const threadId = (settings.telegramThreadId || '').trim();
+                if (token && chatId) {
+                    const deadList = newlyDead.map(a => `- @${a.username} (${a.model || 'unknown model'})`).join('\n');
+                    const msg = `<b>Threads Health Patrol</b>\n\n${newlyDead.length} dead account(s) detected:\n${deadList}\n\nStatus updated to "Dead" in Airtable.`;
+                    await TelegramService.sendMessage(token, chatId, msg, threadId);
+                    console.log('[ThreadsPatrol] Telegram alert sent');
+                }
+            } catch (tgErr) {
+                console.error('[ThreadsPatrol] Telegram alert failed:', tgErr.message);
+            }
+        }
+
+        // Store patrol summary
+        const summary = {
+            timestamp: new Date().toISOString(),
+            checked: results.length,
+            healthy: results.filter(r => r.status === 'active').length,
+            dead: newlyDead.length,
+            errors: results.filter(r => r.status === 'error').length,
+            totalAccounts: accounts.length,
+            sessionProgress: this._checkedThisSession.size,
+            sessionTotal: checkable.length,
+        };
+        await SettingsService.updateSetting('lastThreadsPatrol', JSON.stringify(summary));
+
+        // Clear Airtable cache so next dashboard load shows fresh data
+        if (newlyDead.length > 0) {
+            AirtableService.clearCache();
+        }
+
+        console.log(`[ThreadsPatrol] Done: ${results.length} checked, ${newlyDead.length} dead, ${summary.healthy} healthy`);
+        return summary;
     }
 };
