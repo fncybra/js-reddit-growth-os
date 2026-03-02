@@ -147,7 +147,7 @@ export function ModelDetail() {
         <>
             <header className="page-header">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    <Link to="/" className="btn btn-outline" style={{ padding: '6px 12px' }}>
+                    <Link to="/reddit" className="btn btn-outline" style={{ padding: '6px 12px' }}>
                         <ArrowLeft size={14} style={{ marginRight: '4px' }} /> Back
                     </Link>
                     <div>

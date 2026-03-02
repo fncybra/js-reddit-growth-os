@@ -1,36 +1,60 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import {
-  BarChart2,
+  LayoutDashboard,
   Users,
   Smartphone,
   Globe,
   Image as ImageIcon,
   CheckSquare,
   Settings,
+  Settings2,
   Telescope,
   Cloud,
   CloudOff,
   BookOpen,
   Repeat,
   Link2,
+  AtSign,
 } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
 import { SettingsService } from '../services/growthEngine';
 
-const navItems = [
-  { path: '/', label: 'Global Dashboard', icon: BarChart2 },
-  { path: '/discovery', label: 'Discovery Scraper', icon: Telescope },
-  { path: '/models', label: 'Models', icon: Users },
-  { path: '/accounts', label: 'Accounts', icon: Smartphone },
-  { path: '/subreddits', label: 'Subreddits', icon: Globe },
-  { path: '/library', label: 'Content Library', icon: ImageIcon },
-  { path: '/repurpose', label: 'Repurpose Ready', icon: Repeat },
-  { path: '/tasks', label: 'Post Tasks', icon: CheckSquare },
-  { path: '/links', label: 'Link Tracker', icon: Link2 },
-  { path: '/sop', label: 'Training SOP', icon: BookOpen },
-  { path: '/settings', label: 'Settings', icon: Settings },
+const navSections = [
+  {
+    label: 'AGENCY',
+    items: [
+      { path: '/', label: 'Command Center', icon: LayoutDashboard, end: true },
+    ],
+  },
+  {
+    label: 'REDDIT',
+    items: [
+      { path: '/discovery', label: 'Discovery Scraper', icon: Telescope },
+      { path: '/models', label: 'Models', icon: Users },
+      { path: '/accounts', label: 'Accounts', icon: Smartphone },
+      { path: '/subreddits', label: 'Subreddits', icon: Globe },
+      { path: '/library', label: 'Content Library', icon: ImageIcon },
+      { path: '/repurpose', label: 'Repurpose Ready', icon: Repeat },
+      { path: '/tasks', label: 'Post Tasks', icon: CheckSquare },
+      { path: '/links', label: 'Link Tracker', icon: Link2 },
+    ],
+  },
+  {
+    label: 'THREADS',
+    items: [
+      { path: '/threads', label: 'Threads Dashboard', icon: AtSign },
+      { path: '/threads/settings', label: 'Threads Settings', icon: Settings2 },
+    ],
+  },
+  {
+    label: 'SYSTEM',
+    items: [
+      { path: '/sop', label: 'Training SOP', icon: BookOpen },
+      { path: '/settings', label: 'Settings', icon: Settings },
+    ],
+  },
 ];
 
 export function Sidebar() {
@@ -38,27 +62,33 @@ export function Sidebar() {
     <div className="sidebar">
       <div className="sidebar-header">
         <div className="sidebar-logo">
-          <svg viewBox="0 0 20 20" width="28" height="28" style={{ flexShrink: 0 }}>
-            <circle cx="10" cy="10" r="10" fill="#FF4500" />
-            <path d="M16.67 10a1.46 1.46 0 0 0-2.47-1 7.12 7.12 0 0 0-3.85-1.23l.65-3.08 2.14.45a1.04 1.04 0 1 0 .12-.61l-2.39-.52a.35.35 0 0 0-.41.27l-.73 3.45a7.14 7.14 0 0 0-3.92 1.23 1.46 1.46 0 1 0-1.6 2.39 2.87 2.87 0 0 0 0 .44c0 2.24 2.61 4.06 5.83 4.06s5.83-1.82 5.83-4.06a2.87 2.87 0 0 0 0-.44 1.46 1.46 0 0 0 .8-1.35zM7.27 11.17a1.04 1.04 0 1 1 1.04 1.04 1.04 1.04 0 0 1-1.04-1.04zm5.92 2.77a3.58 3.58 0 0 1-2.25.68 3.58 3.58 0 0 1-2.25-.68.35.35 0 1 1 .5-.49 2.9 2.9 0 0 0 1.75.52 2.9 2.9 0 0 0 1.75-.52.35.35 0 1 1 .5.49zm-.18-1.73a1.04 1.04 0 1 1 1.04-1.04 1.04 1.04 0 0 1-1.04 1.04z" fill="#FFF" />
-          </svg>
-          <span>Reddit Growth OS</span>
+          <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontWeight: 800, fontSize: '0.7rem', color: '#fff', letterSpacing: '-0.5px' }}>JS</div>
+          <span>JS Media</span>
         </div>
       </div>
       <nav className="sidebar-nav">
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          return (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-            >
-              <Icon size={18} />
-              {item.label}
-            </NavLink>
-          );
-        })}
+        {navSections.map((section, sIdx) => (
+          <div key={section.label}>
+            {sIdx > 0 && <div style={{ borderTop: '1px solid var(--border-light, var(--border-color))', margin: '4px 12px 0' }} />}
+            <div style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-muted, var(--text-secondary))', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '12px 16px 4px' }}>
+              {section.label}
+            </div>
+            {section.items.map((item) => {
+              const Icon = item.icon;
+              return (
+                <NavLink
+                  key={item.path}
+                  to={item.path}
+                  end={item.end || false}
+                  className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                >
+                  <Icon size={18} />
+                  {item.label}
+                </NavLink>
+              );
+            })}
+          </div>
+        ))}
       </nav>
 
       <div style={{ marginTop: 'auto', padding: '16px', borderTop: '1px solid var(--border-color)', fontSize: '0.75rem' }}>

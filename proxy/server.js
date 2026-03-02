@@ -872,6 +872,111 @@ app.post('/api/drive/move', async (req, res) => {
     }
 });
 
+// Proxy endpoint for Threads Profile Scraping (Health Patrol)
+app.get('/api/scrape/threads/user/stats/:username', async (req, res) => {
+    try {
+        const { username } = req.params;
+        const cleanName = username.replace(/^@/, '');
+        const url = `https://www.threads.com/@${cleanName}`;
+        const proxyInfo = getRequestProxyInfo(req);
+
+        let response;
+        try {
+            response = await axiosWithRetry(url, {
+                'Accept': 'text/html,application/xhtml+xml',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            }, { proxyInfo });
+        } catch (err) {
+            const status = err?.response?.status;
+            if (status === 404) {
+                return res.json({ exists: false, username: cleanName, status: 'not_found' });
+            }
+            if (status === 403 || status === 429) {
+                return res.json({ exists: false, username: cleanName, status: 'rate_limited' });
+            }
+            throw err;
+        }
+
+        const html = typeof response.data === 'string' ? response.data : '';
+
+        // Parse embedded JSON from <script type="application/json" data-sjs> tags
+        let userData = null;
+        const scriptRegex = /<script[^>]*type="application\/json"[^>]*data-sjs[^>]*>([\s\S]*?)<\/script>/gi;
+        let match;
+        while ((match = scriptRegex.exec(html)) !== null) {
+            try {
+                const jsonStr = match[1].trim();
+                if (!jsonStr) continue;
+                const parsed = JSON.parse(jsonStr);
+                // Recursively search for user data object
+                const found = findThreadsUserData(parsed, cleanName);
+                if (found) { userData = found; break; }
+            } catch (_) { /* skip unparseable scripts */ }
+        }
+
+        if (!userData) {
+            // Page loaded but no user data found — account is dead/suspended/deleted
+            console.log(`[ThreadsScrape] ${cleanName}: no user data found in page HTML (${html.length} bytes)`);
+            return res.json({ exists: false, username: cleanName, status: 'not_found' });
+        }
+
+        console.log(`[ThreadsScrape] ${cleanName}: found profile data, followers=${userData.followerCount}`);
+        res.json({
+            exists: true,
+            username: userData.username || cleanName,
+            followerCount: userData.followerCount || 0,
+            biography: userData.biography || '',
+            profilePicUrl: userData.profilePicUrl || '',
+            isVerified: userData.isVerified || false,
+            status: 'active',
+        });
+    } catch (error) {
+        console.error('[ThreadsScrape] Error:', error.message);
+        res.json({ exists: false, username: req.params.username, status: 'error', error: error.message });
+    }
+});
+
+// Recursively search a parsed JSON object for Threads user profile data
+function findThreadsUserData(obj, targetUsername) {
+    if (!obj || typeof obj !== 'object') return null;
+
+    // Look for objects that have username + follower_count (Threads profile shape)
+    if (obj.username && obj.follower_count !== undefined) {
+        return {
+            username: obj.username,
+            followerCount: obj.follower_count,
+            biography: obj.biography || obj.bio_text || '',
+            profilePicUrl: obj.profile_pic_url || obj.hd_profile_pic_url || '',
+            isVerified: obj.is_verified || false,
+        };
+    }
+    // Also check text_post_app_info shape (Meta's internal data format)
+    if (obj.text_post_app_info && obj.username) {
+        return {
+            username: obj.username,
+            followerCount: obj.follower_count || obj.text_post_app_info?.follower_count || 0,
+            biography: obj.biography || '',
+            profilePicUrl: obj.profile_pic_url || '',
+            isVerified: obj.is_verified || false,
+        };
+    }
+
+    // Recurse into arrays and objects
+    if (Array.isArray(obj)) {
+        for (const item of obj) {
+            const found = findThreadsUserData(item, targetUsername);
+            if (found) return found;
+        }
+    } else {
+        for (const key of Object.keys(obj)) {
+            const found = findThreadsUserData(obj[key], targetUsername);
+            if (found) return found;
+        }
+    }
+    return null;
+}
+
 // Proxy endpoint for AI Generation (Bypasses Browser CORS / Preflight blocks)
 app.post('/api/ai/generate', async (req, res) => {
     try {
