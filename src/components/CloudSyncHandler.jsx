@@ -6,6 +6,7 @@ export function CloudSyncHandler() {
     const cycleRef = useRef(false);
     const tgCheckRef = useRef(false);
     const threadsPatrolRef = useRef(false);
+    const threadsDailyRef = useRef(false);
 
     useEffect(() => {
         if (hasRun.current) return;
@@ -37,6 +38,48 @@ export function CloudSyncHandler() {
                 console.error('[CloudSync] Telegram auto-send failed:', err);
             } finally {
                 tgCheckRef.current = false;
+            }
+        };
+
+        const checkThreadsDailyReport = async () => {
+            if (threadsDailyRef.current) return;
+            threadsDailyRef.current = true;
+            try {
+                const settings = await SettingsService.getSettings();
+                if (!settings.threadsDailyReportEnabled) return;
+
+                // Need Telegram config (Threads or main)
+                const token = (settings.threadsTelegramBotToken || settings.telegramBotToken || '').trim();
+                const chatId = (settings.threadsTelegramChatId || settings.telegramChatId || '').trim();
+                if (!token || !chatId) return;
+
+                // Need Airtable config
+                const airtableKey = (settings.airtableApiKey || '').trim();
+                const airtableBase = (settings.airtableBaseId || '').trim();
+                if (!airtableKey || !airtableBase) return;
+
+                // Already sent today?
+                const now = new Date();
+                const today = now.toISOString().slice(0, 10);
+                if (settings.lastThreadsDailyReportDate === today) return;
+
+                // Hour gate
+                const sendHour = Number(settings.threadsDailyReportHour) || 8;
+                if (now.getHours() < sendHour) return;
+
+                console.log('[CloudSync] Auto-sending Threads daily VA report...');
+                const { TelegramService } = await import('../services/growthEngine');
+                const result = await TelegramService.sendThreadsDailyReport();
+                if (result.sent) {
+                    await SettingsService.updateSetting('lastThreadsDailyReportDate', today);
+                    console.log('[CloudSync] Threads daily VA report sent for', today);
+                } else {
+                    console.warn('[CloudSync] Threads daily VA report not sent:', result.reason);
+                }
+            } catch (err) {
+                console.error('[CloudSync] Threads daily VA report failed:', err);
+            } finally {
+                threadsDailyRef.current = false;
             }
         };
 
@@ -84,6 +127,7 @@ export function CloudSyncHandler() {
 
             // Check Telegram auto-send after each sync cycle (outside lock)
             checkTelegramAutoSend();
+            checkThreadsDailyReport();
         };
 
         runCycle();
