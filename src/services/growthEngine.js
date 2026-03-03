@@ -3160,64 +3160,89 @@ export const TelegramService = {
 
     async buildThreadsDailyReport() {
         const reportData = await VAReportService.generateReportData();
-        const { fleet, redFlags, watchList, topPerformers, delta } = reportData;
+        const { fleet, vaCards, delta } = reportData;
 
-        // Format date
         const now = new Date();
-        const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        const dateStr = now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 
         const lines = [];
-        lines.push('<b>Threads Fleet — Daily VA Report</b>');
-        lines.push(dateStr);
+        lines.push(`<b>Threads Daily Report</b> — ${dateStr}`);
         lines.push('');
 
-        // Fleet summary
-        lines.push('<b>Fleet Summary</b>');
-        lines.push(`Total: ${fleet.total.toLocaleString()} | Active: ${fleet.active.toLocaleString()} | Warm Up: ${fleet.warmUp.toLocaleString()} | Suspended: ${fleet.suspended} | Dead: ${fleet.dead}`);
-        lines.push(`Health: ${fleet.grade} (${fleet.score}/100) | Survival: ${fleet.survivalRate}% | Followers: ${fleet.totalFollowers.toLocaleString()}`);
+        // Active fleet only
+        const totalThreads = vaCards.reduce((sum, v) => sum + (v.totalThreads || 0), 0);
+        const totalIdle = vaCards.reduce((sum, v) => sum + (v.idle || 0), 0);
+        const totalPosting = fleet.active - totalIdle;
+        const postingPct = fleet.active > 0 ? Math.round(totalPosting / fleet.active * 100) : 0;
+        lines.push(`<b>Active Fleet</b>`);
+        lines.push(`${fleet.active} Active | ${fleet.warmUp} Warming | ${fleet.loginErrors} Errors`);
+        lines.push(`${postingPct}% posting | ${totalIdle} idle | ${totalThreads.toLocaleString()} total posts`);
         if (delta.fleet) {
             const d = delta.fleet;
-            const fmt = (n) => (n >= 0 ? '+' + n.toLocaleString() : n.toLocaleString());
-            lines.push(`vs yesterday: ${fmt(d.totalChange)} total | ${fmt(d.activeChange)} active | ${fmt(d.deadChange)} dead | ${fmt(d.followerChange)} followers`);
+            const fmt = (n) => (n >= 0 ? '+' + n : String(n));
+            lines.push(`vs yesterday: ${fmt(d.activeChange)} active | ${fmt(d.followerChange)} followers`);
         }
         lines.push('');
 
-        // Red flags
-        if (redFlags.length > 0) {
-            lines.push(`<b>Red Flags (${redFlags.length})</b>`);
-            for (const flag of redFlags) {
-                lines.push(`- ${flag.handler}: ${flag.message}`);
+        // Slackers — VAs with idle accounts (not posting)
+        const slackers = vaCards
+            .filter(v => v.handler !== 'Unassigned' && v.idle > 0)
+            .sort((a, b) => b.idle - a.idle);
+
+        if (slackers.length > 0) {
+            lines.push(`<b>Not Posting (${totalIdle} idle accounts)</b>`);
+            for (const v of slackers) {
+                const names = v.idleAccountNames.slice(0, 5).map(n => '@' + n).join(', ');
+                const extra = v.idleAccountNames.length > 5 ? ` +${v.idleAccountNames.length - 5} more` : '';
+                lines.push(`${v.handler}: ${v.idle} idle — ${names}${extra}`);
             }
             lines.push('');
         }
 
-        // Watch list
-        if (watchList.length > 0) {
-            lines.push(`<b>Watch List (${watchList.length})</b>`);
-            for (const item of watchList) {
-                lines.push(`- ${item.message}`);
+        // Stale logins
+        const staleVAs = vaCards.filter(v => v.handler !== 'Unassigned' && v.staleLogins.length > 0);
+        if (staleVAs.length > 0) {
+            const totalStale = staleVAs.reduce((sum, v) => sum + v.staleLogins.length, 0);
+            lines.push(`<b>Not Logging In (${totalStale} stale)</b>`);
+            for (const v of staleVAs) {
+                const names = v.staleLogins.slice(0, 3).map(s => `@${s.username} (${s.daysSinceLogin}d)`).join(', ');
+                const extra = v.staleLogins.length > 3 ? ` +${v.staleLogins.length - 3} more` : '';
+                lines.push(`${v.handler}: ${v.staleLogins.length} stale — ${names}${extra}`);
+            }
+            lines.push('');
+        }
+
+        // Login errors
+        const errorVAs = vaCards.filter(v => v.handler !== 'Unassigned' && v.loginErrors > 0);
+        if (errorVAs.length > 0) {
+            lines.push(`<b>Login Errors</b>`);
+            for (const v of errorVAs) {
+                lines.push(`${v.handler}: ${v.loginErrors} error(s)`);
             }
             lines.push('');
         }
 
         // All clear
-        if (redFlags.length === 0 && watchList.length === 0) {
-            lines.push('All Clear — no red flags or watch list items today.');
+        if (slackers.length === 0 && staleVAs.length === 0 && errorVAs.length === 0) {
+            lines.push('All VAs posting and logged in. No issues.');
             lines.push('');
         }
 
-        // Top performers
-        if (topPerformers.length > 0) {
-            lines.push('<b>Top Performers</b>');
-            topPerformers.forEach((tp, i) => {
-                const followerDelta = tp.followerChange ? ` (${tp.followerChange >= 0 ? '+' : ''}${tp.followerChange.toLocaleString()})` : '';
-                lines.push(`${i + 1}. ${tp.handler}: ${tp.active} active, ${tp.survivalRate}% survival, ${tp.totalFollowers.toLocaleString()} followers${followerDelta}`);
+        // Top VAs by posting %
+        const topVAs = vaCards
+            .filter(v => v.handler !== 'Unassigned' && v.active > 0)
+            .sort((a, b) => (b.postingPct || 0) - (a.postingPct || 0))
+            .slice(0, 3);
+        if (topVAs.length > 0) {
+            lines.push('<b>Top VAs</b>');
+            topVAs.forEach((v, i) => {
+                const followerDelta = delta.va[v.handler]?.followerChange;
+                const fDelta = followerDelta ? ` (${followerDelta >= 0 ? '+' : ''}${followerDelta.toLocaleString()})` : '';
+                lines.push(`${i + 1}. ${v.handler}: ${v.postingPct || 0}% posting, ${v.active} active, ${v.totalFollowers.toLocaleString()} followers${fDelta}`);
             });
         }
 
-        // Save snapshot for next day's delta
         await VAReportService.saveSnapshot(reportData);
-
         return lines.join('\n');
     },
 
@@ -3680,22 +3705,7 @@ export const ThreadsHealthService = {
             }
         }
 
-        // Send Telegram alert if any new dead accounts detected
-        // Uses separate Threads Telegram settings, falls back to main if not set
-        if (newlyDead.length > 0) {
-            try {
-                const token = (settings.threadsTelegramBotToken || settings.telegramBotToken || '').trim();
-                const chatId = (settings.threadsTelegramChatId || settings.telegramChatId || '').trim();
-                const threadId = (settings.threadsTelegramThreadId || settings.telegramThreadId || '').trim();
-                if (token && chatId) {
-                    const deadList = newlyDead.map(a => `- @${a.username} (${a.model || 'unknown model'})`).join('\n');
-                    const msg = `<b>Threads Health Patrol</b>\n\n${newlyDead.length} dead account(s) detected:\n${deadList}\n\nStatus updated to "Dead" in Airtable.`;
-                    await TelegramService.sendMessage(token, chatId, msg, threadId);
-                }
-            } catch (tgErr) {
-                console.error('[ThreadsPatrol] Telegram alert failed:', tgErr.message);
-            }
-        }
+        // Dead accounts are tracked — no instant alerts, covered by daily report
 
         // Store patrol summary
         const summary = {
@@ -4036,9 +4046,20 @@ export const VAReportService = {
         });
 
         // Compute per-VA metrics
+        const daysSincePost = (a) => {
+            if (!a.lastPostDate) return a.threadCount > 0 ? 999 : -1;
+            return Math.floor((Date.now() - new Date(a.lastPostDate).getTime()) / 86400000);
+        };
         const vaCards = Object.values(vaMap).map(v => {
             const atRisk = v.active + v.dead + v.suspended;
             v.survivalRate = atRisk > 0 ? Math.round((v.active / atRisk) * 100) : 100;
+            // Idle = active accounts not posting (0 posts or no post today)
+            const activeAccs = v.accounts.filter(a => a.status === 'Active');
+            const idleAccs = activeAccs.filter(a => a.threadCount === 0 || (a.lastPostDate && daysSincePost(a) >= 1));
+            v.idle = idleAccs.length;
+            v.idleAccountNames = idleAccs.map(a => a.username);
+            v.totalThreads = activeAccs.reduce((sum, a) => sum + (a.threadCount || 0), 0);
+            v.postingPct = activeAccs.length > 0 ? Math.round((activeAccs.length - idleAccs.length) / activeAccs.length * 100) : 0;
             return v;
         }).sort((a, b) => b.active - a.active);
 
