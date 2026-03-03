@@ -3129,7 +3129,7 @@ export const TelegramService = {
         // Top performer
         if (topModel) {
             lines.push(`<b>Top Performer</b>`);
-            lines.push(`${topModel.name}: ${topModel.metrics.totalViews.toLocaleString()} total views`);
+            lines.push(`${topModel.name}: ${topModel.metrics.totalViews.toLocaleString()} total upvotes`);
         }
 
         return lines.join('\n');
