@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { AirtableService, SettingsService, ThreadsHealthService, ThreadsGrowthService } from '../services/growthEngine';
-import { RefreshCw, AlertTriangle, AlertCircle, Info, Shield, TrendingUp, Zap, Users, Activity } from 'lucide-react';
-import { StatusDoughnut, BarChart, TrendLine, COLORS } from '../components/charts';
+import { RefreshCw, AlertTriangle, Zap, Shield } from 'lucide-react';
+
+const COLORS = { success: '#10b981', warning: '#f59e0b', danger: '#f43f5e', accent: '#3b82f6', muted: '#6b7280' };
 
 export function ThreadsDashboard() {
     const [loading, setLoading] = useState(true);
@@ -9,42 +10,34 @@ export function ThreadsDashboard() {
     const [scanning, setScanning] = useState(false);
     const [scanProgress, setScanProgress] = useState(null);
     const [error, setError] = useState(null);
+    const [accounts, setAccounts] = useState([]);
+    const [devices, setDevices] = useState([]);
     const [metrics, setMetrics] = useState(null);
-    const [modelBreakdown, setModelBreakdown] = useState([]);
     const [vaScorecard, setVAScorecard] = useState([]);
     const [actionItems, setActionItems] = useState([]);
-    const [patrolStatus, setPatrolStatus] = useState(null);
     const [fleetHealth, setFleetHealth] = useState(null);
     const [recommendations, setRecommendations] = useState([]);
-    const [ageAnalysis, setAgeAnalysis] = useState([]);
-    const [followerDist, setFollowerDist] = useState([]);
-    const [modelPerformance, setModelPerformance] = useState([]);
+    const [patrolStatus, setPatrolStatus] = useState(null);
 
     async function loadData(forceRefresh = false) {
         try {
             setError(null);
-            const accounts = await AirtableService.fetchAllAccounts(forceRefresh);
-            const devices = await AirtableService.fetchDevices(forceRefresh);
-            const [m, mb, va, ai, fh, recs, age, fd, mp] = await Promise.allSettled([
-                AirtableService.getThreadsMetrics(accounts),
-                AirtableService.getModelBreakdown(accounts),
-                AirtableService.getVAScorecard(accounts, devices),
-                AirtableService.getActionItems(accounts),
-                ThreadsGrowthService.getFleetHealth(accounts),
-                ThreadsGrowthService.getRecommendations(accounts),
-                ThreadsGrowthService.getAccountAgeAnalysis(accounts),
-                ThreadsGrowthService.getFollowerDistribution(accounts),
-                ThreadsGrowthService.getModelPerformance(accounts),
+            const accs = await AirtableService.fetchAllAccounts(forceRefresh);
+            const devs = await AirtableService.fetchDevices(forceRefresh);
+            setAccounts(accs);
+            setDevices(devs);
+            const [m, va, ai, fh, recs] = await Promise.allSettled([
+                AirtableService.getThreadsMetrics(accs),
+                AirtableService.getVAScorecard(accs, devs),
+                AirtableService.getActionItems(accs),
+                ThreadsGrowthService.getFleetHealth(accs),
+                ThreadsGrowthService.getRecommendations(accs),
             ]);
             if (m.status === 'fulfilled') setMetrics(m.value);
-            if (mb.status === 'fulfilled') setModelBreakdown(mb.value);
             if (va.status === 'fulfilled') setVAScorecard(va.value);
             if (ai.status === 'fulfilled') setActionItems(ai.value);
             if (fh.status === 'fulfilled') setFleetHealth(fh.value);
             if (recs.status === 'fulfilled') setRecommendations(recs.value);
-            if (age.status === 'fulfilled') setAgeAnalysis(age.value);
-            if (fd.status === 'fulfilled') setFollowerDist(fd.value);
-            if (mp.status === 'fulfilled') setModelPerformance(mp.value);
         } catch (e) {
             setError(e.message);
         } finally {
@@ -57,28 +50,21 @@ export function ThreadsDashboard() {
         try {
             const settings = await SettingsService.getSettings();
             const raw = settings.lastThreadsPatrol;
-            if (raw) {
-                setPatrolStatus(JSON.parse(raw));
-            }
+            if (raw) setPatrolStatus(JSON.parse(raw));
         } catch (_) {}
     }
 
     useEffect(() => { loadData(); loadPatrolStatus(); }, []);
 
-    function handleSync() {
-        setSyncing(true);
-        loadData(true);
-    }
+    function handleSync() { setSyncing(true); loadData(true); }
 
     async function handleFullScan() {
-        if (!window.confirm('This will scan ALL checkable accounts. For 2k accounts this takes ~1-2 hours. Continue?')) return;
+        if (!window.confirm('This will scan ALL checkable accounts. Continue?')) return;
         setScanning(true);
         setScanProgress({ current: 0, total: 0, username: '' });
         try {
-            const result = await ThreadsHealthService.runFullScan((progress) => {
-                setScanProgress(progress);
-            });
-            alert(`Full scan complete!\n\nChecked: ${result.total}\nHealthy: ${result.healthy}\nDead: ${result.dead}\nErrors: ${result.errors}`);
+            const result = await ThreadsHealthService.runFullScan((progress) => setScanProgress(progress));
+            alert(`Scan complete! Checked: ${result.total}, Healthy: ${result.healthy}, Dead: ${result.dead}, Errors: ${result.errors}`);
             loadData(true);
             loadPatrolStatus();
         } catch (err) {
@@ -102,26 +88,63 @@ export function ThreadsDashboard() {
         </div>
     );
 
-    // Prepare chart data
-    const statusLabels = metrics?.statusCounts ? Object.keys(metrics.statusCounts) : [];
-    const statusValues = statusLabels.map(k => metrics.statusCounts[k]);
-    const statusColors = statusLabels.map(s => {
-        const lower = s.toLowerCase();
-        if (lower === 'active') return COLORS.success;
-        if (lower === 'warm up') return COLORS.info;
-        if (lower.includes('suspend')) return COLORS.warning;
-        if (lower.includes('dead')) return COLORS.danger;
-        if (lower.includes('error')) return '#f97316';
-        if (lower.includes('setting')) return '#8b5cf6';
-        if (lower.includes('added')) return '#06b6d4';
-        return COLORS.muted;
-    });
+    // Device lookup map
+    const deviceMap = {};
+    devices.forEach(d => { deviceMap[d.id] = d; });
+
+    // Replace list: dead + suspended + login error accounts
+    const replaceList = accounts
+        .filter(a => ['Dead', 'Dead/Shadowbanned', 'Suspended', 'Login Errors'].includes(a.status))
+        .map(a => {
+            const devId = Array.isArray(a.device) && a.device[0];
+            const dev = devId ? deviceMap[devId] : null;
+            return { ...a, vaName: dev?.handler || dev?.fullName || 'Unassigned' };
+        })
+        .sort((a, b) => {
+            const order = { 'Dead': 0, 'Dead/Shadowbanned': 0, 'Suspended': 1, 'Login Errors': 2 };
+            return (order[a.status] ?? 3) - (order[b.status] ?? 3);
+        });
+
+    // Top 10 active accounts by followers
+    const topPerformers = accounts.filter(a => a.status === 'Active').sort((a, b) => b.followers - a.followers).slice(0, 10);
+
+    // Enhanced VA scorecard: add stale count + accs/phone, sort worst health first
+    const enhancedVA = vaScorecard.map(v => {
+        const vaAccounts = accounts.filter(a => {
+            const devId = Array.isArray(a.device) && a.device[0];
+            const dev = devId ? deviceMap[devId] : null;
+            return (dev?.handler || dev?.fullName || 'Unassigned') === v.handler;
+        });
+        const stale = vaAccounts.filter(a => (a.status === 'Active' || a.status === 'Warm Up') && a.daysSinceLogin >= 3).length;
+        const vaDevice = devices.find(d => (d.handler || d.fullName) === v.handler);
+        const accsPerPhone = vaDevice?.numberOfAccounts || v.total;
+        const atRisk = v.active + (v.dead || 0) + (v.suspended || 0);
+        const health = atRisk > 0 ? Math.round((v.active / atRisk) * 100) : 100;
+        return { ...v, stale, accsPerPhone, health };
+    }).sort((a, b) => a.health - b.health);
+
+    // Critical + warning alerts only (from both action items and recommendations)
+    const criticalAlerts = [
+        ...actionItems.filter(i => i.severity === 'critical' || i.severity === 'warning'),
+        ...recommendations.filter(r => r.severity === 'critical' || r.severity === 'warning').map(r => ({ severity: r.severity, title: r.message })),
+    ].slice(0, 6);
+
+    // Patrol time label
+    const patrolTimeLabel = (() => {
+        if (!patrolStatus?.timestamp) return null;
+        const minAgo = Math.round((Date.now() - new Date(patrolStatus.timestamp).getTime()) / 60000);
+        return minAgo < 1 ? 'just now' : minAgo < 60 ? `${minAgo}m ago` : `${Math.round(minAgo / 60)}h ago`;
+    })();
+
+    const fmtFollowers = (n) => n >= 1000000 ? `${(n / 1000000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+    const bd = fleetHealth?.breakdown || {};
 
     return (
         <>
             <header className="page-header">
                 <h1 className="page-title">Threads Dashboard</h1>
-                <div style={{ display: 'flex', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    {patrolTimeLabel && <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Last patrol: {patrolTimeLabel}</span>}
                     <button className="btn btn-outline" onClick={handleFullScan} disabled={scanning} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}>
                         <Zap size={14} />
                         {scanning ? `Scanning ${scanProgress?.current || 0}/${scanProgress?.total || '...'}` : 'Full Fleet Scan'}
@@ -133,32 +156,7 @@ export function ThreadsDashboard() {
                 </div>
             </header>
             <div className="page-content">
-                {/* Health Patrol Status + Fleet Health Score */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '16px', marginBottom: '16px', alignItems: 'center' }}>
-                    <PatrolBanner status={patrolStatus} />
-                    {fleetHealth && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 20px', borderRadius: '8px', background: 'var(--bg-surface)' }}>
-                            <div className="grade-badge" style={{
-                                background: fleetHealth.grade === 'A' ? 'rgba(16,185,129,0.15)' : fleetHealth.grade === 'B' ? 'rgba(59,130,246,0.15)' : fleetHealth.grade === 'C' ? 'rgba(245,158,11,0.15)' : 'rgba(244,63,94,0.15)',
-                                color: fleetHealth.grade === 'A' ? COLORS.success : fleetHealth.grade === 'B' ? COLORS.accent : fleetHealth.grade === 'C' ? COLORS.warning : COLORS.danger,
-                            }}>
-                                {fleetHealth.grade}
-                            </div>
-                            <div>
-                                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Fleet Health</div>
-                                <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>{fleetHealth.score}/100</div>
-                            </div>
-                            <div style={{ marginLeft: '12px' }}>
-                                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Survival Rate</div>
-                                <div style={{ fontWeight: 700, fontSize: '1.1rem', color: fleetHealth.survivalRate >= 70 ? COLORS.success : fleetHealth.survivalRate >= 50 ? COLORS.warning : COLORS.danger }}>
-                                    {fleetHealth.survivalRate}%
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                {/* Scan Progress Bar */}
+                {/* Scan Progress */}
                 {scanning && scanProgress && (
                     <div style={{ marginBottom: '16px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
@@ -171,265 +169,168 @@ export function ThreadsDashboard() {
                     </div>
                 )}
 
-                {/* KPI Row */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '16px', marginBottom: '24px' }}>
-                    <div className="metric-card metric-card--blue" style={{ textAlign: 'center' }}>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>Total Accounts</div>
-                        <div style={{ fontSize: '1.8rem', fontWeight: '700' }}>{(metrics?.total || 0).toLocaleString()}</div>
-                    </div>
-                    <div className="metric-card metric-card--green" style={{ textAlign: 'center' }}>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>Active</div>
-                        <div style={{ fontSize: '1.8rem', fontWeight: '700', color: COLORS.success }}>{(metrics?.active || 0).toLocaleString()}</div>
-                    </div>
-                    <div className="metric-card metric-card--cyan" style={{ textAlign: 'center' }}>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>Warm Up</div>
-                        <div style={{ fontSize: '1.8rem', fontWeight: '700', color: COLORS.info }}>{(metrics?.warmUp || 0).toLocaleString()}</div>
-                    </div>
-                    <div className="metric-card metric-card--yellow" style={{ textAlign: 'center' }}>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>Suspended</div>
-                        <div style={{ fontSize: '1.8rem', fontWeight: '700', color: COLORS.warning }}>{(metrics?.suspended || 0).toLocaleString()}</div>
-                    </div>
-                    <div className="metric-card metric-card--red" style={{ textAlign: 'center' }}>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>Dead / Banned</div>
-                        <div style={{ fontSize: '1.8rem', fontWeight: '700', color: COLORS.danger }}>{(metrics?.dead || 0).toLocaleString()}</div>
-                    </div>
-                    <div className="metric-card metric-card--purple" style={{ textAlign: 'center' }}>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>Login Errors</div>
-                        <div style={{ fontSize: '1.8rem', fontWeight: '700', color: '#f97316' }}>{(metrics?.loginErrors || 0).toLocaleString()}</div>
-                    </div>
+                {/* Row 1: Health Strip */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '12px 16px', borderRadius: '8px', background: 'var(--bg-surface)', marginBottom: '16px', flexWrap: 'wrap' }}>
+                    {fleetHealth && (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}>
+                            Fleet:
+                            <span style={{
+                                display: 'inline-block', padding: '2px 10px', borderRadius: '4px', fontWeight: 700,
+                                background: fleetHealth.grade === 'A' ? 'rgba(16,185,129,0.15)' : fleetHealth.grade === 'B' ? 'rgba(59,130,246,0.15)' : fleetHealth.grade === 'C' ? 'rgba(245,158,11,0.15)' : 'rgba(244,63,94,0.15)',
+                                color: fleetHealth.grade === 'A' ? COLORS.success : fleetHealth.grade === 'B' ? COLORS.accent : fleetHealth.grade === 'C' ? COLORS.warning : COLORS.danger,
+                            }}>
+                                {fleetHealth.grade} ({fleetHealth.score})
+                            </span>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 400 }}>{fleetHealth.survivalRate}% survival</span>
+                        </span>
+                    )}
+                    <span style={{ color: 'var(--border-color)' }}>|</span>
+                    <span><strong>{(bd.total || metrics?.total || 0).toLocaleString()}</strong> <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Total</span></span>
+                    <span style={{ color: 'var(--border-color)' }}>|</span>
+                    <span style={{ color: COLORS.success }}><strong>{(bd.active || metrics?.active || 0).toLocaleString()}</strong> <span style={{ fontSize: '0.85rem' }}>Active</span></span>
+                    <span style={{ color: 'var(--border-color)' }}>|</span>
+                    <span style={{ color: COLORS.danger }}><strong>{(bd.dead || metrics?.dead || 0).toLocaleString()}</strong> <span style={{ fontSize: '0.85rem' }}>Dead</span></span>
+                    <span style={{ color: 'var(--border-color)' }}>|</span>
+                    <span style={{ color: COLORS.warning }}><strong>{(bd.suspended || metrics?.suspended || 0).toLocaleString()}</strong> <span style={{ fontSize: '0.85rem' }}>Suspended</span></span>
                 </div>
 
-                {/* Growth Recommendations */}
-                {recommendations.length > 0 && (
-                    <div className="card" style={{ marginBottom: '24px' }}>
-                        <h2 style={{ fontSize: '1.1rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <TrendingUp size={18} /> Growth Intelligence
-                        </h2>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                            {recommendations.map((rec, i) => (
-                                <ActionItem key={i} item={{ severity: rec.severity, title: rec.message }} />
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                {/* Action Items */}
-                {actionItems.length > 0 && (
-                    <div className="card" style={{ marginBottom: '24px' }}>
-                        <h2 style={{ fontSize: '1.1rem', marginBottom: '16px' }}>Action Items</h2>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                            {actionItems.map((item, i) => (
-                                <ActionItem key={i} item={item} />
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                {/* Charts Row: Status Doughnut + Model Bar Chart */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '24px' }}>
-                    <div className="card">
-                        <h2 style={{ fontSize: '1.1rem', marginBottom: '16px' }}>Status Distribution</h2>
-                        {statusLabels.length > 0 ? (
-                            <StatusDoughnut labels={statusLabels} values={statusValues} colors={statusColors} />
-                        ) : (
-                            <div style={{ color: 'var(--text-secondary)', padding: '24px', textAlign: 'center' }}>No data</div>
-                        )}
-                    </div>
-                    <div className="card">
-                        <h2 style={{ fontSize: '1.1rem', marginBottom: '16px' }}>Model Comparison</h2>
-                        {modelBreakdown.length > 0 ? (
-                            <BarChart
-                                labels={modelBreakdown.slice(0, 10).map(m => m.model)}
-                                datasets={[
-                                    { label: 'Active', data: modelBreakdown.slice(0, 10).map(m => m.active), color: COLORS.success },
-                                    { label: 'Suspended', data: modelBreakdown.slice(0, 10).map(m => m.suspended), color: COLORS.warning },
-                                    { label: 'Dead', data: modelBreakdown.slice(0, 10).map(m => m.dead), color: COLORS.danger },
-                                    { label: 'Warm Up', data: modelBreakdown.slice(0, 10).map(m => m.warmUp), color: COLORS.info },
-                                ]}
-                                stacked
-                            />
-                        ) : (
-                            <div style={{ color: 'var(--text-secondary)', padding: '24px', textAlign: 'center' }}>No data</div>
-                        )}
-                    </div>
-                </div>
-
-                {/* Charts Row: Account Age Survival + Follower Distribution */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '24px' }}>
-                    <div className="card">
-                        <h2 style={{ fontSize: '1.1rem', marginBottom: '16px' }}>Account Age vs Survival</h2>
-                        {ageAnalysis.length > 0 ? (
-                            <BarChart
-                                labels={ageAnalysis.map(a => a.label)}
-                                datasets={[
-                                    { label: 'Active', data: ageAnalysis.map(a => a.active), color: COLORS.success },
-                                    { label: 'Suspended', data: ageAnalysis.map(a => a.suspended), color: COLORS.warning },
-                                    { label: 'Dead', data: ageAnalysis.map(a => a.dead), color: COLORS.danger },
-                                ]}
-                                stacked
-                            />
-                        ) : (
-                            <div style={{ color: 'var(--text-secondary)', padding: '24px', textAlign: 'center' }}>No data</div>
-                        )}
-                    </div>
-                    <div className="card">
-                        <h2 style={{ fontSize: '1.1rem', marginBottom: '16px' }}>Follower Distribution (Active Accounts)</h2>
-                        {followerDist.length > 0 ? (
-                            <BarChart
-                                labels={followerDist.map(f => f.label)}
-                                datasets={[{ label: 'Accounts', data: followerDist.map(f => f.count), color: COLORS.accent }]}
-                            />
-                        ) : (
-                            <div style={{ color: 'var(--text-secondary)', padding: '24px', textAlign: 'center' }}>No data</div>
-                        )}
-                    </div>
-                </div>
-
-                {/* Model Leaderboard + VA Scorecard */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '24px' }}>
-                    {/* Model Leaderboard */}
-                    <div className="card">
-                        <h2 style={{ fontSize: '1.1rem', marginBottom: '16px' }}>Model Leaderboard</h2>
-                        <div style={{ overflowX: 'auto' }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                                <thead>
-                                    <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left' }}>
-                                        <th style={thStyle}>Model</th>
-                                        <th style={thStyleNum}>Total</th>
-                                        <th style={thStyleNum}>Active</th>
-                                        <th style={thStyleNum}>Followers</th>
-                                        <th style={thStyleNum}>Survival</th>
-                                        <th style={thStyleNum}>Active %</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {(modelPerformance.length > 0 ? modelPerformance : modelBreakdown).map(m => (
-                                        <tr key={m.model} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                                            <td style={tdStyle}>{m.model}</td>
-                                            <td style={tdStyleNum}>{m.total}</td>
-                                            <td style={{ ...tdStyleNum, color: COLORS.success }}>{m.active}</td>
-                                            <td style={tdStyleNum}>{(m.activeFollowers || m.totalFollowers || 0).toLocaleString()}</td>
-                                            <td style={{ ...tdStyleNum, color: (m.survivalRate || 0) >= 70 ? COLORS.success : (m.survivalRate || 0) >= 50 ? COLORS.warning : COLORS.danger }}>
-                                                {m.survivalRate || (m.total > 0 ? Math.round((m.active / m.total) * 100) : 0)}%
+                {/* Row 2: VA Scorecard */}
+                <div className="card" style={{ marginBottom: '16px' }}>
+                    <h2 style={{ fontSize: '1.1rem', marginBottom: '12px' }}>VA Performance</h2>
+                    <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                            <thead>
+                                <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left' }}>
+                                    <th style={thStyle}>VA</th>
+                                    <th style={thStyle}>Phone</th>
+                                    <th style={thStyleNum}>Accs</th>
+                                    <th style={thStyleNum}>Active</th>
+                                    <th style={thStyleNum}>Dead</th>
+                                    <th style={thStyleNum}>Errors</th>
+                                    <th style={thStyleNum}>Stale</th>
+                                    <th style={thStyleNum}>Accs/Phone</th>
+                                    <th style={thStyleNum}>Health</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {enhancedVA.map(v => {
+                                    const borderColor = v.health < 60 ? COLORS.danger : v.stale > 5 ? COLORS.warning : 'transparent';
+                                    return (
+                                        <tr key={v.handler} style={{ borderBottom: '1px solid var(--border-color)', borderLeft: `3px solid ${borderColor}` }}>
+                                            <td style={tdStyle}>{v.handler}</td>
+                                            <td style={{ ...tdStyle, color: 'var(--text-secondary)', fontSize: '0.8rem' }}>{v.phone || '—'}</td>
+                                            <td style={tdStyleNum}>{v.total}</td>
+                                            <td style={{ ...tdStyleNum, color: v.total > 0 && v.active / v.total > 0.7 ? COLORS.success : 'inherit' }}>{v.active}</td>
+                                            <td style={{ ...tdStyleNum, color: v.dead > 0 ? COLORS.danger : 'inherit' }}>{v.dead}</td>
+                                            <td style={{ ...tdStyleNum, color: v.loginErrors > 0 ? '#f97316' : 'inherit' }}>{v.loginErrors}</td>
+                                            <td style={{ ...tdStyleNum, color: v.stale > 5 ? COLORS.warning : 'inherit' }}>{v.stale}</td>
+                                            <td style={tdStyleNum}>
+                                                {v.accsPerPhone}
+                                                {v.accsPerPhone > 30 && <span style={{ color: COLORS.danger, marginLeft: '4px' }} title="Over 30 accounts per phone">⚠</span>}
                                             </td>
-                                            <td style={tdStyleNum}>{m.total > 0 ? Math.round((m.active / m.total) * 100) : 0}%</td>
+                                            <td style={tdStyleNum}>
+                                                <span style={{
+                                                    display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 600,
+                                                    background: v.health >= 80 ? 'rgba(16,185,129,0.15)' : v.health >= 60 ? 'rgba(245,158,11,0.15)' : 'rgba(244,63,94,0.15)',
+                                                    color: v.health >= 80 ? COLORS.success : v.health >= 60 ? COLORS.warning : COLORS.danger,
+                                                }}>
+                                                    {v.health}%
+                                                </span>
+                                            </td>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
                     </div>
+                </div>
 
-                    {/* VA Scorecard */}
+                {/* Row 3: Replace Now + Top Performers */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                    {/* Replace Now */}
                     <div className="card">
-                        <h2 style={{ fontSize: '1.1rem', marginBottom: '16px' }}>VA Scorecard</h2>
-                        <div style={{ overflowX: 'auto' }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                                <thead>
-                                    <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left' }}>
-                                        <th style={thStyle}>Handler</th>
-                                        <th style={thStyleNum}>Accounts</th>
-                                        <th style={thStyleNum}>Active</th>
-                                        <th style={thStyleNum}>Suspended</th>
-                                        <th style={thStyleNum}>Dead</th>
-                                        <th style={thStyleNum}>Errors</th>
-                                        <th style={thStyleNum}>Health</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {vaScorecard.map(v => {
-                                        const atRisk = v.active + (v.dead || 0) + (v.suspended || 0);
-                                        const survival = atRisk > 0 ? Math.round((v.active / atRisk) * 100) : 100;
-                                        return (
-                                            <tr key={v.handler} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                                                <td style={tdStyle}>{v.handler}</td>
-                                                <td style={tdStyleNum}>{v.total}</td>
-                                                <td style={{ ...tdStyleNum, color: COLORS.success }}>{v.active}</td>
-                                                <td style={{ ...tdStyleNum, color: COLORS.warning }}>{v.suspended}</td>
-                                                <td style={{ ...tdStyleNum, color: COLORS.danger }}>{v.dead}</td>
-                                                <td style={{ ...tdStyleNum, color: v.loginErrors > 0 ? '#f97316' : 'inherit' }}>{v.loginErrors}</td>
-                                                <td style={tdStyleNum}>
+                        <h2 style={{ fontSize: '1.1rem', marginBottom: '12px' }}>
+                            Replace Now
+                            <span style={{ fontSize: '0.8rem', fontWeight: 400, color: 'var(--text-secondary)', marginLeft: '8px' }}>
+                                {replaceList.length} need replacing
+                            </span>
+                        </h2>
+                        <div style={{ maxHeight: '320px', overflowY: 'auto' }}>
+                            {replaceList.length === 0 ? (
+                                <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-secondary)' }}>No accounts need replacing</div>
+                            ) : (
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                                    <tbody>
+                                        {replaceList.map(a => (
+                                            <tr key={a.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                                <td style={tdStyle}>@{a.username}</td>
+                                                <td style={tdStyle}>
                                                     <span style={{
-                                                        display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 600,
-                                                        background: survival >= 70 ? 'rgba(16,185,129,0.15)' : survival >= 50 ? 'rgba(245,158,11,0.15)' : 'rgba(244,63,94,0.15)',
-                                                        color: survival >= 70 ? COLORS.success : survival >= 50 ? COLORS.warning : COLORS.danger,
+                                                        display: 'inline-block', padding: '1px 6px', borderRadius: '3px', fontSize: '0.75rem',
+                                                        background: a.status.includes('Dead') ? 'rgba(244,63,94,0.15)' : a.status === 'Suspended' ? 'rgba(245,158,11,0.15)' : 'rgba(249,115,22,0.15)',
+                                                        color: a.status.includes('Dead') ? COLORS.danger : a.status === 'Suspended' ? COLORS.warning : '#f97316',
                                                     }}>
-                                                        {survival}%
+                                                        {a.status}
                                                     </span>
                                                 </td>
+                                                <td style={{ ...tdStyle, color: 'var(--text-secondary)' }}>{a.model}</td>
+                                                <td style={{ ...tdStyle, color: 'var(--text-secondary)' }}>{a.vaName}</td>
+                                                <td style={{ ...tdStyleNum, color: 'var(--text-secondary)' }}>{a.daysSinceCreation}d</td>
                                             </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
                         </div>
                     </div>
+
+                    {/* Top Performers */}
+                    <div className="card">
+                        <h2 style={{ fontSize: '1.1rem', marginBottom: '12px' }}>Top Performers</h2>
+                        <div style={{ maxHeight: '320px', overflowY: 'auto' }}>
+                            {topPerformers.length === 0 ? (
+                                <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-secondary)' }}>No active accounts</div>
+                            ) : (
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                                    <tbody>
+                                        {topPerformers.map(a => (
+                                            <tr key={a.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                                <td style={tdStyle}>@{a.username}</td>
+                                                <td style={{ ...tdStyle, color: 'var(--text-secondary)' }}>{a.model}</td>
+                                                <td style={{ ...tdStyleNum, fontWeight: 600 }}>{fmtFollowers(a.followers)}</td>
+                                                <td style={{ ...tdStyleNum, color: 'var(--text-secondary)' }}>{a.daysSinceCreation}d</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Row 4: Alerts */}
+                <div className="card">
+                    {criticalAlerts.length === 0 ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: COLORS.success }}>
+                            <Shield size={16} />
+                            <span style={{ fontWeight: 600 }}>Fleet healthy — no critical alerts</span>
+                        </div>
+                    ) : (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                            {criticalAlerts.map((a, i) => (
+                                <div key={i} style={{
+                                    display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', padding: '6px 10px', borderRadius: '6px',
+                                    background: a.severity === 'critical' ? 'rgba(239,68,68,0.08)' : 'rgba(245,158,11,0.08)',
+                                }}>
+                                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0, background: a.severity === 'critical' ? COLORS.danger : COLORS.warning }} />
+                                    <span>{a.title}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
             </div>
         </>
-    );
-}
-
-function ActionItem({ item }) {
-    const severityConfig = {
-        critical: { color: 'var(--status-danger)', bg: 'rgba(239,68,68,0.1)', icon: AlertTriangle },
-        warning: { color: 'var(--status-warning)', bg: 'rgba(245,158,11,0.1)', icon: AlertCircle },
-        info: { color: 'var(--status-info)', bg: 'rgba(59,130,246,0.1)', icon: Info },
-        success: { color: 'var(--status-success)', bg: 'rgba(16,185,129,0.1)', icon: Activity },
-    };
-    const cfg = severityConfig[item.severity] || severityConfig.info;
-    const Icon = cfg.icon;
-    return (
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '12px', borderRadius: '8px', background: cfg.bg }}>
-            <Icon size={18} style={{ color: cfg.color, flexShrink: 0, marginTop: '2px' }} />
-            <div>
-                <div style={{ fontWeight: '600', fontSize: '0.9rem', color: cfg.color }}>{item.title}</div>
-                {item.detail && <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '4px' }}>{item.detail}</div>}
-            </div>
-        </div>
-    );
-}
-
-function PatrolBanner({ status }) {
-    if (!status) {
-        return (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', borderRadius: '8px', background: 'var(--bg-secondary)', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                <Shield size={16} />
-                <span>Health Patrol: starting...</span>
-            </div>
-        );
-    }
-
-    const ts = new Date(status.timestamp);
-    const minAgo = Math.round((Date.now() - ts.getTime()) / 60000);
-    const timeLabel = minAgo < 1 ? 'just now' : minAgo < 60 ? `${minAgo}m ago` : `${Math.round(minAgo / 60)}h ago`;
-    const hasDead = status.dead > 0;
-    const hasRateLimit = status.rateLimited;
-    const pct = status.sessionTotal > 0 ? Math.round((status.sessionProgress / status.sessionTotal) * 100) : 0;
-
-    return (
-        <div style={{ borderRadius: '8px', background: hasDead ? 'rgba(239,68,68,0.08)' : hasRateLimit ? 'rgba(245,158,11,0.08)' : 'rgba(34,197,94,0.08)', padding: '12px 16px', fontSize: '0.85rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: hasDead ? 'var(--status-danger)' : hasRateLimit ? 'var(--status-warning)' : 'var(--status-success)', marginBottom: '6px' }}>
-                <Shield size={16} />
-                <span>
-                    Last patrol: {timeLabel} — {status.checked} checked, {status.healthy} healthy
-                    {hasDead ? `, ${status.dead} dead detected` : ''}
-                    {hasRateLimit ? ' (rate limited)' : ''}
-                    {status.followerUpdates > 0 ? `, ${status.followerUpdates} follower updates` : ''}
-                </span>
-            </div>
-            {status.sessionTotal > 0 && (
-                <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                        <span>Rotation: {status.sessionProgress}/{status.sessionTotal} accounts</span>
-                        <span>{pct}% — ETA ~{status.etaMinutes || '?'}min remaining</span>
-                    </div>
-                    <div className="progress-bar">
-                        <div className="progress-bar__fill" style={{ width: `${pct}%`, background: hasDead ? COLORS.danger : COLORS.success }} />
-                    </div>
-                </div>
-            )}
-        </div>
     );
 }
 
