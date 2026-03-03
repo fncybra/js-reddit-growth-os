@@ -12,10 +12,8 @@ export function ThreadsDashboard() {
     const [error, setError] = useState(null);
     const [accounts, setAccounts] = useState([]);
     const [devices, setDevices] = useState([]);
-    const [metrics, setMetrics] = useState(null);
     const [vaScorecard, setVAScorecard] = useState([]);
     const [actionItems, setActionItems] = useState([]);
-    const [fleetHealth, setFleetHealth] = useState(null);
     const [recommendations, setRecommendations] = useState([]);
     const [patrolStatus, setPatrolStatus] = useState(null);
     const [expandedVA, setExpandedVA] = useState(null);
@@ -27,17 +25,13 @@ export function ThreadsDashboard() {
             const devs = await AirtableService.fetchDevices(forceRefresh);
             setAccounts(accs);
             setDevices(devs);
-            const [m, va, ai, fh, recs] = await Promise.allSettled([
-                AirtableService.getThreadsMetrics(accs),
+            const [va, ai, recs] = await Promise.allSettled([
                 AirtableService.getVAScorecard(accs, devs),
                 AirtableService.getActionItems(accs),
-                ThreadsGrowthService.getFleetHealth(accs),
                 ThreadsGrowthService.getRecommendations(accs),
             ]);
-            if (m.status === 'fulfilled') setMetrics(m.value);
             if (va.status === 'fulfilled') setVAScorecard(va.value);
             if (ai.status === 'fulfilled') setActionItems(ai.value);
-            if (fh.status === 'fulfilled') setFleetHealth(fh.value);
             if (recs.status === 'fulfilled') setRecommendations(recs.value);
         } catch (e) {
             setError(e.message);
@@ -89,51 +83,56 @@ export function ThreadsDashboard() {
         </div>
     );
 
-    // Device lookup map
+    // Device lookup
     const deviceMap = {};
     devices.forEach(d => { deviceMap[d.id] = d; });
 
-    // Replace list: dead + suspended + login error accounts
-    const replaceList = accounts
-        .filter(a => ['Dead', 'Dead/Shadowbanned', 'Suspended', 'Login Errors'].includes(a.status))
-        .map(a => {
-            const devId = Array.isArray(a.device) && a.device[0];
-            const dev = devId ? deviceMap[devId] : null;
-            return { ...a, vaName: dev?.handler || dev?.fullName || 'Unassigned' };
-        })
-        .sort((a, b) => {
-            const order = { 'Dead': 0, 'Dead/Shadowbanned': 0, 'Suspended': 1, 'Login Errors': 2 };
-            return (order[a.status] ?? 3) - (order[b.status] ?? 3);
-        });
+    // Active fleet only — this is what matters
+    const activeAccs = accounts.filter(a => a.status === 'Active');
+    const warmUpAccs = accounts.filter(a => a.status === 'Warm Up');
+    const errorAccs = accounts.filter(a => a.status === 'Login Errors');
+    const idleAccs = activeAccs.filter(a => a.threadCount === 0);
+    const postingAccs = activeAccs.filter(a => a.threadCount > 0);
+    const totalThreads = activeAccs.reduce((sum, a) => sum + (a.threadCount || 0), 0);
 
-    // Top 10 active accounts by followers
-    const topPerformers = accounts.filter(a => a.status === 'Active').sort((a, b) => b.followers - a.followers).slice(0, 10);
-
-    // Enhanced VA scorecard: add stale count + accs/phone, sort worst health first
+    // VA scorecard — active fleet focus
     const enhancedVA = vaScorecard.map(v => {
         const vaAccounts = accounts.filter(a => {
             const devId = Array.isArray(a.device) && a.device[0];
             const dev = devId ? deviceMap[devId] : null;
             return (dev?.handler || dev?.fullName || 'Unassigned') === v.handler;
         });
+        const vaActive = vaAccounts.filter(a => a.status === 'Active');
+        const vaWarmUp = vaAccounts.filter(a => a.status === 'Warm Up');
         const staleAccounts = vaAccounts.filter(a => (a.status === 'Active' || a.status === 'Warm Up') && a.daysSinceLogin >= 3);
-        const stale = staleAccounts.length;
-        const idleAccounts = vaAccounts.filter(a => a.status === 'Active' && a.threadCount === 0);
-        const idle = idleAccounts.length;
+        const idleAccounts = vaActive.filter(a => a.threadCount === 0);
+        const vaErrors = vaAccounts.filter(a => a.status === 'Login Errors').length;
         const vaDevice = devices.find(d => (d.handler || d.fullName) === v.handler);
         const accsPerPhone = vaDevice?.numberOfAccounts || v.total;
-        const atRisk = v.active + (v.dead || 0) + (v.suspended || 0);
-        const health = atRisk > 0 ? Math.round((v.active / atRisk) * 100) : 100;
-        return { ...v, stale, staleAccounts, idle, idleAccounts, accsPerPhone, health };
-    }).sort((a, b) => a.health - b.health);
+        const vaThreads = vaActive.reduce((sum, a) => sum + (a.threadCount || 0), 0);
+        // Posting % = what % of their active accounts are actually posting
+        const postingPct = vaActive.length > 0 ? Math.round(vaActive.filter(a => a.threadCount > 0).length / vaActive.length * 100) : 0;
+        return {
+            handler: v.handler, phone: v.phone,
+            active: vaActive.length, warmUp: vaWarmUp.length,
+            idle: idleAccounts.length, idleAccounts,
+            stale: staleAccounts.length, staleAccounts,
+            errors: vaErrors, accsPerPhone, threads: vaThreads, postingPct,
+        };
+    })
+    .filter(v => v.active + v.warmUp + v.errors > 0) // hide VAs with only dead accounts
+    .sort((a, b) => a.postingPct - b.postingPct); // worst posters first
 
-    // Critical + warning alerts only (from both action items and recommendations)
+    // Top 10 active by followers
+    const topPerformers = activeAccs.sort((a, b) => b.followers - a.followers).slice(0, 10);
+
+    // Only critical/warning alerts
     const criticalAlerts = [
         ...actionItems.filter(i => i.severity === 'critical' || i.severity === 'warning'),
         ...recommendations.filter(r => r.severity === 'critical' || r.severity === 'warning').map(r => ({ severity: r.severity, title: r.message })),
     ].slice(0, 6);
 
-    // Patrol time label
+    // Patrol time
     const patrolTimeLabel = (() => {
         if (!patrolStatus?.timestamp) return null;
         const minAgo = Math.round((Date.now() - new Date(patrolStatus.timestamp).getTime()) / 60000);
@@ -141,7 +140,8 @@ export function ThreadsDashboard() {
     })();
 
     const fmtFollowers = (n) => n >= 1000000 ? `${(n / 1000000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
-    const bd = fleetHealth?.breakdown || {};
+    const fmtThreads = (n) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+    const postingPctTotal = activeAccs.length > 0 ? Math.round(postingAccs.length / activeAccs.length * 100) : 0;
 
     return (
         <>
@@ -173,29 +173,21 @@ export function ThreadsDashboard() {
                     </div>
                 )}
 
-                {/* Row 1: Health Strip */}
+                {/* Row 1: Active Fleet Strip */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '12px 16px', borderRadius: '8px', background: 'var(--bg-surface)', marginBottom: '16px', flexWrap: 'wrap' }}>
-                    {fleetHealth && (
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}>
-                            Fleet:
-                            <span style={{
-                                display: 'inline-block', padding: '2px 10px', borderRadius: '4px', fontWeight: 700,
-                                background: fleetHealth.grade === 'A' ? 'rgba(16,185,129,0.15)' : fleetHealth.grade === 'B' ? 'rgba(59,130,246,0.15)' : fleetHealth.grade === 'C' ? 'rgba(245,158,11,0.15)' : 'rgba(244,63,94,0.15)',
-                                color: fleetHealth.grade === 'A' ? COLORS.success : fleetHealth.grade === 'B' ? COLORS.accent : fleetHealth.grade === 'C' ? COLORS.warning : COLORS.danger,
-                            }}>
-                                {fleetHealth.grade} ({fleetHealth.score})
-                            </span>
-                            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 400 }}>{fleetHealth.survivalRate}% survival</span>
-                        </span>
-                    )}
+                    <span style={{ color: COLORS.success }}><strong>{activeAccs.length}</strong> <span style={{ fontSize: '0.85rem' }}>Active</span></span>
                     <span style={{ color: 'var(--border-color)' }}>|</span>
-                    <span><strong>{(bd.total || metrics?.total || 0).toLocaleString()}</strong> <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Total</span></span>
+                    <span style={{ color: COLORS.accent }}><strong>{warmUpAccs.length}</strong> <span style={{ fontSize: '0.85rem' }}>Warming</span></span>
                     <span style={{ color: 'var(--border-color)' }}>|</span>
-                    <span style={{ color: COLORS.success }}><strong>{(bd.active || metrics?.active || 0).toLocaleString()}</strong> <span style={{ fontSize: '0.85rem' }}>Active</span></span>
+                    <span style={{ color: postingPctTotal >= 70 ? COLORS.success : postingPctTotal >= 40 ? COLORS.warning : COLORS.danger }}>
+                        <strong>{postingPctTotal}%</strong> <span style={{ fontSize: '0.85rem' }}>Posting</span>
+                    </span>
                     <span style={{ color: 'var(--border-color)' }}>|</span>
-                    <span style={{ color: COLORS.danger }}><strong>{(bd.dead || metrics?.dead || 0).toLocaleString()}</strong> <span style={{ fontSize: '0.85rem' }}>Dead</span></span>
+                    <span style={{ color: idleAccs.length > 0 ? COLORS.danger : COLORS.success }}><strong>{idleAccs.length}</strong> <span style={{ fontSize: '0.85rem' }}>Idle</span></span>
                     <span style={{ color: 'var(--border-color)' }}>|</span>
-                    <span style={{ color: COLORS.warning }}><strong>{(bd.suspended || metrics?.suspended || 0).toLocaleString()}</strong> <span style={{ fontSize: '0.85rem' }}>Suspended</span></span>
+                    <span style={{ color: errorAccs.length > 0 ? '#f97316' : COLORS.muted }}><strong>{errorAccs.length}</strong> <span style={{ fontSize: '0.85rem' }}>Errors</span></span>
+                    <span style={{ color: 'var(--border-color)' }}>|</span>
+                    <span><strong>{fmtThreads(totalThreads)}</strong> <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Total Posts</span></span>
                 </div>
 
                 {/* Row 2: VA Scorecard */}
@@ -207,53 +199,67 @@ export function ThreadsDashboard() {
                                 <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left' }}>
                                     <th style={thStyle}>VA</th>
                                     <th style={thStyle}>Phone</th>
-                                    <th style={thStyleNum}>Accs</th>
                                     <th style={thStyleNum}>Active</th>
-                                    <th style={thStyleNum}>Dead</th>
-                                    <th style={thStyleNum}>Errors</th>
-                                    <th style={thStyleNum}>Stale</th>
+                                    <th style={thStyleNum}>Warm Up</th>
                                     <th style={thStyleNum}>Idle</th>
-                                    <th style={thStyleNum}>Accs/Phone</th>
-                                    <th style={thStyleNum}>Health</th>
+                                    <th style={thStyleNum}>Stale</th>
+                                    <th style={thStyleNum}>Errors</th>
+                                    <th style={thStyleNum}>Posts</th>
+                                    <th style={thStyleNum}>Posting %</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {enhancedVA.map(v => {
-                                    const borderColor = v.health < 60 ? COLORS.danger : v.idle > 0 ? COLORS.danger : v.stale > 5 ? COLORS.warning : 'transparent';
+                                    const borderColor = v.idle > 0 ? COLORS.danger : v.stale > 5 ? COLORS.warning : 'transparent';
                                     return (
                                         <React.Fragment key={v.handler}>
                                         <tr style={{ borderBottom: '1px solid var(--border-color)', borderLeft: `3px solid ${borderColor}` }}>
                                             <td style={tdStyle}>{v.handler}</td>
                                             <td style={{ ...tdStyle, color: 'var(--text-secondary)', fontSize: '0.8rem' }}>{v.phone || '—'}</td>
-                                            <td style={tdStyleNum}>{v.total}</td>
-                                            <td style={{ ...tdStyleNum, color: v.total > 0 && v.active / v.total > 0.7 ? COLORS.success : 'inherit' }}>{v.active}</td>
-                                            <td style={{ ...tdStyleNum, color: v.dead > 0 ? COLORS.danger : 'inherit' }}>{v.dead}</td>
-                                            <td style={{ ...tdStyleNum, color: v.loginErrors > 0 ? '#f97316' : 'inherit' }}>{v.loginErrors}</td>
-                                            <td style={{ ...tdStyleNum, color: v.stale > 0 ? COLORS.warning : 'inherit', cursor: v.stale > 0 ? 'pointer' : 'default', textDecoration: v.stale > 0 ? 'underline' : 'none' }}
-                                                onClick={() => v.stale > 0 && setExpandedVA(expandedVA === v.handler + ':stale' ? null : v.handler + ':stale')}>
-                                                {v.stale}{v.stale > 0 && (expandedVA === v.handler + ':stale' ? ' ▴' : ' ▾')}
-                                            </td>
+                                            <td style={{ ...tdStyleNum, color: COLORS.success }}>{v.active}</td>
+                                            <td style={{ ...tdStyleNum, color: COLORS.accent }}>{v.warmUp}</td>
                                             <td style={{ ...tdStyleNum, color: v.idle > 0 ? COLORS.danger : 'inherit', cursor: v.idle > 0 ? 'pointer' : 'default', textDecoration: v.idle > 0 ? 'underline' : 'none' }}
                                                 onClick={() => v.idle > 0 && setExpandedVA(expandedVA === v.handler + ':idle' ? null : v.handler + ':idle')}>
                                                 {v.idle}{v.idle > 0 && (expandedVA === v.handler + ':idle' ? ' ▴' : ' ▾')}
                                             </td>
-                                            <td style={tdStyleNum}>
-                                                {v.accsPerPhone}
-                                                {v.accsPerPhone > 30 && <span style={{ color: COLORS.danger, marginLeft: '4px' }} title="Over 30 accounts per phone">⚠</span>}
+                                            <td style={{ ...tdStyleNum, color: v.stale > 0 ? COLORS.warning : 'inherit', cursor: v.stale > 0 ? 'pointer' : 'default', textDecoration: v.stale > 0 ? 'underline' : 'none' }}
+                                                onClick={() => v.stale > 0 && setExpandedVA(expandedVA === v.handler + ':stale' ? null : v.handler + ':stale')}>
+                                                {v.stale}{v.stale > 0 && (expandedVA === v.handler + ':stale' ? ' ▴' : ' ▾')}
                                             </td>
+                                            <td style={{ ...tdStyleNum, color: v.errors > 0 ? '#f97316' : 'inherit' }}>{v.errors}</td>
+                                            <td style={tdStyleNum}>{fmtThreads(v.threads)}</td>
                                             <td style={tdStyleNum}>
                                                 <span style={{
                                                     display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 600,
-                                                    background: v.health >= 80 ? 'rgba(16,185,129,0.15)' : v.health >= 60 ? 'rgba(245,158,11,0.15)' : 'rgba(244,63,94,0.15)',
-                                                    color: v.health >= 80 ? COLORS.success : v.health >= 60 ? COLORS.warning : COLORS.danger,
+                                                    background: v.postingPct >= 70 ? 'rgba(16,185,129,0.15)' : v.postingPct >= 40 ? 'rgba(245,158,11,0.15)' : 'rgba(244,63,94,0.15)',
+                                                    color: v.postingPct >= 70 ? COLORS.success : v.postingPct >= 40 ? COLORS.warning : COLORS.danger,
                                                 }}>
-                                                    {v.health}%
+                                                    {v.postingPct}%
                                                 </span>
                                             </td>
                                         </tr>
+                                        {expandedVA === v.handler + ':idle' && v.idleAccounts.length > 0 && (
+                                            <tr style={{ background: 'rgba(244,63,94,0.05)' }}>
+                                                <td colSpan={9} style={{ padding: '8px 12px 8px 24px' }}>
+                                                    <div style={{ fontSize: '0.8rem', color: COLORS.danger, marginBottom: '4px', fontWeight: 600 }}>
+                                                        Active but 0 posts — not posting:
+                                                    </div>
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                                        {v.idleAccounts.map(a => (
+                                                            <span key={a.id} style={{
+                                                                display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.78rem',
+                                                                background: 'rgba(244,63,94,0.12)', color: COLORS.danger,
+                                                            }}>
+                                                                @{a.username} <span style={{ opacity: 0.7 }}>({a.daysSinceCreation}d old)</span>
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        )}
                                         {expandedVA === v.handler + ':stale' && v.staleAccounts.length > 0 && (
                                             <tr style={{ background: 'rgba(245,158,11,0.05)' }}>
-                                                <td colSpan={10} style={{ padding: '8px 12px 8px 24px' }}>
+                                                <td colSpan={9} style={{ padding: '8px 12px 8px 24px' }}>
                                                     <div style={{ fontSize: '0.8rem', color: COLORS.warning, marginBottom: '4px', fontWeight: 600 }}>
                                                         Not logged in 3+ days:
                                                     </div>
@@ -271,25 +277,6 @@ export function ThreadsDashboard() {
                                                 </td>
                                             </tr>
                                         )}
-                                        {expandedVA === v.handler + ':idle' && v.idleAccounts.length > 0 && (
-                                            <tr style={{ background: 'rgba(244,63,94,0.05)' }}>
-                                                <td colSpan={10} style={{ padding: '8px 12px 8px 24px' }}>
-                                                    <div style={{ fontSize: '0.8rem', color: COLORS.danger, marginBottom: '4px', fontWeight: 600 }}>
-                                                        Active but 0 posts — not posting:
-                                                    </div>
-                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                                        {v.idleAccounts.map(a => (
-                                                            <span key={a.id} style={{
-                                                                display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.78rem',
-                                                                background: 'rgba(244,63,94,0.12)', color: COLORS.danger,
-                                                            }}>
-                                                                @{a.username} <span style={{ opacity: 0.7 }}>({a.daysSinceCreation}d old)</span>
-                                                            </span>
-                                                        ))}
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        )}
                                         </React.Fragment>
                                     );
                                 })}
@@ -298,46 +285,8 @@ export function ThreadsDashboard() {
                     </div>
                 </div>
 
-                {/* Row 3: Replace Now + Top Performers */}
+                {/* Row 3: Top Performers + Login Errors */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
-                    {/* Replace Now */}
-                    <div className="card">
-                        <h2 style={{ fontSize: '1.1rem', marginBottom: '12px' }}>
-                            Replace Now
-                            <span style={{ fontSize: '0.8rem', fontWeight: 400, color: 'var(--text-secondary)', marginLeft: '8px' }}>
-                                {replaceList.length} need replacing
-                            </span>
-                        </h2>
-                        <div style={{ maxHeight: '320px', overflowY: 'auto' }}>
-                            {replaceList.length === 0 ? (
-                                <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-secondary)' }}>No accounts need replacing</div>
-                            ) : (
-                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
-                                    <tbody>
-                                        {replaceList.map(a => (
-                                            <tr key={a.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                                                <td style={tdStyle}>@{a.username}</td>
-                                                <td style={tdStyle}>
-                                                    <span style={{
-                                                        display: 'inline-block', padding: '1px 6px', borderRadius: '3px', fontSize: '0.75rem',
-                                                        background: a.status.includes('Dead') ? 'rgba(244,63,94,0.15)' : a.status === 'Suspended' ? 'rgba(245,158,11,0.15)' : 'rgba(249,115,22,0.15)',
-                                                        color: a.status.includes('Dead') ? COLORS.danger : a.status === 'Suspended' ? COLORS.warning : '#f97316',
-                                                    }}>
-                                                        {a.status}
-                                                    </span>
-                                                </td>
-                                                <td style={{ ...tdStyle, color: 'var(--text-secondary)' }}>{a.model}</td>
-                                                <td style={{ ...tdStyle, color: 'var(--text-secondary)' }}>{a.vaName}</td>
-                                                <td style={{ ...tdStyleNum, color: 'var(--text-secondary)' }}>{a.daysSinceCreation}d</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Top Performers */}
                     <div className="card">
                         <h2 style={{ fontSize: '1.1rem', marginBottom: '12px' }}>Top Performers</h2>
                         <div style={{ maxHeight: '320px', overflowY: 'auto' }}>
@@ -351,9 +300,40 @@ export function ThreadsDashboard() {
                                                 <td style={tdStyle}>@{a.username}</td>
                                                 <td style={{ ...tdStyle, color: 'var(--text-secondary)' }}>{a.model}</td>
                                                 <td style={{ ...tdStyleNum, fontWeight: 600 }}>{fmtFollowers(a.followers)}</td>
-                                                <td style={{ ...tdStyleNum, color: 'var(--text-secondary)' }}>{a.daysSinceCreation}d</td>
+                                                <td style={{ ...tdStyleNum, color: 'var(--text-secondary)' }}>{a.threadCount || 0} posts</td>
                                             </tr>
                                         ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Login Errors — need fixing now */}
+                    <div className="card">
+                        <h2 style={{ fontSize: '1.1rem', marginBottom: '12px' }}>
+                            Login Errors
+                            {errorAccs.length > 0 && <span style={{ fontSize: '0.8rem', fontWeight: 400, color: '#f97316', marginLeft: '8px' }}>{errorAccs.length} need fixing</span>}
+                        </h2>
+                        <div style={{ maxHeight: '320px', overflowY: 'auto' }}>
+                            {errorAccs.length === 0 ? (
+                                <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-secondary)' }}>All clear</div>
+                            ) : (
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                                    <tbody>
+                                        {errorAccs.map(a => {
+                                            const devId = Array.isArray(a.device) && a.device[0];
+                                            const dev = devId ? deviceMap[devId] : null;
+                                            const vaName = dev?.handler || dev?.fullName || 'Unassigned';
+                                            return (
+                                                <tr key={a.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                                    <td style={tdStyle}>@{a.username}</td>
+                                                    <td style={{ ...tdStyle, color: 'var(--text-secondary)' }}>{a.model}</td>
+                                                    <td style={{ ...tdStyle, color: 'var(--text-secondary)' }}>{vaName}</td>
+                                                    <td style={{ ...tdStyleNum, color: 'var(--text-secondary)' }}>{a.daysSinceLogin}d</td>
+                                                </tr>
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                             )}
