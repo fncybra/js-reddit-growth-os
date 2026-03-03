@@ -18,6 +18,7 @@ export function ThreadsDashboard() {
     const [fleetHealth, setFleetHealth] = useState(null);
     const [recommendations, setRecommendations] = useState([]);
     const [patrolStatus, setPatrolStatus] = useState(null);
+    const [expandedVA, setExpandedVA] = useState(null);
 
     async function loadData(forceRefresh = false) {
         try {
@@ -115,12 +116,13 @@ export function ThreadsDashboard() {
             const dev = devId ? deviceMap[devId] : null;
             return (dev?.handler || dev?.fullName || 'Unassigned') === v.handler;
         });
-        const stale = vaAccounts.filter(a => (a.status === 'Active' || a.status === 'Warm Up') && a.daysSinceLogin >= 3).length;
+        const staleAccounts = vaAccounts.filter(a => (a.status === 'Active' || a.status === 'Warm Up') && a.daysSinceLogin >= 3);
+        const stale = staleAccounts.length;
         const vaDevice = devices.find(d => (d.handler || d.fullName) === v.handler);
         const accsPerPhone = vaDevice?.numberOfAccounts || v.total;
         const atRisk = v.active + (v.dead || 0) + (v.suspended || 0);
         const health = atRisk > 0 ? Math.round((v.active / atRisk) * 100) : 100;
-        return { ...v, stale, accsPerPhone, health };
+        return { ...v, stale, staleAccounts, accsPerPhone, health };
     }).sort((a, b) => a.health - b.health);
 
     // Critical + warning alerts only (from both action items and recommendations)
@@ -215,15 +217,20 @@ export function ThreadsDashboard() {
                             <tbody>
                                 {enhancedVA.map(v => {
                                     const borderColor = v.health < 60 ? COLORS.danger : v.stale > 5 ? COLORS.warning : 'transparent';
+                                    const isExpanded = expandedVA === v.handler;
                                     return (
-                                        <tr key={v.handler} style={{ borderBottom: '1px solid var(--border-color)', borderLeft: `3px solid ${borderColor}` }}>
+                                        <React.Fragment key={v.handler}>
+                                        <tr style={{ borderBottom: '1px solid var(--border-color)', borderLeft: `3px solid ${borderColor}` }}>
                                             <td style={tdStyle}>{v.handler}</td>
                                             <td style={{ ...tdStyle, color: 'var(--text-secondary)', fontSize: '0.8rem' }}>{v.phone || '—'}</td>
                                             <td style={tdStyleNum}>{v.total}</td>
                                             <td style={{ ...tdStyleNum, color: v.total > 0 && v.active / v.total > 0.7 ? COLORS.success : 'inherit' }}>{v.active}</td>
                                             <td style={{ ...tdStyleNum, color: v.dead > 0 ? COLORS.danger : 'inherit' }}>{v.dead}</td>
                                             <td style={{ ...tdStyleNum, color: v.loginErrors > 0 ? '#f97316' : 'inherit' }}>{v.loginErrors}</td>
-                                            <td style={{ ...tdStyleNum, color: v.stale > 5 ? COLORS.warning : 'inherit' }}>{v.stale}</td>
+                                            <td style={{ ...tdStyleNum, color: v.stale > 0 ? COLORS.warning : 'inherit', cursor: v.stale > 0 ? 'pointer' : 'default', textDecoration: v.stale > 0 ? 'underline' : 'none' }}
+                                                onClick={() => v.stale > 0 && setExpandedVA(isExpanded ? null : v.handler)}>
+                                                {v.stale}{v.stale > 0 && (isExpanded ? ' ▴' : ' ▾')}
+                                            </td>
                                             <td style={tdStyleNum}>
                                                 {v.accsPerPhone}
                                                 {v.accsPerPhone > 30 && <span style={{ color: COLORS.danger, marginLeft: '4px' }} title="Over 30 accounts per phone">⚠</span>}
@@ -238,6 +245,27 @@ export function ThreadsDashboard() {
                                                 </span>
                                             </td>
                                         </tr>
+                                        {isExpanded && v.staleAccounts.length > 0 && (
+                                            <tr style={{ background: 'rgba(245,158,11,0.05)' }}>
+                                                <td colSpan={9} style={{ padding: '8px 12px 8px 24px' }}>
+                                                    <div style={{ fontSize: '0.8rem', color: COLORS.warning, marginBottom: '4px', fontWeight: 600 }}>
+                                                        Stale accounts — not logged in 3+ days:
+                                                    </div>
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                                        {v.staleAccounts.sort((a, b) => b.daysSinceLogin - a.daysSinceLogin).map(a => (
+                                                            <span key={a.id} style={{
+                                                                display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.78rem',
+                                                                background: a.daysSinceLogin >= 7 ? 'rgba(244,63,94,0.12)' : 'rgba(245,158,11,0.12)',
+                                                                color: a.daysSinceLogin >= 7 ? COLORS.danger : COLORS.warning,
+                                                            }}>
+                                                                @{a.username} <span style={{ opacity: 0.7 }}>({a.daysSinceLogin}d)</span>
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        )}
+                                        </React.Fragment>
                                     );
                                 })}
                             </tbody>
