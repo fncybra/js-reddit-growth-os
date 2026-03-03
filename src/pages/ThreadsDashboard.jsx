@@ -118,11 +118,13 @@ export function ThreadsDashboard() {
         });
         const staleAccounts = vaAccounts.filter(a => (a.status === 'Active' || a.status === 'Warm Up') && a.daysSinceLogin >= 3);
         const stale = staleAccounts.length;
+        const idleAccounts = vaAccounts.filter(a => a.status === 'Active' && a.threadCount === 0);
+        const idle = idleAccounts.length;
         const vaDevice = devices.find(d => (d.handler || d.fullName) === v.handler);
         const accsPerPhone = vaDevice?.numberOfAccounts || v.total;
         const atRisk = v.active + (v.dead || 0) + (v.suspended || 0);
         const health = atRisk > 0 ? Math.round((v.active / atRisk) * 100) : 100;
-        return { ...v, stale, staleAccounts, accsPerPhone, health };
+        return { ...v, stale, staleAccounts, idle, idleAccounts, accsPerPhone, health };
     }).sort((a, b) => a.health - b.health);
 
     // Critical + warning alerts only (from both action items and recommendations)
@@ -210,14 +212,14 @@ export function ThreadsDashboard() {
                                     <th style={thStyleNum}>Dead</th>
                                     <th style={thStyleNum}>Errors</th>
                                     <th style={thStyleNum}>Stale</th>
+                                    <th style={thStyleNum}>Idle</th>
                                     <th style={thStyleNum}>Accs/Phone</th>
                                     <th style={thStyleNum}>Health</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {enhancedVA.map(v => {
-                                    const borderColor = v.health < 60 ? COLORS.danger : v.stale > 5 ? COLORS.warning : 'transparent';
-                                    const isExpanded = expandedVA === v.handler;
+                                    const borderColor = v.health < 60 ? COLORS.danger : v.idle > 0 ? COLORS.danger : v.stale > 5 ? COLORS.warning : 'transparent';
                                     return (
                                         <React.Fragment key={v.handler}>
                                         <tr style={{ borderBottom: '1px solid var(--border-color)', borderLeft: `3px solid ${borderColor}` }}>
@@ -228,8 +230,12 @@ export function ThreadsDashboard() {
                                             <td style={{ ...tdStyleNum, color: v.dead > 0 ? COLORS.danger : 'inherit' }}>{v.dead}</td>
                                             <td style={{ ...tdStyleNum, color: v.loginErrors > 0 ? '#f97316' : 'inherit' }}>{v.loginErrors}</td>
                                             <td style={{ ...tdStyleNum, color: v.stale > 0 ? COLORS.warning : 'inherit', cursor: v.stale > 0 ? 'pointer' : 'default', textDecoration: v.stale > 0 ? 'underline' : 'none' }}
-                                                onClick={() => v.stale > 0 && setExpandedVA(isExpanded ? null : v.handler)}>
-                                                {v.stale}{v.stale > 0 && (isExpanded ? ' ▴' : ' ▾')}
+                                                onClick={() => v.stale > 0 && setExpandedVA(expandedVA === v.handler + ':stale' ? null : v.handler + ':stale')}>
+                                                {v.stale}{v.stale > 0 && (expandedVA === v.handler + ':stale' ? ' ▴' : ' ▾')}
+                                            </td>
+                                            <td style={{ ...tdStyleNum, color: v.idle > 0 ? COLORS.danger : 'inherit', cursor: v.idle > 0 ? 'pointer' : 'default', textDecoration: v.idle > 0 ? 'underline' : 'none' }}
+                                                onClick={() => v.idle > 0 && setExpandedVA(expandedVA === v.handler + ':idle' ? null : v.handler + ':idle')}>
+                                                {v.idle}{v.idle > 0 && (expandedVA === v.handler + ':idle' ? ' ▴' : ' ▾')}
                                             </td>
                                             <td style={tdStyleNum}>
                                                 {v.accsPerPhone}
@@ -245,11 +251,11 @@ export function ThreadsDashboard() {
                                                 </span>
                                             </td>
                                         </tr>
-                                        {isExpanded && v.staleAccounts.length > 0 && (
+                                        {expandedVA === v.handler + ':stale' && v.staleAccounts.length > 0 && (
                                             <tr style={{ background: 'rgba(245,158,11,0.05)' }}>
-                                                <td colSpan={9} style={{ padding: '8px 12px 8px 24px' }}>
+                                                <td colSpan={10} style={{ padding: '8px 12px 8px 24px' }}>
                                                     <div style={{ fontSize: '0.8rem', color: COLORS.warning, marginBottom: '4px', fontWeight: 600 }}>
-                                                        Stale accounts — not logged in 3+ days:
+                                                        Not logged in 3+ days:
                                                     </div>
                                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                                                         {v.staleAccounts.sort((a, b) => b.daysSinceLogin - a.daysSinceLogin).map(a => (
@@ -259,6 +265,25 @@ export function ThreadsDashboard() {
                                                                 color: a.daysSinceLogin >= 7 ? COLORS.danger : COLORS.warning,
                                                             }}>
                                                                 @{a.username} <span style={{ opacity: 0.7 }}>({a.daysSinceLogin}d)</span>
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        )}
+                                        {expandedVA === v.handler + ':idle' && v.idleAccounts.length > 0 && (
+                                            <tr style={{ background: 'rgba(244,63,94,0.05)' }}>
+                                                <td colSpan={10} style={{ padding: '8px 12px 8px 24px' }}>
+                                                    <div style={{ fontSize: '0.8rem', color: COLORS.danger, marginBottom: '4px', fontWeight: 600 }}>
+                                                        Active but 0 posts — not posting:
+                                                    </div>
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                                        {v.idleAccounts.map(a => (
+                                                            <span key={a.id} style={{
+                                                                display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.78rem',
+                                                                background: 'rgba(244,63,94,0.12)', color: COLORS.danger,
+                                                            }}>
+                                                                @{a.username} <span style={{ opacity: 0.7 }}>({a.daysSinceCreation}d old)</span>
                                                             </span>
                                                         ))}
                                                     </div>
