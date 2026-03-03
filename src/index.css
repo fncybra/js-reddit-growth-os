@@ -320,6 +320,83 @@ select.input-field {
   padding-right: 40px;
 }
 
+/* Charts */
+.chart-container {
+  width: 100%;
+  position: relative;
+}
+
+/* Status Dots */
+.status-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.status-dot--success { background: var(--status-success); box-shadow: 0 0 6px rgba(16, 185, 129, 0.4); }
+.status-dot--warning { background: var(--status-warning); box-shadow: 0 0 6px rgba(245, 158, 11, 0.4); }
+.status-dot--danger { background: var(--status-danger); box-shadow: 0 0 6px rgba(244, 63, 94, 0.4); }
+.status-dot--info { background: var(--status-info); box-shadow: 0 0 6px rgba(14, 165, 233, 0.4); }
+.status-dot--muted { background: var(--text-muted); }
+
+/* Metric Cards with colored top border */
+.metric-card { background: var(--bg-surface); border-radius: var(--radius-lg); padding: 20px; border-top: 3px solid transparent; }
+.metric-card--blue { border-top-color: #3b82f6; }
+.metric-card--green { border-top-color: #10b981; }
+.metric-card--yellow { border-top-color: #f59e0b; }
+.metric-card--red { border-top-color: #f43f5e; }
+.metric-card--purple { border-top-color: #8b5cf6; }
+.metric-card--cyan { border-top-color: #06b6d4; }
+
+/* Activity rows */
+.activity-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  transition: background-color 0.15s;
+  cursor: default;
+}
+.activity-row:hover {
+  background-color: var(--bg-surface-hover);
+}
+
+/* Progress bar */
+.progress-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-surface-elevated);
+  overflow: hidden;
+}
+.progress-bar__fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+/* Spinning icon animation */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+/* Grade badge */
+.grade-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
 /* VA App Mobile Responsiveness */
 .va-card-container { display: flex; flex-wrap: wrap; }
 .va-media-sidebar { flex-shrink: 0; }

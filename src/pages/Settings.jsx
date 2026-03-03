@@ -67,7 +67,7 @@ export function Settings() {
         for (const [key, value] of Object.entries(settings)) {
             // Handle mixing types: vaPin stays string, others are numbers, api key is string
             let finalValue = value;
-            const textKeys = ['vaPin', 'openRouterApiKey', 'aiBaseUrl', 'openRouterModel', 'supabaseUrl', 'supabaseAnonKey', 'proxyUrl', 'telegramBotToken', 'telegramChatId', 'telegramThreadId', 'lastTelegramReportDate', 'airtableApiKey', 'airtableBaseId', 'airtableTableName', 'lastThreadsPatrol'];
+            const textKeys = ['vaPin', 'openRouterApiKey', 'aiBaseUrl', 'openRouterModel', 'supabaseUrl', 'supabaseAnonKey', 'proxyUrl', 'telegramBotToken', 'telegramChatId', 'telegramThreadId', 'lastTelegramReportDate', 'airtableApiKey', 'airtableBaseId', 'airtableTableName', 'lastThreadsPatrol', 'threadsTelegramBotToken', 'threadsTelegramChatId', 'threadsTelegramThreadId'];
             if (!textKeys.includes(key) && value !== '') {
                 finalValue = Number(value);
             }
@@ -373,6 +373,98 @@ export function Settings() {
                                 </button>
                             </div>
                         </div>
+                        <div className="card">
+                            <h2 style={{ fontSize: '1.2rem', marginBottom: '20px' }}>Threads Health Patrol</h2>
+                            <small style={{ color: 'var(--text-secondary)', display: 'block', marginBottom: '16px' }}>
+                                Auto-detects dead/suspended Threads accounts across your fleet. Scaled for 2k+ accounts with adaptive batching and rate limit backoff.
+                            </small>
+                            <div className="input-group">
+                                <label className="input-label">Enable Health Patrol</label>
+                                <select className="input-field" value={String(settings.threadsPatrolEnabled ?? 1)} onChange={e => setSettings({ ...settings, threadsPatrolEnabled: Number(e.target.value) })}>
+                                    <option value="1">Enabled</option>
+                                    <option value="0">Disabled</option>
+                                </select>
+                            </div>
+                            <div className="input-group">
+                                <label className="input-label">Batch Size (accounts per patrol run)</label>
+                                <input type="number" className="input-field" value={settings.threadsPatrolBatchSize ?? 10} onChange={e => setSettings({ ...settings, threadsPatrolBatchSize: e.target.value })} min="1" max="50" />
+                                <small style={{ color: 'var(--text-secondary)' }}>For 2k accounts, use 15-25. Higher = faster rotation but more API calls per run.</small>
+                            </div>
+                            <div className="input-group">
+                                <label className="input-label">Patrol Interval (minutes)</label>
+                                <input type="number" className="input-field" value={settings.threadsPatrolIntervalMinutes ?? 15} onChange={e => setSettings({ ...settings, threadsPatrolIntervalMinutes: e.target.value })} min="5" max="120" />
+                                <small style={{ color: 'var(--text-secondary)' }}>How often the background patrol runs. At batch=20, interval=10min, 2k accounts take ~17 hours for full rotation.</small>
+                            </div>
+                            <div className="input-group">
+                                <label className="input-label">Delay Between Checks (ms)</label>
+                                <input type="number" className="input-field" value={settings.threadsPatrolDelayMs ?? 2000} onChange={e => setSettings({ ...settings, threadsPatrolDelayMs: e.target.value })} min="1000" max="10000" />
+                                <small style={{ color: 'var(--text-secondary)' }}>Lower = faster but risks rate limiting. 2000ms recommended.</small>
+                            </div>
+                            <button onClick={handleSave} className="btn btn-outline" style={{ width: '100%', marginTop: '8px' }}>Save Patrol Settings</button>
+                        </div>
+
+                        <div className="card">
+                            <h2 style={{ fontSize: '1.2rem', marginBottom: '20px' }}>Threads Telegram Alerts</h2>
+                            <small style={{ color: 'var(--text-secondary)', display: 'block', marginBottom: '16px' }}>
+                                Separate Telegram settings for Threads patrol alerts. If left blank, falls back to the main Reddit Telegram settings above.
+                            </small>
+                            <div className="input-group">
+                                <label className="input-label">Bot Token (Threads)</label>
+                                <input
+                                    type="password"
+                                    className="input-field"
+                                    placeholder="Leave blank to use main bot token"
+                                    value={settings.threadsTelegramBotToken || ''}
+                                    onChange={e => setSettings({ ...settings, threadsTelegramBotToken: e.target.value })}
+                                />
+                            </div>
+                            <div className="input-group">
+                                <label className="input-label">Chat ID (Threads)</label>
+                                <input
+                                    type="text"
+                                    className="input-field"
+                                    placeholder="Leave blank to use main chat ID"
+                                    value={settings.threadsTelegramChatId || ''}
+                                    onChange={e => setSettings({ ...settings, threadsTelegramChatId: e.target.value })}
+                                />
+                            </div>
+                            <div className="input-group">
+                                <label className="input-label">Topic Thread ID (Threads) <small>(optional)</small></label>
+                                <input
+                                    type="text"
+                                    className="input-field"
+                                    placeholder="Leave blank to use main thread ID"
+                                    value={settings.threadsTelegramThreadId || ''}
+                                    onChange={e => setSettings({ ...settings, threadsTelegramThreadId: e.target.value })}
+                                />
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '12px' }}>
+                                <button onClick={handleSave} className="btn btn-primary">Save</button>
+                                <button
+                                    type="button"
+                                    className="btn btn-outline"
+                                    onClick={async () => {
+                                        const token = (settings.threadsTelegramBotToken || settings.telegramBotToken || '').trim();
+                                        const chatId = (settings.threadsTelegramChatId || settings.telegramChatId || '').trim();
+                                        const threadId = (settings.threadsTelegramThreadId || settings.telegramThreadId || '').trim();
+                                        if (!token || !chatId) {
+                                            alert('No Telegram credentials configured for Threads alerts.');
+                                            return;
+                                        }
+                                        try {
+                                            const { TelegramService } = await import('../services/growthEngine');
+                                            await TelegramService.sendMessage(token, chatId, '<b>Threads Health Patrol</b> — Test message. Alerts will appear here.', threadId);
+                                            alert('Test message sent! Check your Telegram.');
+                                        } catch (e) {
+                                            alert('Failed: ' + e.message);
+                                        }
+                                    }}
+                                >
+                                    Send Test
+                                </button>
+                            </div>
+                        </div>
+
                         <div className="card" style={{ border: '1px solid var(--status-danger)' }}>
                             <h2 style={{ fontSize: '1.2rem', marginBottom: '8px', color: 'var(--status-danger)' }}>Danger Zone</h2>
                             <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '16px' }}>

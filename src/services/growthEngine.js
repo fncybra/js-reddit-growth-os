@@ -79,8 +79,12 @@ export const SettingsService = {
             airtableTableName: 'Phone Posting',
             threadsPatrolEnabled: 1,
             threadsPatrolIntervalMinutes: 15,
-            threadsPatrolBatchSize: 3,
-            lastThreadsPatrol: ''
+            threadsPatrolBatchSize: 10,
+            threadsPatrolDelayMs: 2000,
+            lastThreadsPatrol: '',
+            threadsTelegramBotToken: '',
+            threadsTelegramChatId: '',
+            threadsTelegramThreadId: ''
         };
         const settingsArr = await db.settings.toArray();
         const settings = { ...defaultSettings };
@@ -3386,9 +3390,12 @@ export const AirtableService = {
 
 
 // ─── Threads Health Patrol (Automated Dead Account Detection) ─────────────────
+// Scaled for 2k+ accounts: adaptive batching, rate limit backoff, follower tracking
 
 export const ThreadsHealthService = {
     _checkedThisSession: new Set(),
+    _rateLimitBackoff: 0, // ms to wait after rate limit hit
+    _consecutiveErrors: 0,
 
     async checkAccountStatus(username) {
         const proxyUrl = await SettingsService.getProxyUrl();
@@ -3428,6 +3435,22 @@ export const ThreadsHealthService = {
         return await res.json();
     },
 
+    async updateAirtableFollowers(apiKey, baseId, tableName, recordId, followerCount) {
+        const url = `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}/${recordId}`;
+        const res = await fetch(url, {
+            method: 'PATCH',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ fields: { 'Followers': followerCount } }),
+        });
+        if (!res.ok) {
+            // Non-critical — don't throw, just log
+            console.warn(`[ThreadsPatrol] Follower update failed for ${recordId}`);
+        }
+    },
+
     async runPatrol() {
         const settings = await SettingsService.getSettings();
         if (!Number(settings.threadsPatrolEnabled)) {
@@ -3443,7 +3466,20 @@ export const ThreadsHealthService = {
             return { skipped: true, reason: 'airtable_not_configured' };
         }
 
-        const batchSize = Math.max(1, Math.min(10, Number(settings.threadsPatrolBatchSize) || 3));
+        // Scale: allow batch sizes up to 50 for large fleets
+        const batchSize = Math.max(1, Math.min(50, Number(settings.threadsPatrolBatchSize) || 10));
+        const delayBetweenChecks = Math.max(1000, Number(settings.threadsPatrolDelayMs) || 2000);
+
+        // Rate limit backoff — if we got rate limited recently, wait before resuming
+        if (this._rateLimitBackoff > 0) {
+            const now = Date.now();
+            if (now < this._rateLimitBackoff) {
+                const waitSec = Math.round((this._rateLimitBackoff - now) / 1000);
+                console.log(`[ThreadsPatrol] Rate limit backoff active, ${waitSec}s remaining`);
+                return { skipped: true, reason: 'rate_limit_backoff', waitSeconds: waitSec };
+            }
+            this._rateLimitBackoff = 0;
+        }
 
         // Pull accounts from Airtable
         let accounts;
@@ -3467,7 +3503,7 @@ export const ThreadsHealthService = {
 
         // Reset rotation when all accounts have been checked
         if (this._checkedThisSession.size >= checkable.length) {
-            console.log('[ThreadsPatrol] Full rotation complete, resetting');
+            console.log(`[ThreadsPatrol] Full rotation complete (${checkable.length} accounts), resetting`);
             this._checkedThisSession.clear();
         }
 
@@ -3475,53 +3511,78 @@ export const ThreadsHealthService = {
         const unchecked = checkable.filter(a => !this._checkedThisSession.has(a.username));
         const batch = unchecked.slice(0, batchSize);
 
-        console.log(`[ThreadsPatrol] Checking ${batch.length} accounts (${this._checkedThisSession.size}/${checkable.length} checked this session)`);
+        const remaining = unchecked.length - batch.length;
+        const rotationsLeft = Math.ceil(remaining / batchSize);
+        const intervalMin = Number(settings.threadsPatrolIntervalMinutes) || 15;
+        const etaMinutes = rotationsLeft * intervalMin;
+
+        console.log(`[ThreadsPatrol] Checking ${batch.length}/${unchecked.length} accounts (${this._checkedThisSession.size}/${checkable.length} done, ETA: ~${etaMinutes}min for full rotation)`);
 
         const results = [];
         const newlyDead = [];
+        const newlySuspended = [];
+        const followerUpdates = [];
+        let rateLimited = false;
 
-        for (const account of batch) {
+        for (let i = 0; i < batch.length; i++) {
+            const account = batch[i];
             this._checkedThisSession.add(account.username);
             try {
                 const result = await this.checkAccountStatus(account.username);
-                results.push({ username: account.username, ...result });
+                results.push({ username: account.username, model: account.model, ...result });
 
                 if (result.status === 'not_found') {
                     console.log(`[ThreadsPatrol] DEAD detected: ${account.username}`);
                     newlyDead.push(account);
-                    // Write back to Airtable
                     try {
                         await this.updateAirtableStatus(apiKey, baseId, tableName, account.id, 'Dead');
-                        console.log(`[ThreadsPatrol] Updated Airtable: ${account.username} -> Dead`);
                     } catch (writeErr) {
                         console.error(`[ThreadsPatrol] Airtable write failed for ${account.username}:`, writeErr.message);
                     }
                 } else if (result.status === 'rate_limited') {
-                    console.warn('[ThreadsPatrol] Rate limited, stopping batch early');
+                    console.warn('[ThreadsPatrol] Rate limited — applying exponential backoff');
+                    this._consecutiveErrors++;
+                    const backoffMs = Math.min(300000, 30000 * Math.pow(2, this._consecutiveErrors - 1)); // 30s, 60s, 120s, max 5min
+                    this._rateLimitBackoff = Date.now() + backoffMs;
+                    rateLimited = true;
                     break;
+                } else if (result.status === 'active' || result.exists) {
+                    this._consecutiveErrors = 0;
+                    // Track follower count changes
+                    if (result.followerCount != null && result.followerCount !== account.followers) {
+                        followerUpdates.push({ account, newCount: result.followerCount, oldCount: account.followers });
+                        // Write updated follower count back to Airtable
+                        this.updateAirtableFollowers(apiKey, baseId, tableName, account.id, result.followerCount).catch(() => {});
+                    }
                 }
 
-                // 3-second delay between requests
-                if (batch.indexOf(account) < batch.length - 1) {
-                    await new Promise(r => setTimeout(r, 3000));
+                // Delay between requests
+                if (i < batch.length - 1) {
+                    await new Promise(r => setTimeout(r, delayBetweenChecks));
                 }
             } catch (err) {
                 console.error(`[ThreadsPatrol] Error checking ${account.username}:`, err.message);
-                results.push({ username: account.username, status: 'error', error: err.message });
+                results.push({ username: account.username, model: account.model, status: 'error', error: err.message });
+                this._consecutiveErrors++;
+                // If too many consecutive errors, pause
+                if (this._consecutiveErrors >= 5) {
+                    console.warn('[ThreadsPatrol] 5+ consecutive errors, pausing');
+                    break;
+                }
             }
         }
 
         // Send Telegram alert if any new dead accounts detected
+        // Uses separate Threads Telegram settings, falls back to main if not set
         if (newlyDead.length > 0) {
             try {
-                const token = (settings.telegramBotToken || '').trim();
-                const chatId = (settings.telegramChatId || '').trim();
-                const threadId = (settings.telegramThreadId || '').trim();
+                const token = (settings.threadsTelegramBotToken || settings.telegramBotToken || '').trim();
+                const chatId = (settings.threadsTelegramChatId || settings.telegramChatId || '').trim();
+                const threadId = (settings.threadsTelegramThreadId || settings.telegramThreadId || '').trim();
                 if (token && chatId) {
                     const deadList = newlyDead.map(a => `- @${a.username} (${a.model || 'unknown model'})`).join('\n');
                     const msg = `<b>Threads Health Patrol</b>\n\n${newlyDead.length} dead account(s) detected:\n${deadList}\n\nStatus updated to "Dead" in Airtable.`;
                     await TelegramService.sendMessage(token, chatId, msg, threadId);
-                    console.log('[ThreadsPatrol] Telegram alert sent');
                 }
             } catch (tgErr) {
                 console.error('[ThreadsPatrol] Telegram alert failed:', tgErr.message);
@@ -3532,21 +3593,283 @@ export const ThreadsHealthService = {
         const summary = {
             timestamp: new Date().toISOString(),
             checked: results.length,
-            healthy: results.filter(r => r.status === 'active').length,
+            healthy: results.filter(r => r.status === 'active' || r.exists).length,
             dead: newlyDead.length,
             errors: results.filter(r => r.status === 'error').length,
+            rateLimited,
+            followerUpdates: followerUpdates.length,
             totalAccounts: accounts.length,
             sessionProgress: this._checkedThisSession.size,
             sessionTotal: checkable.length,
+            etaMinutes,
+            batchSize,
         };
         await SettingsService.updateSetting('lastThreadsPatrol', JSON.stringify(summary));
 
         // Clear Airtable cache so next dashboard load shows fresh data
-        if (newlyDead.length > 0) {
+        if (newlyDead.length > 0 || followerUpdates.length > 0) {
             AirtableService.clearCache();
         }
 
-        console.log(`[ThreadsPatrol] Done: ${results.length} checked, ${newlyDead.length} dead, ${summary.healthy} healthy`);
+        console.log(`[ThreadsPatrol] Done: ${results.length} checked, ${newlyDead.length} dead, ${summary.healthy} healthy, ${followerUpdates.length} follower updates`);
         return summary;
+    },
+
+    // Manual full-fleet scan — runs through ALL accounts in one go (for dashboard button)
+    async runFullScan(onProgress) {
+        const settings = await SettingsService.getSettings();
+        const apiKey = (settings.airtableApiKey || '').trim();
+        const baseId = (settings.airtableBaseId || '').trim();
+        const tableName = (settings.airtableTableName || 'Phone Posting').trim();
+        if (!apiKey || !baseId) throw new Error('Airtable not configured');
+
+        const accounts = await AirtableService.fetchAllAccounts(true);
+        const checkable = accounts.filter(a => {
+            const s = (a.status || '').toLowerCase();
+            return a.username && s !== 'dead' && s !== 'dead/shadowbanned';
+        });
+
+        const totalDead = [];
+        const totalErrors = [];
+        const totalHealthy = [];
+
+        for (let i = 0; i < checkable.length; i++) {
+            const account = checkable[i];
+            if (onProgress) onProgress({ current: i + 1, total: checkable.length, username: account.username });
+
+            try {
+                const result = await this.checkAccountStatus(account.username);
+                if (result.status === 'not_found') {
+                    totalDead.push(account);
+                    try {
+                        await this.updateAirtableStatus(apiKey, baseId, tableName, account.id, 'Dead');
+                    } catch (_) {}
+                } else if (result.status === 'rate_limited') {
+                    // Wait 30s and continue
+                    await new Promise(r => setTimeout(r, 30000));
+                    i--; // retry this account
+                    continue;
+                } else if (result.exists) {
+                    totalHealthy.push(account);
+                    if (result.followerCount != null && result.followerCount !== account.followers) {
+                        this.updateAirtableFollowers(apiKey, baseId, tableName, account.id, result.followerCount).catch(() => {});
+                    }
+                } else {
+                    totalErrors.push(account);
+                }
+            } catch (err) {
+                totalErrors.push(account);
+            }
+
+            // 2s delay between checks
+            if (i < checkable.length - 1) {
+                await new Promise(r => setTimeout(r, 2000));
+            }
+        }
+
+        AirtableService.clearCache();
+        this._checkedThisSession.clear();
+
+        return {
+            total: checkable.length,
+            healthy: totalHealthy.length,
+            dead: totalDead.length,
+            errors: totalErrors.length,
+            deadAccounts: totalDead.map(a => ({ username: a.username, model: a.model })),
+        };
     }
+};
+
+// ─── Threads Growth Intelligence ──────────────────────────────────────────────
+// Analyzes Threads fleet data for growth insights, patterns, and recommendations
+
+export const ThreadsGrowthService = {
+    async getFleetHealth(accounts) {
+        if (!accounts) accounts = await AirtableService.fetchAllAccounts();
+        const total = accounts.length;
+        if (total === 0) return { score: 0, grade: 'N/A', breakdown: {} };
+
+        const active = accounts.filter(a => a.status === 'Active').length;
+        const warmUp = accounts.filter(a => a.status === 'Warm Up').length;
+        const suspended = accounts.filter(a => a.status === 'Suspended').length;
+        const dead = accounts.filter(a => a.status === 'Dead' || a.status === 'Dead/Shadowbanned').length;
+        const loginErrors = accounts.filter(a => a.status === 'Login Errors').length;
+
+        // Health score: active=100pts, warmup=80pts, suspended/errors=0pts, dead=-50pts
+        const score = Math.max(0, Math.min(100, Math.round(
+            ((active * 100 + warmUp * 80) / total) - (dead / total * 50)
+        )));
+        const grade = score >= 80 ? 'A' : score >= 60 ? 'B' : score >= 40 ? 'C' : score >= 20 ? 'D' : 'F';
+
+        // Survival rate: active / (active + dead + suspended)
+        const atRisk = active + dead + suspended;
+        const survivalRate = atRisk > 0 ? Math.round((active / atRisk) * 100) : 100;
+
+        return {
+            score,
+            grade,
+            survivalRate,
+            breakdown: { total, active, warmUp, suspended, dead, loginErrors },
+        };
+    },
+
+    async getModelPerformance(accounts) {
+        if (!accounts) accounts = await AirtableService.fetchAllAccounts();
+        const models = {};
+        accounts.forEach(a => {
+            const m = a.model || 'Unknown';
+            if (!models[m]) models[m] = {
+                model: m, total: 0, active: 0, suspended: 0, dead: 0, warmUp: 0, loginErrors: 0,
+                totalFollowers: 0, avgFollowers: 0, activeFollowers: 0,
+                survivalRate: 0,
+            };
+            models[m].total++;
+            models[m].totalFollowers += a.followers || 0;
+            const s = a.status || '';
+            if (s === 'Active') { models[m].active++; models[m].activeFollowers += a.followers || 0; }
+            else if (s === 'Suspended') models[m].suspended++;
+            else if (s === 'Dead/Shadowbanned' || s === 'Dead') models[m].dead++;
+            else if (s === 'Warm Up') models[m].warmUp++;
+            else if (s === 'Login Errors') models[m].loginErrors++;
+        });
+
+        return Object.values(models).map(m => {
+            const atRisk = m.active + m.dead + m.suspended;
+            m.survivalRate = atRisk > 0 ? Math.round((m.active / atRisk) * 100) : 100;
+            m.avgFollowers = m.active > 0 ? Math.round(m.activeFollowers / m.active) : 0;
+            return m;
+        }).sort((a, b) => b.activeFollowers - a.activeFollowers);
+    },
+
+    async getVAPerformance(accounts, devices) {
+        if (!accounts) accounts = await AirtableService.fetchAllAccounts();
+        if (!devices) devices = await AirtableService.fetchDevices();
+
+        const deviceMap = {};
+        devices.forEach(d => { deviceMap[d.id] = d; });
+
+        const vaMap = {};
+        accounts.forEach(a => {
+            const deviceIds = Array.isArray(a.device) ? a.device : [];
+            let handler = 'Unassigned';
+            if (deviceIds.length > 0) {
+                const dev = deviceMap[deviceIds[0]];
+                if (dev) handler = dev.handler || dev.fullName || 'Unassigned';
+            }
+            if (!vaMap[handler]) vaMap[handler] = { handler, total: 0, active: 0, suspended: 0, dead: 0, loginErrors: 0, totalFollowers: 0 };
+            vaMap[handler].total++;
+            vaMap[handler].totalFollowers += a.followers || 0;
+            const s = a.status || '';
+            if (s === 'Active') vaMap[handler].active++;
+            else if (s === 'Suspended') vaMap[handler].suspended++;
+            else if (s === 'Dead/Shadowbanned' || s === 'Dead') vaMap[handler].dead++;
+            else if (s === 'Login Errors') vaMap[handler].loginErrors++;
+        });
+
+        return Object.values(vaMap).map(v => {
+            const atRisk = v.active + v.dead + v.suspended;
+            v.survivalRate = atRisk > 0 ? Math.round((v.active / atRisk) * 100) : 100;
+            v.healthScore = v.total > 0 ? Math.round(((v.active * 100 + (v.total - v.active - v.dead - v.suspended - v.loginErrors) * 80) / v.total) - (v.dead / v.total * 50)) : 0;
+            return v;
+        }).sort((a, b) => b.total - a.total);
+    },
+
+    async getAccountAgeAnalysis(accounts) {
+        if (!accounts) accounts = await AirtableService.fetchAllAccounts();
+
+        // Bucket accounts by age ranges
+        const buckets = [
+            { label: '0-7d', min: 0, max: 7 },
+            { label: '8-14d', min: 8, max: 14 },
+            { label: '15-30d', min: 15, max: 30 },
+            { label: '31-60d', min: 31, max: 60 },
+            { label: '61-90d', min: 61, max: 90 },
+            { label: '90d+', min: 91, max: Infinity },
+        ];
+
+        const result = buckets.map(b => {
+            const inRange = accounts.filter(a => a.daysSinceCreation >= b.min && a.daysSinceCreation <= b.max);
+            const active = inRange.filter(a => a.status === 'Active').length;
+            const dead = inRange.filter(a => a.status === 'Dead' || a.status === 'Dead/Shadowbanned').length;
+            const suspended = inRange.filter(a => a.status === 'Suspended').length;
+            return {
+                label: b.label,
+                total: inRange.length,
+                active,
+                dead,
+                suspended,
+                survivalRate: inRange.length > 0 ? Math.round((active / inRange.length) * 100) : 0,
+            };
+        });
+
+        return result;
+    },
+
+    async getRecommendations(accounts) {
+        if (!accounts) accounts = await AirtableService.fetchAllAccounts();
+        const recs = [];
+
+        const total = accounts.length;
+        const active = accounts.filter(a => a.status === 'Active').length;
+        const dead = accounts.filter(a => a.status === 'Dead' || a.status === 'Dead/Shadowbanned').length;
+        const suspended = accounts.filter(a => a.status === 'Suspended').length;
+        const loginErrors = accounts.filter(a => a.status === 'Login Errors').length;
+        const warmUp = accounts.filter(a => a.status === 'Warm Up').length;
+        const noLink = accounts.filter(a => a.status === 'Active' && !a.linkInBio).length;
+        const staleLogins = accounts.filter(a => (a.status === 'Active' || a.status === 'Warm Up') && a.daysSinceLogin >= 7).length;
+
+        const deathRate = total > 0 ? Math.round((dead / total) * 100) : 0;
+        const suspendRate = total > 0 ? Math.round((suspended / total) * 100) : 0;
+
+        if (deathRate > 20) {
+            recs.push({ severity: 'critical', message: `Death rate is ${deathRate}% — investigate banning patterns. Consider changing VPN locations or creation methods.` });
+        } else if (deathRate > 10) {
+            recs.push({ severity: 'warning', message: `Death rate at ${deathRate}% — monitor closely. Check if specific models or VAs have higher death rates.` });
+        }
+
+        if (suspendRate > 15) {
+            recs.push({ severity: 'critical', message: `${suspendRate}% accounts suspended — review posting cadence and content types.` });
+        }
+
+        if (loginErrors > 10) {
+            recs.push({ severity: 'warning', message: `${loginErrors} accounts have login errors — VAs should re-login and update credentials.` });
+        }
+
+        if (noLink > 0) {
+            recs.push({ severity: 'info', message: `${noLink} active accounts missing link in bio — add monetization links.` });
+        }
+
+        if (staleLogins > 0) {
+            recs.push({ severity: 'warning', message: `${staleLogins} accounts haven't been logged into in 7+ days — at risk of going cold.` });
+        }
+
+        if (warmUp > total * 0.4) {
+            recs.push({ severity: 'info', message: `${Math.round(warmUp / total * 100)}% of fleet still warming up — expected timeline to fully active: ${Math.ceil(warmUp / 20)} days at current pace.` });
+        }
+
+        if (active > 0 && deathRate < 5 && suspendRate < 5) {
+            recs.push({ severity: 'success', message: `Fleet health is excellent — ${active} active accounts with low attrition. Consider scaling up.` });
+        }
+
+        return recs;
+    },
+
+    async getFollowerDistribution(accounts) {
+        if (!accounts) accounts = await AirtableService.fetchAllAccounts();
+        const activeAccounts = accounts.filter(a => a.status === 'Active' && a.followers > 0);
+
+        const buckets = [
+            { label: '0-100', min: 0, max: 100 },
+            { label: '101-500', min: 101, max: 500 },
+            { label: '501-1k', min: 501, max: 1000 },
+            { label: '1k-5k', min: 1001, max: 5000 },
+            { label: '5k-10k', min: 5001, max: 10000 },
+            { label: '10k+', min: 10001, max: Infinity },
+        ];
+
+        return buckets.map(b => ({
+            label: b.label,
+            count: activeAccounts.filter(a => a.followers >= b.min && a.followers <= b.max).length,
+        }));
+    },
 };
