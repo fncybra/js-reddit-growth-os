@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { SettingsService, PerformanceSyncService, AccountSyncService } from '../services/growthEngine';
-import { db } from '../db/db';
 
 export function Settings() {
     const [settings, setSettings] = useState(null);
@@ -67,7 +66,7 @@ export function Settings() {
         for (const [key, value] of Object.entries(settings)) {
             // Handle mixing types: vaPin stays string, others are numbers, api key is string
             let finalValue = value;
-            const textKeys = ['vaPin', 'openRouterApiKey', 'aiBaseUrl', 'openRouterModel', 'supabaseUrl', 'supabaseAnonKey', 'proxyUrl', 'telegramBotToken', 'telegramChatId', 'telegramThreadId', 'lastTelegramReportDate', 'airtableApiKey', 'airtableBaseId', 'airtableTableName', 'lastThreadsPatrol', 'threadsTelegramBotToken', 'threadsTelegramChatId', 'threadsTelegramThreadId'];
+            const textKeys = ['vaPin', 'openRouterApiKey', 'aiBaseUrl', 'openRouterModel', 'supabaseUrl', 'supabaseAnonKey', 'proxyUrl', 'telegramBotToken', 'telegramChatId', 'telegramThreadId', 'lastTelegramReportDate', 'airtableApiKey', 'airtableBaseId', 'airtableTableName', 'lastThreadsPatrol', 'threadsTelegramBotToken', 'threadsTelegramChatId', 'threadsTelegramThreadId', 'lastThreadsDailyReportDate', 'lastVASnapshot', 'threadsManagerPin', 'redditManagerPin'];
             if (!textKeys.includes(key) && value !== '') {
                 finalValue = Number(value);
             }
@@ -299,6 +298,36 @@ export function Settings() {
                         </div>
 
                         <div className="card">
+                            <h2 style={{ fontSize: '1.2rem', marginBottom: '20px' }}>Manager Access PINs</h2>
+                            <small style={{ color: 'var(--text-secondary)', display: 'block', marginBottom: '16px' }}>
+                                Give department managers their own PIN to access only their section. Leave blank to disable a role (only master PIN works).
+                            </small>
+                            <div className="input-group">
+                                <label className="input-label">Threads Manager PIN</label>
+                                <input
+                                    type="text"
+                                    className="input-field"
+                                    placeholder="Leave blank to disable"
+                                    value={settings.threadsManagerPin || ''}
+                                    onChange={e => setSettings({ ...settings, threadsManagerPin: e.target.value })}
+                                />
+                                <small style={{ color: 'var(--text-secondary)' }}>Unlocks: Command Center, Threads Dashboard, Threads Settings, Settings</small>
+                            </div>
+                            <div className="input-group">
+                                <label className="input-label">Reddit Manager PIN</label>
+                                <input
+                                    type="text"
+                                    className="input-field"
+                                    placeholder="Leave blank to disable"
+                                    value={settings.redditManagerPin || ''}
+                                    onChange={e => setSettings({ ...settings, redditManagerPin: e.target.value })}
+                                />
+                                <small style={{ color: 'var(--text-secondary)' }}>Unlocks: Command Center, all Reddit pages, Settings</small>
+                            </div>
+                            <button onClick={handleSave} className="btn btn-outline" style={{ width: '100%', marginTop: '8px' }}>Save Manager PINs</button>
+                        </div>
+
+                        <div className="card">
                             <h2 style={{ fontSize: '1.2rem', marginBottom: '20px' }}>Performance Tracking</h2>
                             <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '16px' }}>
                                 Use this to refresh live Reddit post stats (upvotes/removal status) across recent closed tasks.
@@ -465,46 +494,47 @@ export function Settings() {
                             </div>
                         </div>
 
-                        <div className="card" style={{ border: '1px solid var(--status-danger)' }}>
-                            <h2 style={{ fontSize: '1.2rem', marginBottom: '8px', color: 'var(--status-danger)' }}>Danger Zone</h2>
-                            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '16px' }}>
-                                This will permanently erase everything: all models, subreddits, library assets, tasks, and settings.
-                            </p>
-                            <button
-                                type="button"
-                                onClick={async () => {
-                                    if (window.confirm("Are you absolutely sure you want to completely erase the JS Reddit Growth OS Database? This cannot be undone.")) {
+                        <div className="card">
+                            <h2 style={{ fontSize: '1.2rem', marginBottom: '20px' }}>Threads Daily VA Report</h2>
+                            <small style={{ color: 'var(--text-secondary)', display: 'block', marginBottom: '16px' }}>
+                                Sends a daily Telegram report with per-VA accountability metrics: red flags (stale logins, dead accounts), watch list, and top performers with day-over-day deltas.
+                            </small>
+                            <div className="input-group">
+                                <label className="input-label">Enable Daily VA Report</label>
+                                <select className="input-field" value={String(settings.threadsDailyReportEnabled ?? 1)} onChange={e => setSettings({ ...settings, threadsDailyReportEnabled: Number(e.target.value) })}>
+                                    <option value="1">Enabled</option>
+                                    <option value="0">Disabled</option>
+                                </select>
+                            </div>
+                            <div className="input-group">
+                                <label className="input-label">Send After Hour (0-23)</label>
+                                <input type="number" className="input-field" value={settings.threadsDailyReportHour ?? 8} onChange={e => setSettings({ ...settings, threadsDailyReportHour: e.target.value })} min="0" max="23" />
+                                <small style={{ color: 'var(--text-secondary)' }}>Report auto-sends once per day after this hour (local time). Default: 8 AM.</small>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '12px' }}>
+                                <button onClick={handleSave} className="btn btn-primary">Save</button>
+                                <button
+                                    type="button"
+                                    className="btn btn-outline"
+                                    onClick={async () => {
                                         try {
-                                            const { CloudSyncService } = await import('../services/growthEngine');
-                                            const cloudEnabled = await CloudSyncService.isEnabled();
-                                            if (cloudEnabled) {
-                                                const wipeCloud = window.confirm('Cloud sync is enabled. Also wipe ALL cloud data for all users?');
-                                                if (wipeCloud) {
-                                                    await CloudSyncService.clearAllCloudData();
-                                                }
+                                            const { TelegramService } = await import('../services/growthEngine');
+                                            const result = await TelegramService.sendThreadsDailyReport();
+                                            if (result.sent) {
+                                                alert('Daily VA report sent! Check your Telegram.');
+                                            } else {
+                                                alert('Report not sent: ' + (result.reason || 'Unknown error'));
                                             }
-
-                                            db.close();
-                                            await new Promise((resolve, reject) => {
-                                                const req = window.indexedDB.deleteDatabase('JSRedditGrowthOS');
-                                                req.onsuccess = () => resolve();
-                                                req.onerror = () => reject(req.error || new Error('Delete database failed'));
-                                                req.onblocked = () => reject(new Error('Database delete blocked by another open tab'));
-                                            });
-                                            alert("Database wiped. The app will now reload.");
-                                            window.location.reload();
                                         } catch (e) {
-                                            console.error("Wipe failed:", e);
-                                            alert("Failed to wipe database: " + e.message);
+                                            alert('Failed: ' + e.message);
                                         }
-                                    }
-                                }}
-                                className="btn btn-outline"
-                                style={{ width: '100%', color: 'var(--status-danger)', borderColor: 'var(--status-danger)' }}
-                            >
-                                Wipe All App Data
-                            </button>
+                                    }}
+                                >
+                                    Send Now
+                                </button>
+                            </div>
                         </div>
+
                     </div>
                 </div>
             </div>

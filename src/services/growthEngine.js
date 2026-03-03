@@ -84,7 +84,13 @@ export const SettingsService = {
             lastThreadsPatrol: '',
             threadsTelegramBotToken: '',
             threadsTelegramChatId: '',
-            threadsTelegramThreadId: ''
+            threadsTelegramThreadId: '',
+            threadsDailyReportEnabled: 1,
+            threadsDailyReportHour: 8,
+            lastThreadsDailyReportDate: '',
+            lastVASnapshot: '',
+            threadsManagerPin: '',
+            redditManagerPin: ''
         };
         const settingsArr = await db.settings.toArray();
         const settings = { ...defaultSettings };
@@ -3150,6 +3156,88 @@ export const TelegramService = {
     async sendTestMessage(botToken, chatId, threadId) {
         const text = '✅ <b>Reddit Growth OS</b> — Telegram integration is working!';
         await this.sendMessage(botToken, chatId, text, threadId);
+    },
+
+    async buildThreadsDailyReport() {
+        const reportData = await VAReportService.generateReportData();
+        const { fleet, redFlags, watchList, topPerformers, delta } = reportData;
+
+        // Format date
+        const now = new Date();
+        const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+        const lines = [];
+        lines.push('<b>Threads Fleet — Daily VA Report</b>');
+        lines.push(dateStr);
+        lines.push('');
+
+        // Fleet summary
+        lines.push('<b>Fleet Summary</b>');
+        lines.push(`Total: ${fleet.total.toLocaleString()} | Active: ${fleet.active.toLocaleString()} | Warm Up: ${fleet.warmUp.toLocaleString()} | Suspended: ${fleet.suspended} | Dead: ${fleet.dead}`);
+        lines.push(`Health: ${fleet.grade} (${fleet.score}/100) | Survival: ${fleet.survivalRate}% | Followers: ${fleet.totalFollowers.toLocaleString()}`);
+        if (delta.fleet) {
+            const d = delta.fleet;
+            const fmt = (n) => (n >= 0 ? '+' + n.toLocaleString() : n.toLocaleString());
+            lines.push(`vs yesterday: ${fmt(d.totalChange)} total | ${fmt(d.activeChange)} active | ${fmt(d.deadChange)} dead | ${fmt(d.followerChange)} followers`);
+        }
+        lines.push('');
+
+        // Red flags
+        if (redFlags.length > 0) {
+            lines.push(`<b>Red Flags (${redFlags.length})</b>`);
+            for (const flag of redFlags) {
+                lines.push(`- ${flag.handler}: ${flag.message}`);
+            }
+            lines.push('');
+        }
+
+        // Watch list
+        if (watchList.length > 0) {
+            lines.push(`<b>Watch List (${watchList.length})</b>`);
+            for (const item of watchList) {
+                lines.push(`- ${item.message}`);
+            }
+            lines.push('');
+        }
+
+        // All clear
+        if (redFlags.length === 0 && watchList.length === 0) {
+            lines.push('All Clear — no red flags or watch list items today.');
+            lines.push('');
+        }
+
+        // Top performers
+        if (topPerformers.length > 0) {
+            lines.push('<b>Top Performers</b>');
+            topPerformers.forEach((tp, i) => {
+                const followerDelta = tp.followerChange ? ` (${tp.followerChange >= 0 ? '+' : ''}${tp.followerChange.toLocaleString()})` : '';
+                lines.push(`${i + 1}. ${tp.handler}: ${tp.active} active, ${tp.survivalRate}% survival, ${tp.totalFollowers.toLocaleString()} followers${followerDelta}`);
+            });
+        }
+
+        // Save snapshot for next day's delta
+        await VAReportService.saveSnapshot(reportData);
+
+        return lines.join('\n');
+    },
+
+    async sendThreadsDailyReport() {
+        try {
+            const settings = await SettingsService.getSettings();
+            // Use Threads Telegram config with fallback to main
+            const token = (settings.threadsTelegramBotToken || settings.telegramBotToken || '').trim();
+            const chatId = (settings.threadsTelegramChatId || settings.telegramChatId || '').trim();
+            const threadId = (settings.threadsTelegramThreadId || settings.telegramThreadId || '').trim();
+            if (!token || !chatId) {
+                return { sent: false, reason: 'No Telegram credentials configured (Threads or main)' };
+            }
+            const report = await this.buildThreadsDailyReport();
+            await this.sendMessage(token, chatId, report, threadId);
+            return { sent: true };
+        } catch (e) {
+            console.error('[TelegramService] sendThreadsDailyReport failed:', e);
+            return { sent: false, reason: e.message || 'Unknown error' };
+        }
     }
 };
 
@@ -3871,5 +3959,195 @@ export const ThreadsGrowthService = {
             label: b.label,
             count: activeAccounts.filter(a => a.followers >= b.min && a.followers <= b.max).length,
         }));
+    },
+};
+
+// ─── VA Daily Report Service ──────────────────────────────────────────────────
+// Generates per-VA accountability metrics with day-over-day delta tracking
+
+export const VAReportService = {
+    async generateReportData() {
+        // Fetch accounts + devices in parallel
+        const [accountsResult, devicesResult] = await Promise.allSettled([
+            AirtableService.fetchAllAccounts(),
+            AirtableService.fetchDevices(),
+        ]);
+        const accounts = accountsResult.status === 'fulfilled' ? accountsResult.value : [];
+        const devices = devicesResult.status === 'fulfilled' ? devicesResult.value : [];
+        if (accounts.length === 0) throw new Error('No accounts found in Airtable');
+
+        // Build device ID -> handler map
+        const deviceMap = {};
+        devices.forEach(d => { deviceMap[d.id] = d; });
+
+        // Group accounts by VA handler
+        const vaMap = {};
+        accounts.forEach(a => {
+            const deviceIds = Array.isArray(a.device) ? a.device : [];
+            let handler = 'Unassigned';
+            if (deviceIds.length > 0) {
+                const dev = deviceMap[deviceIds[0]];
+                if (dev) handler = dev.handler || dev.fullName || 'Unassigned';
+            }
+            if (!vaMap[handler]) vaMap[handler] = {
+                handler, total: 0, active: 0, warmUp: 0, suspended: 0, dead: 0,
+                loginErrors: 0, settingUp: 0, totalFollowers: 0, staleLogins: [],
+                accounts: [],
+            };
+            const v = vaMap[handler];
+            v.total++;
+            v.totalFollowers += a.followers || 0;
+            v.accounts.push(a);
+            const s = a.status || '';
+            if (s === 'Active') v.active++;
+            else if (s === 'Warm Up') v.warmUp++;
+            else if (s === 'Suspended') v.suspended++;
+            else if (s === 'Dead' || s === 'Dead/Shadowbanned') v.dead++;
+            else if (s === 'Login Errors') v.loginErrors++;
+            else if (s === 'Setting Up') v.settingUp++;
+
+            // Stale login: active or warming accounts not logged in 3+ days
+            if ((s === 'Active' || s === 'Warm Up') && a.daysSinceLogin >= 3) {
+                v.staleLogins.push({ username: a.username, daysSinceLogin: a.daysSinceLogin });
+            }
+        });
+
+        // Compute per-VA metrics
+        const vaCards = Object.values(vaMap).map(v => {
+            const atRisk = v.active + v.dead + v.suspended;
+            v.survivalRate = atRisk > 0 ? Math.round((v.active / atRisk) * 100) : 100;
+            return v;
+        }).sort((a, b) => b.active - a.active);
+
+        // Fleet summary
+        const fleetHealth = await ThreadsGrowthService.getFleetHealth(accounts);
+        const fleet = {
+            total: accounts.length,
+            active: fleetHealth.breakdown.active,
+            warmUp: fleetHealth.breakdown.warmUp,
+            suspended: fleetHealth.breakdown.suspended,
+            dead: fleetHealth.breakdown.dead,
+            loginErrors: fleetHealth.breakdown.loginErrors,
+            score: fleetHealth.score,
+            grade: fleetHealth.grade,
+            survivalRate: fleetHealth.survivalRate,
+            totalFollowers: accounts.reduce((sum, a) => sum + (a.followers || 0), 0),
+        };
+
+        // Delta tracking — load previous snapshot
+        const settings = await SettingsService.getSettings();
+        let prevSnapshot = null;
+        try {
+            const raw = settings.lastVASnapshot;
+            if (raw) prevSnapshot = JSON.parse(raw);
+        } catch (_) { /* no previous snapshot */ }
+
+        const delta = { fleet: null, va: {} };
+        if (prevSnapshot && prevSnapshot.fleet) {
+            delta.fleet = {
+                totalChange: fleet.total - (prevSnapshot.fleet.total || 0),
+                activeChange: fleet.active - (prevSnapshot.fleet.active || 0),
+                deadChange: fleet.dead - (prevSnapshot.fleet.dead || 0),
+                followerChange: fleet.totalFollowers - (prevSnapshot.fleet.totalFollowers || 0),
+            };
+            // Per-VA deltas
+            if (prevSnapshot.va) {
+                for (const v of vaCards) {
+                    const prev = prevSnapshot.va[v.handler];
+                    if (prev) {
+                        delta.va[v.handler] = {
+                            totalChange: v.total - (prev.total || 0),
+                            activeChange: v.active - (prev.active || 0),
+                            deadChange: v.dead - (prev.dead || 0),
+                            followerChange: v.totalFollowers - (prev.totalFollowers || 0),
+                        };
+                    }
+                }
+            }
+        }
+
+        // Red flags (skip Unassigned)
+        const redFlags = [];
+        for (const v of vaCards) {
+            if (v.handler === 'Unassigned') continue;
+            // Stale logins (3+ days)
+            if (v.staleLogins.length > 0) {
+                const sorted = [...v.staleLogins].sort((a, b) => b.daysSinceLogin - a.daysSinceLogin);
+                const shown = sorted.slice(0, 3).map(s => `${s.username} (${s.daysSinceLogin}d)`).join(', ');
+                const extra = sorted.length > 3 ? ` +${sorted.length - 3} more` : '';
+                redFlags.push({ severity: 3, handler: v.handler, message: `${v.staleLogins.length} account(s) not logged in 3+ days — ${shown}${extra}` });
+            }
+            // Dead delta
+            const vDelta = delta.va[v.handler];
+            if (vDelta && vDelta.deadChange > 0) {
+                redFlags.push({ severity: 2, handler: v.handler, message: `+${vDelta.deadChange} dead account(s) since yesterday` });
+            }
+            // Login errors
+            if (v.loginErrors > 0) {
+                redFlags.push({ severity: 1, handler: v.handler, message: `${v.loginErrors} account(s) with login errors` });
+            }
+        }
+        redFlags.sort((a, b) => b.severity - a.severity);
+
+        // Watch list
+        const watchList = [];
+        const fleetSurvival = fleet.survivalRate;
+        for (const v of vaCards) {
+            if (v.handler === 'Unassigned') continue;
+            // Survival rate 10+ points below fleet avg (min 3 accounts)
+            if (v.total >= 3 && v.survivalRate < fleetSurvival - 10) {
+                watchList.push({ type: 'survival', handler: v.handler, message: `${v.survivalRate}% survival (fleet avg: ${fleetSurvival}%)` });
+            }
+        }
+        // Accounts stuck in Setting Up or Warm Up 14+ days
+        for (const a of accounts) {
+            if ((a.status === 'Setting Up' || a.status === 'Warm Up') && a.daysSinceCreation >= 14) {
+                const deviceIds = Array.isArray(a.device) ? a.device : [];
+                let handler = 'Unassigned';
+                if (deviceIds.length > 0) {
+                    const dev = deviceMap[deviceIds[0]];
+                    if (dev) handler = dev.handler || dev.fullName || 'Unassigned';
+                }
+                if (handler === 'Unassigned') continue;
+                watchList.push({ type: 'stuck', handler, message: `${a.username} (${handler}): "${a.status}" for ${a.daysSinceCreation} days` });
+            }
+        }
+
+        // Top performers (top 5 by active -> survival -> followers)
+        const topPerformers = vaCards
+            .filter(v => v.handler !== 'Unassigned' && v.active > 0)
+            .sort((a, b) => b.active - a.active || b.survivalRate - a.survivalRate || b.totalFollowers - a.totalFollowers)
+            .slice(0, 5)
+            .map(v => {
+                const vDelta = delta.va[v.handler];
+                return {
+                    handler: v.handler,
+                    active: v.active,
+                    survivalRate: v.survivalRate,
+                    totalFollowers: v.totalFollowers,
+                    followerChange: vDelta ? vDelta.followerChange : 0,
+                };
+            });
+
+        return { fleet, vaCards, redFlags, watchList, topPerformers, delta };
+    },
+
+    async saveSnapshot(reportData) {
+        // Lightweight snapshot: fleet + per-VA summary (no account arrays)
+        const snapshot = {
+            date: new Date().toISOString().slice(0, 10),
+            fleet: { ...reportData.fleet },
+            va: {},
+        };
+        for (const v of reportData.vaCards) {
+            snapshot.va[v.handler] = {
+                total: v.total,
+                active: v.active,
+                dead: v.dead,
+                suspended: v.suspended,
+                totalFollowers: v.totalFollowers,
+            };
+        }
+        await SettingsService.updateSetting('lastVASnapshot', JSON.stringify(snapshot));
     },
 };

@@ -19,6 +19,7 @@ import { LinkTracker } from './pages/LinkTracker';
 import { ThreadsDashboard } from './pages/ThreadsDashboard';
 import { AgencyCommandCenter } from './pages/AgencyCommandCenter';
 import { ThreadsSettings } from './pages/ThreadsSettings';
+import { AuthProvider } from './components/AuthContext';
 
 // Error Boundary to catch runtime crashes and show them instead of a black screen
 class ErrorBoundary extends React.Component {
@@ -63,30 +64,32 @@ function App() {
       <RoutePersistence />
       <CloudSyncHandler />
       <ErrorBoundary>
-        <Routes>
-          {/* VA Mode: No Internal sidebars, pure robot mode */}
-          <Route path="/va" element={<VADashboard />} />
+        <AuthProvider>
+          <Routes>
+            {/* VA Mode: No Internal sidebars, pure robot mode */}
+            <Route path="/va" element={<VADashboard />} />
 
-          {/* Admin/Agency Mode: Full dashboard */}
-          <Route element={<Layout />}>
-            <Route path="/" element={<AgencyCommandCenter />} />
-            <Route path="reddit" element={<Dashboard />} />
-            <Route path="threads" element={<ThreadsDashboard />} />
-            <Route path="threads/settings" element={<ThreadsSettings />} />
-            <Route path="discovery" element={<Discovery />} />
-            <Route path="models" element={<Models />} />
-            <Route path="model/:id" element={<ModelDetail />} />
-            <Route path="account/:id" element={<AccountDetail />} />
-            <Route path="accounts" element={<Accounts />} />
-            <Route path="subreddits" element={<Subreddits />} />
-            <Route path="library" element={<Library />} />
-            <Route path="repurpose" element={<Repurpose />} />
-            <Route path="tasks" element={<Tasks />} />
-            <Route path="links" element={<LinkTracker />} />
-            <Route path="settings" element={<Settings />} />
-            <Route path="sop" element={<SOP />} />
-          </Route>
-        </Routes>
+            {/* Admin/Agency Mode: Full dashboard */}
+            <Route element={<Layout />}>
+              <Route path="/" element={<AgencyCommandCenter />} />
+              <Route path="reddit" element={<Dashboard />} />
+              <Route path="threads" element={<ThreadsDashboard />} />
+              <Route path="threads/settings" element={<ThreadsSettings />} />
+              <Route path="discovery" element={<Discovery />} />
+              <Route path="models" element={<Models />} />
+              <Route path="model/:id" element={<ModelDetail />} />
+              <Route path="account/:id" element={<AccountDetail />} />
+              <Route path="accounts" element={<Accounts />} />
+              <Route path="subreddits" element={<Subreddits />} />
+              <Route path="library" element={<Library />} />
+              <Route path="repurpose" element={<Repurpose />} />
+              <Route path="tasks" element={<Tasks />} />
+              <Route path="links" element={<LinkTracker />} />
+              <Route path="settings" element={<Settings />} />
+              <Route path="sop" element={<SOP />} />
+            </Route>
+          </Routes>
+        </AuthProvider>
       </ErrorBoundary>
     </HashRouter>
   );

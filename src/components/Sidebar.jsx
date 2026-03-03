@@ -16,10 +16,12 @@ import {
   Repeat,
   Link2,
   AtSign,
+  Lock,
 } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
 import { SettingsService } from '../services/growthEngine';
+import { useAuth, getAllowedSections } from './AuthContext';
 
 const navSections = [
   {
@@ -58,6 +60,10 @@ const navSections = [
 ];
 
 export function Sidebar() {
+  const { role, logout } = useAuth();
+  const allowedLabels = getAllowedSections(role);
+  const visibleSections = navSections.filter(s => allowedLabels.includes(s.label));
+
   return (
     <div className="sidebar">
       <div className="sidebar-header">
@@ -67,7 +73,7 @@ export function Sidebar() {
         </div>
       </div>
       <nav className="sidebar-nav">
-        {navSections.map((section, sIdx) => (
+        {visibleSections.map((section, sIdx) => (
           <div key={section.label}>
             {sIdx > 0 && <div style={{ borderTop: '1px solid var(--border-light, var(--border-color))', margin: '4px 12px 0' }} />}
             <div style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-muted, var(--text-secondary))', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '12px 16px 4px' }}>
@@ -93,6 +99,13 @@ export function Sidebar() {
 
       <div style={{ marginTop: 'auto', padding: '16px', borderTop: '1px solid var(--border-color)', fontSize: '0.75rem' }}>
         <CloudSyncStatus />
+        <button
+          onClick={logout}
+          style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '12px', padding: '6px 10px', fontSize: '0.75rem', color: 'var(--text-secondary)', backgroundColor: 'transparent', border: '1px solid var(--border-color)', borderRadius: '6px', cursor: 'pointer', width: '100%', justifyContent: 'center' }}
+        >
+          <Lock size={12} />
+          Lock
+        </button>
       </div>
     </div>
   );
