@@ -3305,6 +3305,7 @@ export const AirtableService = {
                 loginDate: f['Login Date'] || '',
                 daysSinceLogin: Number(f['Days Since Login']) || 0,
                 linkInBio: f['Link in Bio'] || '',
+                threadCount: Number(f['Thread Count']) || 0,
                 creationDate: f['Creation Date'] || '',
                 openThreadsUrl: f['Open Threads'] || '',
             };
@@ -3523,6 +3524,21 @@ export const ThreadsHealthService = {
         return await res.json();
     },
 
+    async updateAirtableThreadCount(apiKey, baseId, tableName, recordId, threadCount) {
+        const url = `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}/${recordId}`;
+        const res = await fetch(url, {
+            method: 'PATCH',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ fields: { 'Thread Count': threadCount } }),
+        });
+        if (!res.ok) {
+            console.warn(`[ThreadsPatrol] Thread count update failed for ${recordId}`);
+        }
+    },
+
     async updateAirtableFollowers(apiKey, baseId, tableName, recordId, followerCount) {
         const url = `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}/${recordId}`;
         const res = await fetch(url, {
@@ -3639,8 +3655,11 @@ export const ThreadsHealthService = {
                     // Track follower count changes
                     if (result.followerCount != null && result.followerCount !== account.followers) {
                         followerUpdates.push({ account, newCount: result.followerCount, oldCount: account.followers });
-                        // Write updated follower count back to Airtable
                         this.updateAirtableFollowers(apiKey, baseId, tableName, account.id, result.followerCount).catch(() => {});
+                    }
+                    // Track thread/post count
+                    if (result.threadCount != null && result.threadCount > 0 && result.threadCount !== account.threadCount) {
+                        this.updateAirtableThreadCount(apiKey, baseId, tableName, account.id, result.threadCount).catch(() => {});
                     }
                 }
 
@@ -3741,6 +3760,9 @@ export const ThreadsHealthService = {
                     totalHealthy.push(account);
                     if (result.followerCount != null && result.followerCount !== account.followers) {
                         this.updateAirtableFollowers(apiKey, baseId, tableName, account.id, result.followerCount).catch(() => {});
+                    }
+                    if (result.threadCount != null && result.threadCount > 0 && result.threadCount !== account.threadCount) {
+                        this.updateAirtableThreadCount(apiKey, baseId, tableName, account.id, result.threadCount).catch(() => {});
                     }
                 } else {
                     totalErrors.push(account);

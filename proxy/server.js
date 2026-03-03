@@ -938,6 +938,13 @@ app.get('/api/scrape/threads/user/stats/:username', async (req, res) => {
             followerCount = parseFollowerCount(followerMatch[1]);
         }
 
+        // Parse thread/post count from og:description (e.g. "141 Threads")
+        let threadCount = 0;
+        const threadMatch = ogDesc.match(/(\d+)\s*Threads?/i);
+        if (threadMatch) {
+            threadCount = parseInt(threadMatch[1], 10);
+        }
+
         // Extract display name from og:title: "Display Name (@user) • Threads, Say more"
         // The @ may be HTML-encoded as &#064; in the meta tag
         const displayNameMatch = ogTitle.match(/^(.+?)\s*\((?:@|&#064;)/);
@@ -952,12 +959,13 @@ app.get('/api/scrape/threads/user/stats/:username', async (req, res) => {
             .replace(/&gt;/g, '>')
             .replace(/&quot;/g, '"');
 
-        console.log(`[ThreadsScrape] ${cleanName}: active, followers=${followerCount}`);
+        console.log(`[ThreadsScrape] ${cleanName}: active, followers=${followerCount}, threads=${threadCount}`);
         res.json({
             exists: true,
             username: cleanName,
             displayName,
             followerCount,
+            threadCount,
             biography,
             profilePicUrl: ogImg.replace(/&amp;/g, '&'),
             status: 'active',
