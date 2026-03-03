@@ -3,6 +3,13 @@ import { AirtableService, SettingsService, ThreadsHealthService, ThreadsGrowthSe
 import { RefreshCw, AlertTriangle, Zap, Shield } from 'lucide-react';
 
 const COLORS = { success: '#10b981', warning: '#f59e0b', danger: '#f43f5e', accent: '#3b82f6', muted: '#6b7280' };
+const ThreadsLink = ({ username, style }) => (
+    <a href={`https://www.threads.com/@${username}`} target="_blank" rel="noopener noreferrer"
+        style={{ color: 'inherit', textDecoration: 'none', borderBottom: '1px dashed var(--border-color)', ...style }}
+        onClick={e => e.stopPropagation()}>
+        @{username}
+    </a>
+);
 
 export function ThreadsDashboard() {
     const [loading, setLoading] = useState(true);
@@ -263,7 +270,7 @@ export function ThreadsDashboard() {
                                                                     background: a.threadCount === 0 ? 'rgba(244,63,94,0.12)' : dsp >= 3 ? 'rgba(244,63,94,0.12)' : 'rgba(245,158,11,0.12)',
                                                                     color: a.threadCount === 0 ? COLORS.danger : dsp >= 3 ? COLORS.danger : COLORS.warning,
                                                                 }}>
-                                                                    @{a.username} <span style={{ opacity: 0.7 }}>({label})</span>
+                                                                    <ThreadsLink username={a.username} /> <span style={{ opacity: 0.7 }}>({label})</span>
                                                                 </span>
                                                             );
                                                         })}
@@ -284,7 +291,7 @@ export function ThreadsDashboard() {
                                                                 background: a.daysSinceLogin >= 7 ? 'rgba(244,63,94,0.12)' : 'rgba(245,158,11,0.12)',
                                                                 color: a.daysSinceLogin >= 7 ? COLORS.danger : COLORS.warning,
                                                             }}>
-                                                                @{a.username} <span style={{ opacity: 0.7 }}>({a.daysSinceLogin}d)</span>
+                                                                <ThreadsLink username={a.username} /> <span style={{ opacity: 0.7 }}>({a.daysSinceLogin}d)</span>
                                                             </span>
                                                         ))}
                                                     </div>
@@ -311,7 +318,7 @@ export function ThreadsDashboard() {
                                     <tbody>
                                         {topPerformers.map(a => (
                                             <tr key={a.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                                                <td style={tdStyle}>@{a.username}</td>
+                                                <td style={tdStyle}><ThreadsLink username={a.username} /></td>
                                                 <td style={{ ...tdStyle, color: 'var(--text-secondary)' }}>{a.model}</td>
                                                 <td style={{ ...tdStyleNum, fontWeight: 600 }}>{fmtFollowers(a.followers)}</td>
                                                 <td style={{ ...tdStyleNum, color: 'var(--text-secondary)' }}>{a.threadCount || 0} posts</td>
@@ -341,7 +348,7 @@ export function ThreadsDashboard() {
                                             const vaName = dev?.handler || dev?.fullName || 'Unassigned';
                                             return (
                                                 <tr key={a.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                                                    <td style={tdStyle}>@{a.username}</td>
+                                                    <td style={tdStyle}><ThreadsLink username={a.username} /></td>
                                                     <td style={{ ...tdStyle, color: 'var(--text-secondary)' }}>{a.model}</td>
                                                     <td style={{ ...tdStyle, color: 'var(--text-secondary)' }}>{vaName}</td>
                                                     <td style={{ ...tdStyleNum, color: 'var(--text-secondary)' }}>{a.daysSinceLogin}d</td>
