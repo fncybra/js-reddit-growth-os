@@ -3306,6 +3306,7 @@ export const AirtableService = {
                 daysSinceLogin: Number(f['Days Since Login']) || 0,
                 linkInBio: f['Link in Bio'] || '',
                 threadCount: Number(f['Thread Count']) || 0,
+                lastPostDate: f['Last Post Date'] || '',
                 creationDate: f['Creation Date'] || '',
                 openThreadsUrl: f['Open Threads'] || '',
             };
@@ -3532,7 +3533,7 @@ export const ThreadsHealthService = {
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ fields: { 'Thread Count': threadCount } }),
+            body: JSON.stringify({ fields: { 'Thread Count': threadCount, 'Last Post Date': new Date().toISOString().slice(0, 10) } }),
         });
         if (!res.ok) {
             console.warn(`[ThreadsPatrol] Thread count update failed for ${recordId}`);

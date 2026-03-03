@@ -87,12 +87,20 @@ export function ThreadsDashboard() {
     const deviceMap = {};
     devices.forEach(d => { deviceMap[d.id] = d; });
 
+    // Days since last post for an account
+    const daysSincePost = (a) => {
+        if (!a.lastPostDate) return a.threadCount > 0 ? 999 : -1; // has posts but no date tracked yet = unknown, 0 posts = never
+        const diff = Math.floor((Date.now() - new Date(a.lastPostDate).getTime()) / 86400000);
+        return diff;
+    };
+
     // Active fleet only — this is what matters
     const activeAccs = accounts.filter(a => a.status === 'Active');
     const warmUpAccs = accounts.filter(a => a.status === 'Warm Up');
     const errorAccs = accounts.filter(a => a.status === 'Login Errors');
-    const idleAccs = activeAccs.filter(a => a.threadCount === 0);
-    const postingAccs = activeAccs.filter(a => a.threadCount > 0);
+    // Idle = never posted OR hasn't posted in 1+ days (once we have lastPostDate data)
+    const idleAccs = activeAccs.filter(a => a.threadCount === 0 || (a.lastPostDate && daysSincePost(a) >= 1));
+    const postingAccs = activeAccs.filter(a => a.threadCount > 0 && (!a.lastPostDate || daysSincePost(a) < 1));
     const totalThreads = activeAccs.reduce((sum, a) => sum + (a.threadCount || 0), 0);
 
     // VA scorecard — active fleet focus
@@ -105,13 +113,14 @@ export function ThreadsDashboard() {
         const vaActive = vaAccounts.filter(a => a.status === 'Active');
         const vaWarmUp = vaAccounts.filter(a => a.status === 'Warm Up');
         const staleAccounts = vaAccounts.filter(a => (a.status === 'Active' || a.status === 'Warm Up') && a.daysSinceLogin >= 3);
-        const idleAccounts = vaActive.filter(a => a.threadCount === 0);
+        const idleAccounts = vaActive.filter(a => a.threadCount === 0 || (a.lastPostDate && daysSincePost(a) >= 1));
         const vaErrors = vaAccounts.filter(a => a.status === 'Login Errors').length;
         const vaDevice = devices.find(d => (d.handler || d.fullName) === v.handler);
         const accsPerPhone = vaDevice?.numberOfAccounts || v.total;
         const vaThreads = vaActive.reduce((sum, a) => sum + (a.threadCount || 0), 0);
         // Posting % = what % of their active accounts are actually posting
-        const postingPct = vaActive.length > 0 ? Math.round(vaActive.filter(a => a.threadCount > 0).length / vaActive.length * 100) : 0;
+        const vaPosting = vaActive.filter(a => a.threadCount > 0 && (!a.lastPostDate || daysSincePost(a) < 1));
+        const postingPct = vaActive.length > 0 ? Math.round(vaPosting.length / vaActive.length * 100) : 0;
         return {
             handler: v.handler, phone: v.phone,
             active: vaActive.length, warmUp: vaWarmUp.length,
@@ -242,17 +251,22 @@ export function ThreadsDashboard() {
                                             <tr style={{ background: 'rgba(244,63,94,0.05)' }}>
                                                 <td colSpan={9} style={{ padding: '8px 12px 8px 24px' }}>
                                                     <div style={{ fontSize: '0.8rem', color: COLORS.danger, marginBottom: '4px', fontWeight: 600 }}>
-                                                        Active but 0 posts — not posting:
+                                                        Not posting:
                                                     </div>
                                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                                        {v.idleAccounts.map(a => (
-                                                            <span key={a.id} style={{
-                                                                display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.78rem',
-                                                                background: 'rgba(244,63,94,0.12)', color: COLORS.danger,
-                                                            }}>
-                                                                @{a.username} <span style={{ opacity: 0.7 }}>({a.daysSinceCreation}d old)</span>
-                                                            </span>
-                                                        ))}
+                                                        {v.idleAccounts.sort((a, b) => daysSincePost(b) - daysSincePost(a)).map(a => {
+                                                            const dsp = daysSincePost(a);
+                                                            const label = a.threadCount === 0 ? '0 posts' : dsp === 999 ? 'no date' : `${dsp}d since post`;
+                                                            return (
+                                                                <span key={a.id} style={{
+                                                                    display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.78rem',
+                                                                    background: a.threadCount === 0 ? 'rgba(244,63,94,0.12)' : dsp >= 3 ? 'rgba(244,63,94,0.12)' : 'rgba(245,158,11,0.12)',
+                                                                    color: a.threadCount === 0 ? COLORS.danger : dsp >= 3 ? COLORS.danger : COLORS.warning,
+                                                                }}>
+                                                                    @{a.username} <span style={{ opacity: 0.7 }}>({label})</span>
+                                                                </span>
+                                                            );
+                                                        })}
                                                     </div>
                                                 </td>
                                             </tr>
