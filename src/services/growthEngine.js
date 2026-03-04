@@ -2843,7 +2843,7 @@ export const PerformanceSyncService = {
  * Pure function: generates manager action items from account data.
  * No DB calls, no async, no side effects.
  */
-export function generateManagerActionItems(accounts) {
+export async function generateManagerActionItems(accounts) {
     if (!accounts || !accounts.length) return [];
 
     const now = Date.now();
@@ -3029,6 +3029,34 @@ export function generateManagerActionItems(accounts) {
         }
     }
 
+    // Rule 14: Active/ready accounts with tasks today but none completed
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayStr = todayStart.toISOString();
+    const todayTasks = await db.tasks.where('date').equals(todayStr).toArray();
+    const tasksByAccount = new Map();
+    for (const t of todayTasks) {
+        if (t.taskType === 'warmup') continue; // skip warmup tasks
+        if (!tasksByAccount.has(t.accountId)) tasksByAccount.set(t.accountId, []);
+        tasksByAccount.get(t.accountId).push(t);
+    }
+    for (const acc of accounts) {
+        const phase = acc.phase || '';
+        if (phase !== 'active' && phase !== 'ready') continue;
+        const accTasks = tasksByAccount.get(acc.id);
+        if (!accTasks || accTasks.length === 0) continue;
+        const anyCompleted = accTasks.some(t => t.status === 'closed');
+        if (!anyCompleted) {
+            const handle = acc.handle?.startsWith('u/') ? acc.handle : `u/${acc.handle || 'unknown'}`;
+            items.push({
+                accountId: acc.id, handle,
+                priority: 'warning',
+                message: `${handle} has ${accTasks.length} task${accTasks.length > 1 ? 's' : ''} today — none completed yet`,
+                rule: 14
+            });
+        }
+    }
+
     // Sort: critical → warning → info → success
     const priorityOrder = { critical: 0, warning: 1, info: 2, success: 3 };
     items.sort((a, b) => (priorityOrder[a.priority] ?? 99) - (priorityOrder[b.priority] ?? 99));
@@ -3063,7 +3091,7 @@ export const TelegramService = {
     async buildReport() {
         const accounts = await db.accounts.toArray();
         const metrics = await AnalyticsEngine.getAgencyMetrics();
-        const actionItems = generateManagerActionItems(accounts);
+        const actionItems = await generateManagerActionItems(accounts);
 
         // Today's posted accounts
         const start = new Date();
