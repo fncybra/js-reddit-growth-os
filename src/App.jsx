@@ -1,29 +1,39 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { HashRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { Layout } from './components/Layout';
-import { Dashboard } from './pages/Dashboard';
-import { Models } from './pages/Models';
-import { Accounts } from './pages/Accounts';
-import { Subreddits } from './pages/Subreddits';
-import { Library } from './pages/Library';
-import { Tasks } from './pages/Tasks';
-import { Settings } from './pages/Settings';
-import { Discovery } from './pages/Discovery';
-import { ModelDetail } from './pages/ModelDetail';
-import { AccountDetail } from './pages/AccountDetail';
-import { VADashboard } from './pages/VADashboard';
 import { CloudSyncHandler } from './components/CloudSyncHandler';
-import { SOP } from './pages/SOP';
-import { Repurpose } from './pages/Repurpose';
-import { LinkTracker } from './pages/LinkTracker';
-import { ThreadsDashboard } from './pages/ThreadsDashboard';
-import { AgencyCommandCenter } from './pages/AgencyCommandCenter';
-import { ThreadsSettings } from './pages/ThreadsSettings';
-import { OFDashboard } from './pages/OFDashboard';
-import { OFImport } from './pages/OFImport';
-import { OFReports } from './pages/OFReports';
-import { OFConfig } from './pages/OFConfig';
 import { AuthProvider } from './components/AuthContext';
+
+// Eager: landing page only
+import { AgencyCommandCenter } from './pages/AgencyCommandCenter';
+
+// Lazy: everything else
+const Dashboard = lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
+const Models = lazy(() => import('./pages/Models').then(m => ({ default: m.Models })));
+const Accounts = lazy(() => import('./pages/Accounts').then(m => ({ default: m.Accounts })));
+const Subreddits = lazy(() => import('./pages/Subreddits').then(m => ({ default: m.Subreddits })));
+const Library = lazy(() => import('./pages/Library').then(m => ({ default: m.Library })));
+const Tasks = lazy(() => import('./pages/Tasks').then(m => ({ default: m.Tasks })));
+const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })));
+const Discovery = lazy(() => import('./pages/Discovery').then(m => ({ default: m.Discovery })));
+const ModelDetail = lazy(() => import('./pages/ModelDetail').then(m => ({ default: m.ModelDetail })));
+const AccountDetail = lazy(() => import('./pages/AccountDetail').then(m => ({ default: m.AccountDetail })));
+const VADashboard = lazy(() => import('./pages/VADashboard').then(m => ({ default: m.VADashboard })));
+const SOP = lazy(() => import('./pages/SOP').then(m => ({ default: m.SOP })));
+const Repurpose = lazy(() => import('./pages/Repurpose').then(m => ({ default: m.Repurpose })));
+const LinkTracker = lazy(() => import('./pages/LinkTracker').then(m => ({ default: m.LinkTracker })));
+const ThreadsDashboard = lazy(() => import('./pages/ThreadsDashboard').then(m => ({ default: m.ThreadsDashboard })));
+const ThreadsSettings = lazy(() => import('./pages/ThreadsSettings').then(m => ({ default: m.ThreadsSettings })));
+const OFDashboard = lazy(() => import('./pages/OFDashboard').then(m => ({ default: m.OFDashboard })));
+const OFImport = lazy(() => import('./pages/OFImport').then(m => ({ default: m.OFImport })));
+const OFReports = lazy(() => import('./pages/OFReports').then(m => ({ default: m.OFReports })));
+const OFConfig = lazy(() => import('./pages/OFConfig').then(m => ({ default: m.OFConfig })));
+
+const PageLoader = () => (
+  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+    Loading...
+  </div>
+);
 
 // Error Boundary to catch runtime crashes and show them instead of a black screen
 class ErrorBoundary extends React.Component {
@@ -42,7 +52,7 @@ class ErrorBoundary extends React.Component {
     if (this.state.hasError) {
       return (
         <div style={{ padding: '48px', color: '#ef4444', backgroundColor: '#0f1115', minHeight: '100vh', fontFamily: 'monospace' }}>
-          <h2 style={{ color: '#fff', marginBottom: '16px' }}>⚠️ Something crashed</h2>
+          <h2 style={{ color: '#fff', marginBottom: '16px' }}>Something crashed</h2>
           <pre style={{ whiteSpace: 'pre-wrap', color: '#fbbf24', marginBottom: '16px' }}>
             {this.state.error?.toString()}
           </pre>
@@ -69,34 +79,36 @@ function App() {
       <CloudSyncHandler />
       <ErrorBoundary>
         <AuthProvider>
-          <Routes>
-            {/* VA Mode: No Internal sidebars, pure robot mode */}
-            <Route path="/va" element={<VADashboard />} />
+          <Suspense fallback={<PageLoader />}>
+            <Routes>
+              {/* VA Mode: No Internal sidebars, pure robot mode */}
+              <Route path="/va" element={<VADashboard />} />
 
-            {/* Admin/Agency Mode: Full dashboard */}
-            <Route element={<Layout />}>
-              <Route path="/" element={<AgencyCommandCenter />} />
-              <Route path="reddit" element={<Dashboard />} />
-              <Route path="threads" element={<ThreadsDashboard />} />
-              <Route path="threads/settings" element={<ThreadsSettings />} />
-              <Route path="of" element={<OFDashboard />} />
-              <Route path="of/import" element={<OFImport />} />
-              <Route path="of/reports" element={<OFReports />} />
-              <Route path="of/config" element={<OFConfig />} />
-              <Route path="discovery" element={<Discovery />} />
-              <Route path="models" element={<Models />} />
-              <Route path="model/:id" element={<ModelDetail />} />
-              <Route path="account/:id" element={<AccountDetail />} />
-              <Route path="accounts" element={<Accounts />} />
-              <Route path="subreddits" element={<Subreddits />} />
-              <Route path="library" element={<Library />} />
-              <Route path="repurpose" element={<Repurpose />} />
-              <Route path="tasks" element={<Tasks />} />
-              <Route path="links" element={<LinkTracker />} />
-              <Route path="settings" element={<Settings />} />
-              <Route path="sop" element={<SOP />} />
-            </Route>
-          </Routes>
+              {/* Admin/Agency Mode: Full dashboard */}
+              <Route element={<Layout />}>
+                <Route path="/" element={<AgencyCommandCenter />} />
+                <Route path="reddit" element={<Dashboard />} />
+                <Route path="threads" element={<ThreadsDashboard />} />
+                <Route path="threads/settings" element={<ThreadsSettings />} />
+                <Route path="of" element={<OFDashboard />} />
+                <Route path="of/import" element={<OFImport />} />
+                <Route path="of/reports" element={<OFReports />} />
+                <Route path="of/config" element={<OFConfig />} />
+                <Route path="discovery" element={<Discovery />} />
+                <Route path="models" element={<Models />} />
+                <Route path="model/:id" element={<ModelDetail />} />
+                <Route path="account/:id" element={<AccountDetail />} />
+                <Route path="accounts" element={<Accounts />} />
+                <Route path="subreddits" element={<Subreddits />} />
+                <Route path="library" element={<Library />} />
+                <Route path="repurpose" element={<Repurpose />} />
+                <Route path="tasks" element={<Tasks />} />
+                <Route path="links" element={<LinkTracker />} />
+                <Route path="settings" element={<Settings />} />
+                <Route path="sop" element={<SOP />} />
+              </Route>
+            </Routes>
+          </Suspense>
         </AuthProvider>
       </ErrorBoundary>
     </HashRouter>
