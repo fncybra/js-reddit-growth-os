@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertCircle, AlertTriangle, Info, CheckCircle, ChevronDown, ChevronRight } from 'lucide-react';
 import { generateManagerActionItems } from '../services/growthEngine';
@@ -13,8 +13,12 @@ const priorityConfig = {
 export function ManagerActionItems({ accounts }) {
     const [collapsed, setCollapsed] = useState(false);
     const [dismissedIds, setDismissedIds] = useState(new Set());
+    const [allItems, setAllItems] = useState([]);
 
-    const allItems = generateManagerActionItems(accounts);
+    useEffect(() => {
+        if (!accounts || !accounts.length) { setAllItems([]); return; }
+        generateManagerActionItems(accounts).then(setAllItems).catch(() => setAllItems([]));
+    }, [accounts]);
 
     // Filter out dismissed success items
     const items = allItems.filter(item =>
