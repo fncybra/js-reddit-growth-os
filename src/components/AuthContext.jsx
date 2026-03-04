@@ -141,24 +141,27 @@ export function PinGate({ children }) {
           <h2 style={{ fontSize: '1.2rem', margin: 0 }}>Dashboard Access</h2>
           <p style={{ color: '#9ca3af', fontSize: '0.85rem', marginTop: '8px' }}>Enter your PIN to continue</p>
         </div>
-        <input
-          type="password"
-          className="input-field"
-          style={{ textAlign: 'center', marginBottom: '16px', backgroundColor: '#0f1115', width: '100%', boxSizing: 'border-box' }}
-          maxLength={8}
-          value={pin}
-          onChange={e => setPin(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && handleUnlock()}
-          autoFocus
-        />
-        {error && <div style={{ color: '#ef4444', textAlign: 'center', marginBottom: '16px', fontSize: '0.9rem' }}>{error}</div>}
-        <button
-          onClick={handleUnlock}
-          disabled={loading}
-          style={{ width: '100%', backgroundColor: '#6366f1', color: '#fff', border: 'none', padding: '12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', opacity: loading ? 0.7 : 1 }}
-        >
-          {loading ? 'Checking...' : 'Unlock'}
-        </button>
+        <form onSubmit={e => { e.preventDefault(); handleUnlock(); }}>
+          <input
+            type="password"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            className="input-field"
+            style={{ textAlign: 'center', marginBottom: '16px', backgroundColor: '#0f1115', width: '100%', boxSizing: 'border-box', fontSize: '1.2rem', letterSpacing: '0.3em' }}
+            maxLength={8}
+            value={pin}
+            onChange={e => setPin(e.target.value)}
+            autoFocus
+          />
+          {error && <div style={{ color: '#ef4444', textAlign: 'center', marginBottom: '16px', fontSize: '0.9rem' }}>{error}</div>}
+          <button
+            type="submit"
+            disabled={loading}
+            style={{ width: '100%', backgroundColor: '#6366f1', color: '#fff', border: 'none', padding: '12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', opacity: loading ? 0.7 : 1 }}
+          >
+            {loading ? 'Checking...' : 'Unlock'}
+          </button>
+        </form>
       </div>
     </div>
   );

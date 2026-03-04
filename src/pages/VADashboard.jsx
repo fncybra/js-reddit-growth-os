@@ -1099,7 +1099,7 @@ function VATaskCard({ task, index, onPosted, cooldownActive, vaName }) {
 
                                 <div className="va-meta-label" style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Subreddit:</div>
                                 <div className="va-subreddit-row" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                    <a href={`https://reddit.com/r/${subreddit?.name.replace(/^(r\/|\/r\/)/i, '')}/submit`} target="_blank" rel="noreferrer" style={{ fontWeight: 'bold', fontSize: '1.2rem', color: '#fff', textDecoration: 'underline' }}>
+                                    <a href={`https://reddit.com/r/${subreddit?.name.replace(/^(r\/|\/r\/)/i, '')}/submit${asset?.assetType === 'video' || asset?.externalUrl ? '?type=link' : '?type=image'}`} target="_blank" rel="noreferrer" style={{ fontWeight: 'bold', fontSize: '1.2rem', color: '#fff', textDecoration: 'underline' }}>
                                         r/{subreddit?.name} ↗
                                     </a>
                                     <button onClick={() => copyToClipboard(subreddit?.name, 'Subreddit Name')} style={{ backgroundColor: '#2d313a', color: '#ccc', border: 'none', padding: '10px 14px', borderRadius: '4px', fontSize: '0.8rem', cursor: 'pointer' }}>Copy</button>
