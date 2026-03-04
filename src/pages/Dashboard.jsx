@@ -11,6 +11,7 @@ export function Dashboard() {
     const [metrics, setMetrics] = useState(null);
     const [snapshots, setSnapshots] = useState([]);
     const [hideWarming, setHideWarming] = useState(false);
+    const [syncing, setSyncing] = useState(false);
     const models = useLiveQuery(() => db.models.toArray());
     const accountsAll = useLiveQuery(() => db.accounts.toArray());
     const subredditsAll = useLiveQuery(() => db.subreddits.toArray());
