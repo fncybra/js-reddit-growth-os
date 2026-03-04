@@ -284,10 +284,7 @@ export function VADashboard() {
 
     const models = useLiveQuery(() => db.models.toArray());
     const allAccounts = useLiveQuery(() => db.accounts.toArray());
-    const postInterval = useLiveQuery(async () => {
-        const s = await db.settings.where({ key: 'postInterval' }).first();
-        return s ? Number(s.value) : 3; // Default 3 minutes
-    }, []);
+    const postInterval = 0; // No forced delay between posts
 
     // Timer logic
     useEffect(() => {
@@ -616,11 +613,6 @@ export function VADashboard() {
                     <div style={{ fontSize: '0.9rem', color: '#9ca3af' }}>
                         {new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                     </div>
-                    {timeLeft > 0 && (
-                        <div style={{ padding: '4px 12px', backgroundColor: '#ef444422', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold', animation: 'pulse 1s infinite' }}>
-                            ⏳ BREAK: {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
-                        </div>
-                    )}
                     <div style={{ padding: '4px 12px', backgroundColor: '#10b98122', color: '#10b981', border: '1px solid #10b98144', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold' }}>
                         {tasks?.filter(t => t.status === 'closed').length} / {tasks?.length} COMPLETED
                     </div>
@@ -1188,10 +1180,10 @@ function VATaskCard({ task, index, onPosted, cooldownActive, vaName }) {
                     <div className="va-actions-row">
                         <button
                             onClick={handleMarkPosted}
-                            disabled={!redditUrl || cooldownActive}
-                            style={{ flex: 2, backgroundColor: cooldownActive ? '#374151' : '#10b981', color: '#fff', border: 'none', padding: '16px', borderRadius: '8px', fontWeight: 'bold', cursor: cooldownActive ? 'not-allowed' : 'pointer', fontSize: '1.1rem', transition: 'all 0.2s', opacity: (redditUrl && !cooldownActive) ? 1 : 0.4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                            disabled={!redditUrl}
+                            style={{ flex: 2, backgroundColor: '#10b981', color: '#fff', border: 'none', padding: '16px', borderRadius: '8px', fontWeight: 'bold', cursor: !redditUrl ? 'not-allowed' : 'pointer', fontSize: '1.1rem', transition: 'all 0.2s', opacity: redditUrl ? 1 : 0.4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
                         >
-                            <span>{cooldownActive ? '⏳' : '✓'}</span> {cooldownActive ? 'Anti-Ban Breaking...' : 'I Have Posted This Live'}
+                            <span>✓</span> I Have Posted This Live
                         </button>
                         <button
                             onClick={handleMarkError}
