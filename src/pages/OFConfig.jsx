@@ -62,7 +62,7 @@ export function OFConfig() {
     const assignVA = async (snap, vaId) => {
         if (!vaId) return;
         // Create tracking link
-        const existing = await db.ofTrackingLinks.where('[label+ofModelId]').equals([snap.label, snap.ofModelId]).first();
+        const existing = await db.ofTrackingLinks.where('label').equals(snap.label).and(r => r.ofModelId === snap.ofModelId).first();
         if (!existing) {
             await db.ofTrackingLinks.add({
                 id: generateId(), label: snap.label, ofModelId: snap.ofModelId,
