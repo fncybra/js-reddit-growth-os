@@ -60,7 +60,8 @@ export function OFConfig() {
         await db.ofModels.delete(id);
         // Also delete from cloud so sync doesn't pull it back
         try {
-            const { supabase } = await import('../db/supabase');
+            const { getSupabaseClient } = await import('../db/supabase');
+            const supabase = await getSupabaseClient();
             if (supabase) await supabase.from('ofModels').delete().eq('id', id);
         } catch (e) { console.warn('Cloud delete failed:', e); }
     };
@@ -68,7 +69,8 @@ export function OFConfig() {
         if (!confirm('Delete this VA?')) return;
         await db.ofVas.delete(id);
         try {
-            const { supabase } = await import('../db/supabase');
+            const { getSupabaseClient } = await import('../db/supabase');
+            const supabase = await getSupabaseClient();
             if (supabase) await supabase.from('ofVas').delete().eq('id', id);
         } catch (e) { console.warn('Cloud delete failed:', e); }
     };
@@ -76,7 +78,8 @@ export function OFConfig() {
         if (!confirm('Delete this link?')) return;
         await db.ofTrackingLinks.delete(id);
         try {
-            const { supabase } = await import('../db/supabase');
+            const { getSupabaseClient } = await import('../db/supabase');
+            const supabase = await getSupabaseClient();
             if (supabase) await supabase.from('ofTrackingLinks').delete().eq('id', id);
         } catch (e) { console.warn('Cloud delete failed:', e); }
     };
