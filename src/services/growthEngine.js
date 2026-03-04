@@ -4192,7 +4192,7 @@ export const OFImportService = {
                 // Auto-create tracking link if VA-owned
                 if (vaId) {
                     const existingLink = await db.ofTrackingLinks
-                        .where('[label+ofModelId]').equals([label, modelId]).first();
+                        .where('label').equals(label).and(r => r.ofModelId === modelId).first();
                     if (!existingLink) {
                         await db.ofTrackingLinks.add({
                             id: generateId(), label, ofModelId: modelId, ofVaId: vaId, platform
@@ -4202,7 +4202,7 @@ export const OFImportService = {
 
                 // Insert link snapshot (check for dupe within same import)
                 const existingSnap = await db.ofLinkSnapshots
-                    .where('[importId+ofModelId+label]').equals([importId, modelId, label]).first();
+                    .where('importId').equals(importId).and(r => r.ofModelId === modelId && r.label === label).first();
                 if (!existingSnap) {
                     const sentinelId = !vaId ? (OFVAPatternService.SENTINEL_VA_IDS[category] ?? -1) : null;
                     await db.ofLinkSnapshots.add({
@@ -4219,14 +4219,10 @@ export const OFImportService = {
 
                 // Delta computation — find previous snapshot for this model+label
                 const prevSnapshots = await db.ofLinkSnapshots
-                    .where('[importId+ofModelId+label]')
-                    .between(
-                        [0, modelId, label],
-                        [importId, modelId, label],
-                        true, false
-                    ).reverse().toArray();
-                // Filter to only those from different imports
-                const prevSnapshot = prevSnapshots.find(s => s.importId !== importId);
+                    .where('ofModelId').equals(modelId)
+                    .and(r => r.label === label && r.importId < importId)
+                    .reverse().sortBy('importId');
+                const prevSnapshot = prevSnapshots[0] || null;
 
                 let subsDelta, earningsDelta;
                 if (prevSnapshot) {
@@ -4278,8 +4274,8 @@ export const OFImportService = {
             for (const [vaName, stats] of vaSubsMap) {
                 if (stats.subs === 0 && stats.earnings === 0) continue;
                 const existingStat = await db.ofDailyStats
-                    .where('[statDate+ofModelId+ofVaId]')
-                    .equals([importDate, modelId, stats.vaId]).first();
+                    .where('statDate').equals(importDate)
+                    .and(r => r.ofModelId === modelId && r.ofVaId === stats.vaId).first();
                 if (existingStat) {
                     await db.ofDailyStats.update(existingStat.id, { newSubs: stats.subs, revenueTotal: stats.earnings });
                 } else {
@@ -4295,8 +4291,8 @@ export const OFImportService = {
                 if (stats.subs === 0 && stats.earnings === 0) continue;
                 const sentinelId = OFVAPatternService.SENTINEL_VA_IDS[cat] ?? -1;
                 const existingStat = await db.ofDailyStats
-                    .where('[statDate+ofModelId+ofVaId]')
-                    .equals([importDate, modelId, sentinelId]).first();
+                    .where('statDate').equals(importDate)
+                    .and(r => r.ofModelId === modelId && r.ofVaId === sentinelId).first();
                 if (existingStat) {
                     await db.ofDailyStats.update(existingStat.id, { newSubs: stats.subs, revenueTotal: stats.earnings });
                 } else {
@@ -4483,8 +4479,8 @@ export const OFReportService = {
                 let delta = curr.subsCumulative;
                 if (prevImport) {
                     const prev = await db.ofLinkSnapshots
-                        .where('[importId+ofModelId+label]')
-                        .equals([prevImport.id, curr.ofModelId, curr.label]).first();
+                        .where('importId').equals(prevImport.id)
+                        .and(r => r.ofModelId === curr.ofModelId && r.label === curr.label).first();
                     delta = prev ? Math.max(0, curr.subsCumulative - prev.subsCumulative) : 0;
                 }
                 const e = map.get(key) || { subs: 0, earnings: 0 };

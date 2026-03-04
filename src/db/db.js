@@ -125,10 +125,10 @@ db.version(16).stores({
     competitors: '++id, modelId, handle',
     ofModels: '++id, name, ofUsername, active',
     ofVas: '++id, name, active',
-    ofTrackingLinks: '++id, label, ofModelId, ofVaId, platform, [label+ofModelId]',
+    ofTrackingLinks: '++id, label, ofModelId, ofVaId, platform',
     ofBulkImports: '++id, importDate, filename',
-    ofLinkSnapshots: '++id, importId, ofModelId, ofVaId, label, sourceCategory, [importId+ofModelId+label]',
-    ofDailyStats: '++id, statDate, ofModelId, ofVaId, [statDate+ofModelId+ofVaId]'
+    ofLinkSnapshots: '++id, importId, ofModelId, ofVaId, label, sourceCategory',
+    ofDailyStats: '++id, statDate, ofModelId, ofVaId'
 });
 
 // Seed default settings if empty
