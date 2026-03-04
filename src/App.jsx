@@ -19,6 +19,10 @@ import { LinkTracker } from './pages/LinkTracker';
 import { ThreadsDashboard } from './pages/ThreadsDashboard';
 import { AgencyCommandCenter } from './pages/AgencyCommandCenter';
 import { ThreadsSettings } from './pages/ThreadsSettings';
+import { OFDashboard } from './pages/OFDashboard';
+import { OFImport } from './pages/OFImport';
+import { OFReports } from './pages/OFReports';
+import { OFConfig } from './pages/OFConfig';
 import { AuthProvider } from './components/AuthContext';
 
 // Error Boundary to catch runtime crashes and show them instead of a black screen
@@ -75,6 +79,10 @@ function App() {
               <Route path="reddit" element={<Dashboard />} />
               <Route path="threads" element={<ThreadsDashboard />} />
               <Route path="threads/settings" element={<ThreadsSettings />} />
+              <Route path="of" element={<OFDashboard />} />
+              <Route path="of/import" element={<OFImport />} />
+              <Route path="of/reports" element={<OFReports />} />
+              <Route path="of/config" element={<OFConfig />} />
               <Route path="discovery" element={<Discovery />} />
               <Route path="models" element={<Models />} />
               <Route path="model/:id" element={<ModelDetail />} />

@@ -7,15 +7,15 @@ const AuthContext = createContext(null);
 
 // Section visibility per role
 const SECTION_ACCESS = {
-  admin: ['AGENCY', 'REDDIT', 'THREADS', 'SYSTEM'],
-  threadsManager: ['AGENCY', 'THREADS', 'SYSTEM'],
+  admin: ['AGENCY', 'REDDIT', 'THREADS', 'OF TRACKER', 'SYSTEM'],
+  threadsManager: ['AGENCY', 'THREADS', 'OF TRACKER', 'SYSTEM'],
   redditManager: ['AGENCY', 'REDDIT', 'SYSTEM'],
 };
 
 // Route whitelist per role (admin = null = all routes allowed)
 const ROUTE_ACCESS = {
   admin: null,
-  threadsManager: ['/', '/threads', '/threads/settings', '/settings', '/sop'],
+  threadsManager: ['/', '/threads', '/threads/settings', '/of', '/of/import', '/of/reports', '/of/config', '/settings', '/sop'],
   redditManager: ['/', '/reddit', '/discovery', '/models', '/model', '/account',
     '/accounts', '/subreddits', '/library', '/repurpose', '/tasks', '/links', '/settings', '/sop'],
 };

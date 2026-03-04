@@ -111,6 +111,26 @@ db.version(15).stores({
     competitors: '++id, modelId, handle'
 });
 
+// v16: OF Tracker tables (models, VAs, tracking links, bulk imports, link snapshots, daily stats)
+db.version(16).stores({
+    models: '++id, name, status, driveFolderId, usedFolderId, redgifsProfile, proxyInfo, vaPin',
+    accounts: '++id, modelId, handle, status, proxyInfo, phase',
+    subreddits: '++id, modelId, name, status, lastTestedDate',
+    assets: '++id, modelId, assetType, approved, lastUsedDate, driveFileId, externalUrl',
+    tasks: '++id, date, modelId, accountId, subredditId, assetId, status, redditPostId, taskType',
+    performances: '++id, taskId',
+    settings: '++id, key',
+    verifications: '++id, accountId, subredditId',
+    dailySnapshots: '++id, date',
+    competitors: '++id, modelId, handle',
+    ofModels: '++id, name, ofUsername, active',
+    ofVas: '++id, name, active',
+    ofTrackingLinks: '++id, label, ofModelId, ofVaId, platform, [label+ofModelId]',
+    ofBulkImports: '++id, importDate, filename',
+    ofLinkSnapshots: '++id, importId, ofModelId, ofVaId, label, sourceCategory, [importId+ofModelId+label]',
+    ofDailyStats: '++id, statDate, ofModelId, ofVaId, [statDate+ofModelId+ofVaId]'
+});
+
 // Seed default settings if empty
 db.on('populate', async () => {
     await db.settings.bulkAdd([
