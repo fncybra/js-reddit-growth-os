@@ -253,6 +253,19 @@ if (SERVICE_ACCOUNT_JSON || fs.existsSync(KEY_FILE_PATH)) {
     console.warn('[GrowthOS Proxy] No Google Drive credentials found. Use SERVICE_ACCOUNT_JSON env var or service_account.json file.');
 }
 
+// Google Drive: Service account info (so frontend can show share instructions)
+let _serviceAccountEmail = null;
+try {
+    if (SERVICE_ACCOUNT_JSON) {
+        _serviceAccountEmail = JSON.parse(SERVICE_ACCOUNT_JSON).client_email || null;
+    } else if (fs.existsSync(KEY_FILE_PATH)) {
+        _serviceAccountEmail = JSON.parse(fs.readFileSync(KEY_FILE_PATH, 'utf8')).client_email || null;
+    }
+} catch (_) {}
+
+app.get('/api/drive/info', (req, res) => {
+    res.json({ configured: !!drive, email: _serviceAccountEmail || null });
+});
 
 // Proxy endpoint for Reddit User Scraping
 app.get('/api/scrape/user/stats/:username', async (req, res) => {

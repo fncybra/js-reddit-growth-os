@@ -45,7 +45,7 @@ export function Library() {
                 alert("Everything is already up-to-date.");
             }
         } catch (err) {
-            alert("Drive Sync Error: " + err.message + ". Ensure service_account.json is in proxy folder and has access.");
+            alert("Drive Sync Error: " + err.message);
         } finally {
             setSyncing(false);
         }
