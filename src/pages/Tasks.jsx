@@ -303,13 +303,6 @@ export function Tasks() {
         }));
     }, [tasks]);
 
-    if (!models || models.length === 0) {
-        return <div className="page-content"><div className="card">Please create a Model first.</div></div>;
-    }
-
-    const sortedTasks = [...(tasks || [])].sort((a, b) => (a.scheduledTime || '99:99').localeCompare(b.scheduledTime || '99:99'));
-    const showGrouped = groupByAccount && selectedAccountId === 'ALL' && groupedTasks.length > 1;
-
     const [showCapacity, setShowCapacity] = useState(false);
     const [showMoreActions, setShowMoreActions] = useState(false);
     const moreActionsRef = React.useRef(null);
@@ -320,6 +313,13 @@ export function Tasks() {
         document.addEventListener('mousedown', close);
         return () => document.removeEventListener('mousedown', close);
     }, [showMoreActions]);
+
+    if (!models || models.length === 0) {
+        return <div className="page-content"><div className="card">Please create a Model first.</div></div>;
+    }
+
+    const sortedTasks = [...(tasks || [])].sort((a, b) => (a.scheduledTime || '99:99').localeCompare(b.scheduledTime || '99:99'));
+    const showGrouped = groupByAccount && selectedAccountId === 'ALL' && groupedTasks.length > 1;
 
     return (
         <>
