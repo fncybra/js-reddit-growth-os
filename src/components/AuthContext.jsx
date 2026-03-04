@@ -61,29 +61,39 @@ export function AuthProvider({ children }) {
     const trimmed = pin.trim();
     if (!trimmed) return null;
 
-    const settings = await SettingsService.getSettings();
+    try {
+      const settings = await SettingsService.getSettings();
 
-    // Also check vaPin directly from DB (it may not be in defaults)
-    const vaPinRow = await db.settings.where({ key: 'vaPin' }).first();
-    const masterPin = vaPinRow ? vaPinRow.value : '1234';
+      // Also check vaPin directly from DB (it may not be in defaults)
+      const vaPinRow = await db.settings.where({ key: 'vaPin' }).first();
+      const masterPin = vaPinRow ? vaPinRow.value : '1234';
 
-    // Priority: master (admin) > threads manager > reddit manager
-    if (trimmed === String(masterPin)) {
-      setRole('admin');
-      return 'admin';
+      // Priority: master (admin) > threads manager > reddit manager
+      if (trimmed === String(masterPin)) {
+        setRole('admin');
+        return 'admin';
+      }
+
+      if (settings.threadsManagerPin && trimmed === String(settings.threadsManagerPin)) {
+        setRole('threadsManager');
+        return 'threadsManager';
+      }
+
+      if (settings.redditManagerPin && trimmed === String(settings.redditManagerPin)) {
+        setRole('redditManager');
+        return 'redditManager';
+      }
+
+      return null;
+    } catch (err) {
+      console.error('Auth DB error:', err);
+      // Fallback: if DB is broken, still allow default PIN
+      if (trimmed === '1234') {
+        setRole('admin');
+        return 'admin';
+      }
+      throw err;
     }
-
-    if (settings.threadsManagerPin && trimmed === String(settings.threadsManagerPin)) {
-      setRole('threadsManager');
-      return 'threadsManager';
-    }
-
-    if (settings.redditManagerPin && trimmed === String(settings.redditManagerPin)) {
-      setRole('redditManager');
-      return 'redditManager';
-    }
-
-    return null;
   }, []);
 
   const logout = useCallback(() => {
@@ -109,11 +119,17 @@ export function PinGate({ children }) {
   async function handleUnlock() {
     setLoading(true);
     setError('');
-    const result = await authenticate(pin);
-    setLoading(false);
-    if (!result) {
-      setError('Invalid access PIN');
-      setPin('');
+    try {
+      const result = await authenticate(pin);
+      if (!result) {
+        setError('Invalid access PIN');
+        setPin('');
+      }
+    } catch (err) {
+      console.error('Unlock error:', err);
+      setError('Database error — please refresh the page');
+    } finally {
+      setLoading(false);
     }
   }
 
