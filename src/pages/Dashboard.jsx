@@ -696,11 +696,83 @@ export function Dashboard() {
                     );
                 })()}
 
-                {/* Cloud Sync - Minimal */}
+                {/* Full Sync + Cloud Backup */}
                 <div className="card" style={{ padding: '16px 20px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '0.9rem', fontWeight: '500', color: 'var(--text-secondary)' }}>Cloud Backup</span>
-                        <div style={{ display: 'flex', gap: '8px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                        <span style={{ fontSize: '0.9rem', fontWeight: '500', color: 'var(--text-secondary)' }}>Sync &amp; Backup</span>
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            <button
+                                className="btn btn-primary"
+                                disabled={syncing}
+                                onClick={async () => {
+                                    setSyncing(true);
+                                    const parts = [];
+                                    try {
+                                        const { CloudSyncService, AccountLifecycleService, AccountSyncService, PerformanceSyncService, SnapshotService } = await import('../services/growthEngine');
+
+                                        // 1. Acquire lock
+                                        const locked = await CloudSyncService.acquireLock();
+                                        if (!locked) { alert('Sync already running. Try again in a moment.'); return; }
+
+                                        try {
+                                            // 2. Cloud Pull
+                                            try {
+                                                const enabled = await CloudSyncService.isEnabled();
+                                                if (enabled) {
+                                                    await CloudSyncService.pullCloudToLocal();
+                                                    parts.push('Cloud pull complete');
+                                                }
+                                            } catch (e) { parts.push('Cloud pull failed: ' + e.message); }
+
+                                            // 3. Evaluate Phases
+                                            try {
+                                                await AccountLifecycleService.evaluateAccountPhases();
+                                                parts.push('Phases evaluated');
+                                            } catch (e) { parts.push('Phase eval failed: ' + e.message); }
+
+                                            // 4. Sync Account Health (Reddit)
+                                            try {
+                                                const syncResult = await AccountSyncService.syncAllAccounts();
+                                                parts.push(`Account sync: ${syncResult?.synced ?? 0} synced, ${syncResult?.failed ?? 0} failed`);
+                                                // Re-evaluate phases after sync
+                                                await AccountLifecycleService.evaluateAccountPhases();
+                                            } catch (e) { parts.push('Account sync failed: ' + e.message); }
+
+                                            // 5. Sync Post Performance
+                                            try {
+                                                const perfResult = await PerformanceSyncService.syncAllPendingPerformance();
+                                                parts.push(`Perf sync: ${perfResult?.synced ?? 0} synced`);
+                                            } catch (e) { parts.push('Perf sync failed: ' + e.message); }
+
+                                            // 6. Take Snapshot
+                                            try {
+                                                await SnapshotService.takeDailySnapshot();
+                                                parts.push('Snapshot taken');
+                                            } catch (e) { parts.push('Snapshot failed: ' + e.message); }
+
+                                            // 7. Cloud Push
+                                            try {
+                                                const enabled = await CloudSyncService.isEnabled();
+                                                if (enabled) {
+                                                    await CloudSyncService.pushLocalToCloud();
+                                                    parts.push('Cloud push complete');
+                                                }
+                                            } catch (e) { parts.push('Cloud push failed: ' + e.message); }
+                                        } finally {
+                                            await CloudSyncService.releaseLock();
+                                        }
+                                    } catch (e) {
+                                        parts.push('Sync error: ' + e.message);
+                                    } finally {
+                                        setSyncing(false);
+                                    }
+                                    alert(parts.join('\n'));
+                                }}
+                                style={{ padding: '4px 14px', fontSize: '0.8rem' }}
+                            >
+                                <RefreshCcw size={12} style={{ marginRight: '4px' }} className={syncing ? 'spin' : ''} />
+                                {syncing ? 'Syncing...' : 'Sync All'}
+                            </button>
                             <button
                                 className="btn btn-outline"
                                 onClick={async () => {
