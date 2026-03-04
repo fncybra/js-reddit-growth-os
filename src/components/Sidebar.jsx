@@ -76,6 +76,18 @@ export function Sidebar() {
   const allowedLabels = getAllowedSections(role);
   const visibleSections = navSections.filter(s => allowedLabels.includes(s.label));
 
+  const [collapsed, setCollapsed] = React.useState(() => {
+    try { return JSON.parse(localStorage.getItem('sidebar_collapsed') || '{}'); } catch { return {}; }
+  });
+
+  function toggleSection(label) {
+    setCollapsed(prev => {
+      const next = { ...prev, [label]: !prev[label] };
+      localStorage.setItem('sidebar_collapsed', JSON.stringify(next));
+      return next;
+    });
+  }
+
   return (
     <div className="sidebar">
       <div className="sidebar-header">
@@ -85,28 +97,35 @@ export function Sidebar() {
         </div>
       </div>
       <nav className="sidebar-nav">
-        {visibleSections.map((section, sIdx) => (
-          <div key={section.label}>
-            {sIdx > 0 && <div style={{ borderTop: '1px solid var(--border-light, var(--border-color))', margin: '4px 12px 0' }} />}
-            <div style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-muted, var(--text-secondary))', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '12px 16px 4px' }}>
-              {section.label}
+        {visibleSections.map((section, sIdx) => {
+          const isCollapsed = !!collapsed[section.label];
+          return (
+            <div key={section.label}>
+              {sIdx > 0 && <div style={{ borderTop: '1px solid var(--border-light, var(--border-color))', margin: '4px 12px 0' }} />}
+              <div
+                style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-muted, var(--text-secondary))', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '12px 16px 4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', userSelect: 'none' }}
+                onClick={() => toggleSection(section.label)}
+              >
+                {section.label}
+                <span style={{ fontSize: '0.6rem', transition: 'transform 0.2s', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0)' }}>{'\u25BC'}</span>
+              </div>
+              {!isCollapsed && section.items.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <NavLink
+                    key={item.path}
+                    to={item.path}
+                    end={item.end || false}
+                    className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                  >
+                    <Icon size={18} />
+                    {item.label}
+                  </NavLink>
+                );
+              })}
             </div>
-            {section.items.map((item) => {
-              const Icon = item.icon;
-              return (
-                <NavLink
-                  key={item.path}
-                  to={item.path}
-                  end={item.end || false}
-                  className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-                >
-                  <Icon size={18} />
-                  {item.label}
-                </NavLink>
-              );
-            })}
-          </div>
-        ))}
+          );
+        })}
       </nav>
 
       <div style={{ marginTop: 'auto', padding: '16px', borderTop: '1px solid var(--border-color)', fontSize: '0.75rem' }}>

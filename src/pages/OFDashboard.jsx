@@ -63,7 +63,7 @@ export function OFDashboard() {
             </header>
             <div className="page-content">
                 {/* Metric Cards */}
-                <div className="grid-cards" style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginBottom: '24px' }}>
+                <div className="grid-cards" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', marginBottom: '24px' }}>
                     <div className="metric-card">
                         <div className="metric-label">Total Subs</div>
                         <div className="metric-value">{(summary?.totalSubs || 0).toLocaleString()}</div>
