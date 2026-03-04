@@ -55,9 +55,31 @@ export function OFConfig() {
         setNewLink({ label: '', ofModelId: '', ofVaId: '', platform: '' });
     };
 
-    const deleteModel = async (id) => { if (confirm('Delete this model?')) await db.ofModels.delete(id); };
-    const deleteVA = async (id) => { if (confirm('Delete this VA?')) await db.ofVas.delete(id); };
-    const deleteLink = async (id) => { if (confirm('Delete this link?')) await db.ofTrackingLinks.delete(id); };
+    const deleteModel = async (id) => {
+        if (!confirm('Delete this model?')) return;
+        await db.ofModels.delete(id);
+        // Also delete from cloud so sync doesn't pull it back
+        try {
+            const { supabase } = await import('../db/supabase');
+            if (supabase) await supabase.from('ofModels').delete().eq('id', id);
+        } catch (e) { console.warn('Cloud delete failed:', e); }
+    };
+    const deleteVA = async (id) => {
+        if (!confirm('Delete this VA?')) return;
+        await db.ofVas.delete(id);
+        try {
+            const { supabase } = await import('../db/supabase');
+            if (supabase) await supabase.from('ofVas').delete().eq('id', id);
+        } catch (e) { console.warn('Cloud delete failed:', e); }
+    };
+    const deleteLink = async (id) => {
+        if (!confirm('Delete this link?')) return;
+        await db.ofTrackingLinks.delete(id);
+        try {
+            const { supabase } = await import('../db/supabase');
+            if (supabase) await supabase.from('ofTrackingLinks').delete().eq('id', id);
+        } catch (e) { console.warn('Cloud delete failed:', e); }
+    };
 
     const assignVA = async (snap, vaId) => {
         if (!vaId) return;
