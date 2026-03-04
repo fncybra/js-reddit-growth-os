@@ -2522,6 +2522,16 @@ export const AccountLifecycleService = {
                     newPhase = 'burned';
                 }
             }
+            // burned → recover: no longer suspended AND removal rate OK
+            else if (phase === 'burned' && !acc.isSuspended && (!acc.removalRate || acc.removalRate <= 60)) {
+                const karma = acc.totalKarma || 0;
+                const ageDays = acc.createdUtc ? differenceInDays(today, startOfDay(new Date(acc.createdUtc * 1000))) : 0;
+                if (ageDays >= minWarmupDays && karma >= minWarmupKarma) {
+                    newPhase = 'ready';
+                } else {
+                    newPhase = 'warming';
+                }
+            }
             // warming → ready: old enough + enough karma (with staggered start)
             else if (phase === 'warming') {
                 const warmupStart = acc.warmupStartDate ? new Date(acc.warmupStartDate) : (acc.createdUtc ? new Date(acc.createdUtc * 1000) : null);
