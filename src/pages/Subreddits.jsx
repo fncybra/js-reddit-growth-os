@@ -363,18 +363,15 @@ export function Subreddits() {
                                 <thead>
                                     <tr>
                                         <th>Name</th>
-                                        <th>Assigned Model</th>
-                                        <th>Attached Account</th>
+                                        <th>Account</th>
                                         <th>Status</th>
-                                        <th>Niche Tag</th>
+                                        <th>Tag</th>
                                         <th>Risk</th>
                                         <th>Tests</th>
                                         <th>Avg 24h</th>
-                                        <th>Removal %</th>
-                                        <th>Peak</th>
-                                        <th>Posting Gate</th>
+                                        <th>Rem %</th>
                                         <th>Verified</th>
-                                        <th>Action</th>
+                                        <th style={{ width: '48px' }}></th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -383,48 +380,25 @@ export function Subreddits() {
                                         const tests = scoped ? scoped.tests : (sub.totalTests || 0);
                                         const avg24h = scoped ? scoped.avg24h : (sub.avg24hViews || 0);
                                         const removalPct = scoped ? scoped.removalPct : Number(sub.removalPct || 0);
-                                        const model = models?.find(m => m.id === sub.modelId);
+                                        const attachedAccount = sub.accountId ? (accounts || []).find(a => Number(a.id) === Number(sub.accountId)) : null;
+                                        const gateTitle = [
+                                            sub.peakPostHour != null ? `Peak: ${String(sub.peakPostHour).padStart(2, '0')}:00` : null,
+                                            sub.minRequiredKarma ? `Karma ${sub.minRequiredKarma}+` : null,
+                                            sub.minAccountAgeDays ? `Age ${sub.minAccountAgeDays}d+` : null,
+                                            sub.cooldownUntil && new Date(sub.cooldownUntil) > new Date() ? `Cooldown until ${new Date(sub.cooldownUntil).toLocaleDateString()}` : null,
+                                        ].filter(Boolean).join(' | ') || 'Open';
                                         return (
-                                            <tr key={sub.id}>
+                                            <tr key={sub.id} title={gateTitle}>
                                                 <td style={{ fontWeight: '500' }}>
                                                     <a href={`https://reddit.com/r/${sub.name.replace(/^(r\/|\/r\/)/i, '')}`} target="_blank" rel="noreferrer" style={{ color: 'var(--primary-color)', textDecoration: 'none' }}>
                                                         r/{sub.name}
                                                     </a>
+                                                    {sub.crossModelWarning && (
+                                                        <span style={{ fontSize: '0.6rem', color: 'var(--status-warning)', marginLeft: '6px' }} title={sub.crossModelWarning}>cross</span>
+                                                    )}
                                                 </td>
-                                                <td>
-                                                    <select
-                                                        className="input-field"
-                                                        value={String(sub.modelId)}
-                                                        style={{ padding: '4px 8px', fontSize: '0.8rem', width: '140px' }}
-                                                        onChange={async (e) => {
-                                                            const nextModelId = Number(e.target.value);
-                                                            if (nextModelId !== sub.modelId) {
-                                                                const modelAccountIds = (accounts || []).filter(a => a.modelId === nextModelId).map(a => Number(a.id));
-                                                                const nextAccountId = modelAccountIds.includes(Number(sub.accountId)) ? sub.accountId : null;
-                                                                await db.subreddits.update(sub.id, { modelId: nextModelId, accountId: nextAccountId });
-                                                            }
-                                                        }}
-                                                    >
-                                                        {models?.map(m => (
-                                                            <option key={m.id} value={String(m.id)}>{m.name}</option>
-                                                        ))}
-                                                    </select>
-                                                </td>
-                                                <td>
-                                                    <select
-                                                        className="input-field"
-                                                        value={sub.accountId ? String(sub.accountId) : 'all'}
-                                                        style={{ padding: '4px 8px', fontSize: '0.8rem', width: '170px' }}
-                                                        onChange={async (e) => {
-                                                            const nextAccountId = e.target.value === 'all' ? null : Number(e.target.value);
-                                                            await db.subreddits.update(sub.id, { accountId: nextAccountId });
-                                                        }}
-                                                    >
-                                                        <option value="all">All model accounts</option>
-                                                        {(accounts || []).filter(a => a.modelId === sub.modelId).map(acc => (
-                                                            <option key={acc.id} value={String(acc.id)}>{acc.handle}</option>
-                                                        ))}
-                                                    </select>
+                                                <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                                    {attachedAccount ? attachedAccount.handle : <span style={{ color: 'var(--text-muted)' }}>all</span>}
                                                 </td>
                                                 <td>
                                                     <span className={`badge ${sub.status === 'proven' ? 'badge-success' :
@@ -433,26 +407,8 @@ export function Subreddits() {
                                                         }`}>
                                                         {sub.status.replace('_', ' ')}
                                                     </span>
-                                                    {sub.crossModelWarning && (
-                                                        <div style={{ fontSize: '0.65rem', color: 'var(--status-warning)', marginTop: '4px' }} title={sub.crossModelWarning}>
-                                                            cross-model flag
-                                                        </div>
-                                                    )}
                                                 </td>
-                                                <td>
-                                                    <input
-                                                        type="text"
-                                                        className="input-field"
-                                                        style={{ padding: '4px 8px', fontSize: '0.8rem', width: '120px' }}
-                                                        defaultValue={sub.nicheTag || ''}
-                                                        placeholder="e.g. boots"
-                                                        onBlur={async (e) => {
-                                                            if (e.target.value !== sub.nicheTag) {
-                                                                await db.subreddits.update(sub.id, { nicheTag: e.target.value });
-                                                            }
-                                                        }}
-                                                    />
-                                                </td>
+                                                <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{sub.nicheTag || '--'}</td>
                                                 <td>
                                                     {(() => {
                                                         const risk = (() => {
@@ -470,7 +426,7 @@ export function Subreddits() {
                                                         const b = badges[risk];
                                                         return (
                                                             <span style={{ fontSize: '0.8rem', fontWeight: 600, color: b.color }} title={`Auto-calculated: ${risk}`}>
-                                                                {b.icon} {risk}
+                                                                {b.icon}
                                                             </span>
                                                         );
                                                     })()}
@@ -478,21 +434,6 @@ export function Subreddits() {
                                                 <td>{tests}</td>
                                                 <td>{avg24h?.toLocaleString() || 0}</td>
                                                 <td style={{ color: removalPct > 20 ? 'var(--status-danger)' : 'inherit' }}>{Number(removalPct || 0).toFixed(1)}%</td>
-                                                <td style={{ fontSize: '0.8rem', color: sub.peakPostHour != null ? 'var(--text-primary)' : 'var(--text-muted)' }}>
-                                                    {sub.peakPostHour != null ? `${String(sub.peakPostHour).padStart(2, '0')}:00` : '--'}
-                                                </td>
-                                                <td style={{ fontSize: '0.75rem' }}>
-                                                    {sub.cooldownUntil && new Date(sub.cooldownUntil) > new Date() ? (
-                                                        <span style={{ color: 'var(--status-warning)' }}>Cooldown until {new Date(sub.cooldownUntil).toLocaleDateString()}</span>
-                                                    ) : (
-                                                        <span style={{ color: 'var(--text-secondary)' }}>
-                                                            {sub.minRequiredKarma ? `Karma ${sub.minRequiredKarma}+` : ''}
-                                                            {sub.minRequiredKarma && sub.minAccountAgeDays ? ' • ' : ''}
-                                                            {sub.minAccountAgeDays ? `Age ${sub.minAccountAgeDays}d+` : ''}
-                                                            {!sub.minRequiredKarma && !sub.minAccountAgeDays ? 'Open' : ''}
-                                                        </span>
-                                                    )}
-                                                </td>
                                                 <td style={{ textAlign: 'center' }}>
                                                     {(() => {
                                                         if (!sub.requiresVerified) {
@@ -527,68 +468,22 @@ export function Subreddits() {
                                                                     }
                                                                 }}
                                                             >
-                                                                {isVerified ? '✓ Yes' : '✗ No'}
+                                                                {isVerified ? '✓' : '✗'}
                                                             </button>
                                                         );
                                                     })()}
                                                 </td>
                                                 <td>
-                                                    <button
-                                                        type="button"
-                                                        className="btn btn-outline"
-                                                        title="Edit Custom AI Rules for this Subreddit"
-                                                        style={{ padding: '2px 8px', fontSize: '0.8rem', marginRight: '6px' }}
-                                                        onClick={async (e) => {
-                                                            e.stopPropagation();
-                                                            const currentRules = sub.rulesSummary || '';
-                                                            const newRules = window.prompt(`Custom AI prompt rules for r/${sub.name} (e.g. 'Must have word pregnant', 'No emojis'):`, currentRules);
-                                                            if (newRules !== null && newRules !== currentRules) {
-                                                                try {
-                                                                    await db.subreddits.update(sub.id, { rulesSummary: newRules });
-                                                                } catch (err) {
-                                                                    alert("Failed to save rules: " + err.message);
-                                                                }
-                                                            }
-                                                        }}
-                                                    >
-                                                        ⚙️ Rules
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        className="btn btn-outline"
-                                                        style={{ padding: '2px 8px', fontSize: '0.8rem', marginRight: '6px' }}
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setHistorySubredditId(sub.id);
-                                                        }}
-                                                    >
-                                                        🧾 Errors
-                                                    </button>
-                                                    {(sub.cooldownUntil && new Date(sub.cooldownUntil) > new Date()) && (
-                                                        <button
-                                                            type="button"
-                                                            className="btn btn-outline"
-                                                            style={{ padding: '2px 8px', fontSize: '0.8rem', marginRight: '6px', color: 'var(--status-warning)', borderColor: 'var(--status-warning)' }}
-                                                            onClick={async (e) => {
-                                                                e.stopPropagation();
-                                                                if (!window.confirm(`Move r/${sub.name} from cooldown back to testing?`)) return;
-                                                                await SubredditGuardService.moveCooldownToTesting(sub.id);
-                                                            }}
-                                                        >
-                                                            ↩ Unblock
-                                                        </button>
-                                                    )}
-                                                    <button
-                                                        type="button"
-                                                        className="btn btn-outline"
-                                                        style={{ padding: '2px 8px', fontSize: '0.8rem', color: 'var(--status-danger)', borderColor: 'var(--status-danger)' }}
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleDeleteSubreddit(sub);
-                                                        }}
-                                                    >
-                                                        🗑️
-                                                    </button>
+                                                    <SubredditActionMenu sub={sub} onEditRules={async () => {
+                                                        const currentRules = sub.rulesSummary || '';
+                                                        const newRules = window.prompt(`Custom AI prompt rules for r/${sub.name}:`, currentRules);
+                                                        if (newRules !== null && newRules !== currentRules) {
+                                                            try { await db.subreddits.update(sub.id, { rulesSummary: newRules }); } catch (err) { alert("Failed: " + err.message); }
+                                                        }
+                                                    }} onErrors={() => setHistorySubredditId(sub.id)} onUnblock={async () => {
+                                                        if (!window.confirm(`Move r/${sub.name} from cooldown back to testing?`)) return;
+                                                        await SubredditGuardService.moveCooldownToTesting(sub.id);
+                                                    }} onDelete={() => handleDeleteSubreddit(sub)} />
                                                 </td>
                                             </tr>
                                         );
@@ -637,5 +532,62 @@ export function Subreddits() {
                 )}
             </div>
         </>
+    );
+}
+
+function SubredditActionMenu({ sub, onEditRules, onErrors, onUnblock, onDelete }) {
+    const [open, setOpen] = React.useState(false);
+    const ref = React.useRef(null);
+
+    React.useEffect(() => {
+        if (!open) return;
+        function close(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+        document.addEventListener('mousedown', close);
+        return () => document.removeEventListener('mousedown', close);
+    }, [open]);
+
+    const isCoolingDown = sub.cooldownUntil && new Date(sub.cooldownUntil) > new Date();
+
+    return (
+        <div ref={ref} style={{ position: 'relative' }}>
+            <button
+                type="button"
+                className="btn btn-outline"
+                style={{ padding: '4px 8px', fontSize: '1rem', lineHeight: 1 }}
+                onClick={(e) => { e.stopPropagation(); setOpen(o => !o); }}
+            >
+                &#8942;
+            </button>
+            {open && (
+                <div style={{
+                    position: 'absolute', right: 0, top: '100%', marginTop: '4px', zIndex: 20,
+                    backgroundColor: 'var(--bg-surface-elevated)', border: '1px solid var(--border-light)',
+                    borderRadius: 'var(--radius-md)', boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+                    minWidth: '140px', overflow: 'hidden',
+                }}>
+                    {[
+                        { label: 'Edit Rules', onClick: onEditRules },
+                        { label: 'View Errors', onClick: onErrors },
+                        ...(isCoolingDown ? [{ label: 'Unblock', onClick: onUnblock, color: 'var(--status-warning)' }] : []),
+                        { label: 'Delete', onClick: onDelete, color: 'var(--status-danger)' },
+                    ].map((item, i) => (
+                        <button
+                            key={i}
+                            type="button"
+                            style={{
+                                display: 'block', width: '100%', textAlign: 'left', padding: '8px 14px',
+                                fontSize: '0.8rem', color: item.color || 'var(--text-primary)',
+                                backgroundColor: 'transparent', border: 'none', cursor: 'pointer',
+                            }}
+                            onMouseEnter={e => e.target.style.backgroundColor = 'var(--bg-surface-hover)'}
+                            onMouseLeave={e => e.target.style.backgroundColor = 'transparent'}
+                            onClick={(e) => { e.stopPropagation(); setOpen(false); item.onClick(); }}
+                        >
+                            {item.label}
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
     );
 }

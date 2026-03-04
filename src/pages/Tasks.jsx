@@ -310,16 +310,26 @@ export function Tasks() {
     const sortedTasks = [...(tasks || [])].sort((a, b) => (a.scheduledTime || '99:99').localeCompare(b.scheduledTime || '99:99'));
     const showGrouped = groupByAccount && selectedAccountId === 'ALL' && groupedTasks.length > 1;
 
+    const [showCapacity, setShowCapacity] = useState(false);
+    const [showMoreActions, setShowMoreActions] = useState(false);
+    const moreActionsRef = React.useRef(null);
+
+    React.useEffect(() => {
+        if (!showMoreActions) return;
+        function close(e) { if (moreActionsRef.current && !moreActionsRef.current.contains(e.target)) setShowMoreActions(false); }
+        document.addEventListener('mousedown', close);
+        return () => document.removeEventListener('mousedown', close);
+    }, [showMoreActions]);
+
     return (
         <>
             <header className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
-                    <h1 className="page-title">Daily Operations (Tasks)</h1>
-                    <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        Model:
+                    <h1 className="page-title">Post Tasks</h1>
+                    <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                         <select
                             className="input-field"
-                            style={{ padding: '4px 8px', fontSize: '0.9rem', width: 'auto', display: 'inline-block' }}
+                            style={{ padding: '4px 8px', fontSize: '0.85rem', width: 'auto' }}
                             value={selectedModelId}
                             onChange={e => setSelectedModelId(e.target.value)}
                         >
@@ -327,10 +337,9 @@ export function Tasks() {
                                 <option key={m.id} value={m.id}>{m.name}</option>
                             ))}
                         </select>
-                        Account:
                         <select
                             className="input-field"
-                            style={{ padding: '4px 8px', fontSize: '0.9rem', width: 'auto', display: 'inline-block' }}
+                            style={{ padding: '4px 8px', fontSize: '0.85rem', width: 'auto' }}
                             value={selectedAccountId}
                             onChange={e => setSelectedAccountId(e.target.value)}
                         >
@@ -343,91 +352,108 @@ export function Tasks() {
                         </select>
                         <button
                             className="btn btn-outline"
-                            style={{ padding: '2px 10px', fontSize: '0.8rem' }}
+                            style={{ padding: '2px 10px', fontSize: '0.75rem' }}
                             onClick={() => setGroupByAccount(g => !g)}
                         >
                             {groupByAccount ? 'Grouped' : 'Flat'}
                         </button>
-                        {' '} Queue Date: <strong>{queueDateLabel}</strong>
+                        <span style={{ fontSize: '0.8rem' }}>{queueDateLabel}</span>
                     </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <button
-                        className="btn btn-outline"
-                        onClick={handleFixBadTitles}
-                        disabled={generating || clearing || fixingTitles || !allTasks || allTasks.length === 0}
-                        style={{ color: '#fbbf24', borderColor: '#fbbf24' }}
-                    >
-                        {fixingTitles ? 'Fixing Titles...' : 'Fix API Titles'}
-                    </button>
-                    <button
-                        className="btn btn-outline"
-                        onClick={handleClearTodayTasks}
-                        disabled={generating || clearing || !allTasks || allTasks.length === 0}
-                        style={{ color: 'var(--status-danger)', borderColor: 'var(--status-danger)' }}
-                    >
-                        {clearing ? 'Clearing...' : 'Clear Tasks'}
-                    </button>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>Total Posts:</label>
-                        <input
-                            type="number"
-                            min="1"
-                            max="200"
-                            className="input-field"
-                            style={{ width: '65px', padding: '6px 8px', fontSize: '0.9rem', textAlign: 'center' }}
-                            value={postTarget}
-                            onChange={e => setPostTarget(e.target.value)}
-                            placeholder={String(allTasks?.filter(t => t.taskType === 'post' || !t.taskType).length || 0)}
-                        />
-                        {postTarget !== '' && allTasks && (
-                            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                                ({allTasks.filter(t => t.taskType === 'post' || !t.taskType).length} exist{Number(postTarget) > allTasks.filter(t => t.taskType === 'post' || !t.taskType).length ? `, +${Number(postTarget) - allTasks.filter(t => t.taskType === 'post' || !t.taskType).length} new` : ''})
-                            </span>
-                        )}
-                    </div>
+                    <input
+                        type="number"
+                        min="1"
+                        max="200"
+                        className="input-field"
+                        style={{ width: '60px', padding: '6px 8px', fontSize: '0.85rem', textAlign: 'center' }}
+                        value={postTarget}
+                        onChange={e => setPostTarget(e.target.value)}
+                        placeholder={String(allTasks?.filter(t => t.taskType === 'post' || !t.taskType).length || 0)}
+                        title="Total post target"
+                    />
                     <button
                         className="btn btn-primary"
                         onClick={handleGenerate}
                         disabled={generating}
                     >
-                        {generating ? 'Generating...' : 'Generate Daily Plan'}
+                        {generating ? 'Generating...' : 'Generate'}
                     </button>
+                    <div ref={moreActionsRef} style={{ position: 'relative' }}>
+                        <button
+                            className="btn btn-outline"
+                            style={{ padding: '6px 10px', fontSize: '1rem', lineHeight: 1 }}
+                            onClick={() => setShowMoreActions(o => !o)}
+                        >
+                            &#8942;
+                        </button>
+                        {showMoreActions && (
+                            <div style={{
+                                position: 'absolute', right: 0, top: '100%', marginTop: '4px', zIndex: 20,
+                                backgroundColor: 'var(--bg-surface-elevated)', border: '1px solid var(--border-light)',
+                                borderRadius: 'var(--radius-md)', boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+                                minWidth: '160px', overflow: 'hidden',
+                            }}>
+                                <button
+                                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: '0.8rem', color: '#fbbf24', backgroundColor: 'transparent', border: 'none', cursor: 'pointer' }}
+                                    onMouseEnter={e => e.target.style.backgroundColor = 'var(--bg-surface-hover)'}
+                                    onMouseLeave={e => e.target.style.backgroundColor = 'transparent'}
+                                    disabled={generating || clearing || fixingTitles || !allTasks || allTasks.length === 0}
+                                    onClick={() => { setShowMoreActions(false); handleFixBadTitles(); }}
+                                >
+                                    {fixingTitles ? 'Fixing...' : 'Fix API Titles'}
+                                </button>
+                                <button
+                                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: '0.8rem', color: 'var(--status-danger)', backgroundColor: 'transparent', border: 'none', cursor: 'pointer' }}
+                                    onMouseEnter={e => e.target.style.backgroundColor = 'var(--bg-surface-hover)'}
+                                    onMouseLeave={e => e.target.style.backgroundColor = 'transparent'}
+                                    disabled={generating || clearing || !allTasks || allTasks.length === 0}
+                                    onClick={() => { setShowMoreActions(false); handleClearTodayTasks(); }}
+                                >
+                                    {clearing ? 'Clearing...' : 'Clear All Tasks'}
+                                </button>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </header>
             <div className="page-content">
                 {planCapacity && (
-                    <div className="card" style={{ marginBottom: '16px', borderColor: planCapacity.willShortfall ? 'var(--status-warning)' : 'var(--border-color)' }}>
-                        <div style={{ display: 'flex', gap: '18px', flexWrap: 'wrap', alignItems: 'center' }}>
-                            <div><strong>Plan Capacity Check</strong></div>
-                            <div>Active Accounts: <strong>{planCapacity.activeAccounts}</strong></div>
-                            <div>Remaining Target Posts: <strong>{planCapacity.desiredRemaining}</strong></div>
-                            <div>Usable Subreddits: <strong>{planCapacity.candidateSubreddits}</strong></div>
-                            <div>Estimated Max New Tasks: <strong>{planCapacity.estimatedMax}</strong></div>
-                            {planCapacity.repeatsEnabled && <div>Repeat Mode: <strong>ON</strong> (cap {planCapacity.perSubCap}/sub)</div>}
-                            {!planCapacity.repeatsEnabled && <div>Repeat Mode: <strong>OFF</strong></div>}
-                        </div>
-                        {planCapacity.willShortfall && (
-                            <div style={{ marginTop: '10px', color: 'var(--status-warning)' }}>
-                                Not enough attached subreddit capacity to fill all requested posts. Attach more subreddits or reduce caps.
-                            </div>
-                        )}
-                        {planCapacity.perAccountBreakdown && planCapacity.perAccountBreakdown.length > 0 && (
-                            <div style={{ marginTop: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '10px' }}>
-                                <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '6px' }}>Per-Account Breakdown:</div>
-                                {planCapacity.perAccountBreakdown.map(a => (
-                                    <div key={a.accountId} style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                        <span style={{
-                                            display: 'inline-block',
-                                            width: '8px',
-                                            height: '8px',
-                                            borderRadius: '50%',
-                                            backgroundColor: ACCOUNT_COLORS[a.accountId % ACCOUNT_COLORS.length],
-                                        }} />
-                                        <span style={{ fontWeight: 500 }}>{a.handle}</span>
-                                        {' '}&mdash; {a.remaining} remaining (cap {a.cap}, {a.already} existing) &bull; {a.provenSubs} proven + {a.testingSubs} testing subs
+                    <div style={{ marginBottom: '16px' }}>
+                        <button
+                            type="button"
+                            style={{
+                                background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.8rem',
+                                color: planCapacity.willShortfall ? 'var(--status-warning)' : 'var(--text-secondary)',
+                                fontWeight: 500, display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 0',
+                            }}
+                            onClick={() => setShowCapacity(o => !o)}
+                        >
+                            <span style={{ fontSize: '0.7rem' }}>{showCapacity ? '\u25BC' : '\u25B6'}</span>
+                            Capacity: {planCapacity.desiredRemaining} remaining / {planCapacity.estimatedMax} max
+                            {planCapacity.willShortfall && <span style={{ color: 'var(--status-warning)', fontWeight: 600 }}> (shortfall)</span>}
+                        </button>
+                        {showCapacity && (
+                            <div className="card" style={{ marginTop: '8px', borderColor: planCapacity.willShortfall ? 'var(--status-warning)' : 'var(--border-color)' }}>
+                                <div style={{ display: 'flex', gap: '18px', flexWrap: 'wrap', alignItems: 'center', fontSize: '0.85rem' }}>
+                                    <div>Accounts: <strong>{planCapacity.activeAccounts}</strong></div>
+                                    <div>Subreddits: <strong>{planCapacity.candidateSubreddits}</strong></div>
+                                    <div>Repeats: <strong>{planCapacity.repeatsEnabled ? `ON (${planCapacity.perSubCap}/sub)` : 'OFF'}</strong></div>
+                                </div>
+                                {planCapacity.perAccountBreakdown && planCapacity.perAccountBreakdown.length > 0 && (
+                                    <div style={{ marginTop: '10px', borderTop: '1px solid var(--border-color)', paddingTop: '8px' }}>
+                                        {planCapacity.perAccountBreakdown.map(a => (
+                                            <div key={a.accountId} style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <span style={{
+                                                    display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%',
+                                                    backgroundColor: ACCOUNT_COLORS[a.accountId % ACCOUNT_COLORS.length],
+                                                }} />
+                                                <span style={{ fontWeight: 500 }}>{a.handle}</span>
+                                                {' '}&mdash; {a.remaining} left (cap {a.cap}) &bull; {a.provenSubs}p + {a.testingSubs}t subs
+                                            </div>
+                                        ))}
                                     </div>
-                                ))}
+                                )}
                             </div>
                         )}
                     </div>

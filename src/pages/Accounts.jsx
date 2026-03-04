@@ -337,22 +337,18 @@ export function Accounts() {
                                     <tr>
                                         <th>Handle</th>
                                         <th>Phase</th>
-                                        <th>Profile</th>
-                                        <th>Health</th>
-                                        <th>Assigned Model</th>
+                                        <th>Score</th>
+                                        <th>Model</th>
                                         <th>Karma</th>
-                                        <th>Account Health</th>
-                                        <th>Daily Cap</th>
-                                        <th>Status</th>
+                                        <th>Cap</th>
                                         <th>CQS</th>
                                         <th>Engage %</th>
-                                        <th>VA PIN</th>
-                                        <th>Proxy</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {accounts?.filter(a => phaseFilter === 'all' || (a.phase || 'ready') === phaseFilter).map(acc => {
                                         const model = models?.find(m => m.id === acc.modelId);
+                                        const combinedScore = Math.round((AnalyticsEngine.computeProfileScore(acc) + AnalyticsEngine.computeAccountHealthScore(acc)) / 2);
                                         return (
                                             <tr key={acc.id}>
                                                 <td style={{ fontWeight: '500' }}>
@@ -365,7 +361,7 @@ export function Accounts() {
                                                             className="btn btn-outline"
                                                             style={{ padding: '2px 6px', fontSize: '0.7rem' }}
                                                             onClick={() => handleSyncSingleAccount(acc)}
-                                                            title="Test sync this account"
+                                                            title="Sync this account"
                                                         >
                                                             <RefreshCw size={12} />
                                                         </button>
@@ -380,43 +376,35 @@ export function Accounts() {
                                                         </button>
                                                     </div>
                                                 </td>
-                                                <td><PhaseBadge phase={acc.phase} /></td>
-                                                <td><HealthBar score={AnalyticsEngine.computeProfileScore(acc)} /></td>
-                                                <td><HealthBar score={AnalyticsEngine.computeAccountHealthScore(acc)} /></td>
-                                                <td>{model ? model.name : 'Unassigned'}</td>
-                                                <td style={{ fontWeight: '600' }}>
-                                                    {(acc.totalKarma || 0).toLocaleString()}
-                                                </td>
                                                 <td>
-                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                                                        {acc.isSuspended ? (
-                                                            <span style={{ color: 'var(--status-danger)', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', fontWeight: 'bold' }}>
-                                                                <AlertTriangle size={14} /> SUSPENDED
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', alignItems: 'flex-start' }}>
+                                                        <PhaseBadge phase={acc.phase} />
+                                                        {acc.isSuspended && (
+                                                            <span style={{ fontSize: '0.65rem', fontWeight: 600, color: 'var(--status-danger)', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                                                <AlertTriangle size={11} /> SUSPENDED
                                                             </span>
-                                                        ) : (
-                                                            <span style={{ color: 'var(--status-success)', fontSize: '0.8rem', fontWeight: 'bold' }}>HEALTHY</span>
                                                         )}
                                                         {acc.shadowBanStatus && acc.shadowBanStatus !== 'clean' && (
                                                             <span style={{
-                                                                display: 'inline-block', padding: '1px 6px', borderRadius: '8px', fontSize: '0.65rem', fontWeight: 600,
+                                                                display: 'inline-block', padding: '1px 6px', borderRadius: '8px', fontSize: '0.6rem', fontWeight: 600,
                                                                 backgroundColor: '#ffebee', color: '#c62828', border: '1px solid #ef9a9a'
                                                             }}>
-                                                                SHADOW-BANNED
-                                                            </span>
-                                                        )}
-                                                        {acc.shadowBanStatus === 'clean' && (
-                                                            <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)' }}>
-                                                                Checked {acc.lastShadowCheck ? new Date(acc.lastShadowCheck).toLocaleDateString() : ''}
+                                                                SHADOW-BAN
                                                             </span>
                                                         )}
                                                     </div>
+                                                </td>
+                                                <td><HealthBar score={combinedScore} /></td>
+                                                <td>{model ? model.name : 'Unassigned'}</td>
+                                                <td style={{ fontWeight: '600' }}>
+                                                    {(acc.totalKarma || 0).toLocaleString()}
                                                 </td>
                                                 <td>
                                                     <input
                                                         type="number"
                                                         className="input-field"
                                                         defaultValue={acc.dailyCap || 10}
-                                                        style={{ width: '88px', padding: '4px 8px', fontSize: '0.8rem' }}
+                                                        style={{ width: '64px', padding: '4px 8px', fontSize: '0.8rem' }}
                                                         onBlur={(e) => {
                                                             const next = Number(e.target.value || 0);
                                                             if (!Number.isFinite(next) || next <= 0 || next === Number(acc.dailyCap || 10)) return;
@@ -427,21 +415,8 @@ export function Accounts() {
                                                 <td>
                                                     <select
                                                         className="input-field"
-                                                        value={acc.isSuspended || (acc.phase || '').toLowerCase() === 'burned' ? 'burned' : (acc.status || 'active')}
-                                                        style={{ width: '110px', padding: '4px 8px', fontSize: '0.8rem' }}
-                                                        onChange={(e) => updateAccountPatch(acc.id, { status: e.target.value })}
-                                                    >
-                                                        <option value="warming">warming</option>
-                                                        <option value="active">active</option>
-                                                        <option value="cooldown">cooldown</option>
-                                                        <option value="burned">burned</option>
-                                                    </select>
-                                                </td>
-                                                <td>
-                                                    <select
-                                                        className="input-field"
                                                         value={acc.cqsStatus || 'High'}
-                                                        style={{ width: '115px', padding: '4px 8px', fontSize: '0.8rem' }}
+                                                        style={{ width: '100px', padding: '4px 8px', fontSize: '0.8rem' }}
                                                         onChange={(e) => updateAccountPatch(acc.id, { cqsStatus: e.target.value })}
                                                     >
                                                         <option value="Highest">Highest</option>
@@ -456,7 +431,6 @@ export function Accounts() {
                                                         const r = engagementRatios?.[acc.id];
                                                         if (!r || r.total === 0) return <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>--</span>;
                                                         const pct = r.ratio;
-                                                        // Reddit wants 9:1 = 90% engagement. Below 50% is risky.
                                                         const color = pct >= 50 ? 'var(--status-success)' : pct >= 30 ? 'var(--status-warning)' : 'var(--status-danger)';
                                                         return (
                                                             <div style={{ fontSize: '0.8rem' }} title={`${r.engagement} engagement / ${r.posts} posts (last 30d)`}>
@@ -465,32 +439,6 @@ export function Accounts() {
                                                             </div>
                                                         );
                                                     })()}
-                                                </td>
-                                                <td>
-                                                    <input
-                                                        className="input-field"
-                                                        defaultValue={acc.vaPin || ''}
-                                                        placeholder="-"
-                                                        style={{ width: '92px', padding: '4px 8px', fontSize: '0.8rem' }}
-                                                        onBlur={(e) => {
-                                                            const next = String(e.target.value || '').trim();
-                                                            if (next === String(acc.vaPin || '')) return;
-                                                            updateAccountPatch(acc.id, { vaPin: next });
-                                                        }}
-                                                    />
-                                                </td>
-                                                <td>
-                                                    <input
-                                                        className="input-field"
-                                                        defaultValue={acc.proxyInfo || ''}
-                                                        placeholder="Model Default"
-                                                        style={{ width: '180px', padding: '4px 8px', fontSize: '0.8rem' }}
-                                                        onBlur={(e) => {
-                                                            const next = String(e.target.value || '').trim();
-                                                            if (next === String(acc.proxyInfo || '')) return;
-                                                            updateAccountPatch(acc.id, { proxyInfo: next });
-                                                        }}
-                                                    />
                                                 </td>
                                             </tr>
                                         );
