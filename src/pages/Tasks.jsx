@@ -100,7 +100,7 @@ export function Tasks() {
 
             const perAccountBreakdown = activeAccounts.map(account => {
                 const already = tasksToday.filter(t => Number(t.accountId) === Number(account.id)).length;
-                const cap = Number(account.dailyCap || settings.dailyPostCap || 0);
+                const cap = Number(account.dailyCap || 999);
                 const remaining = Math.max(0, cap - already);
 
                 const accountSubs = subreddits.filter(s => {

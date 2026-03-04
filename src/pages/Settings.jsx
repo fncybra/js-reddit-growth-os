@@ -122,11 +122,6 @@ export function Settings() {
                                 <input type="number" className="input-field" value={settings.assetReuseCooldownDays} onChange={e => setSettings({ ...settings, assetReuseCooldownDays: e.target.value })} />
                             </div>
 
-                            <div className="input-group">
-                                <label className="input-label">Anti-Ban Post Interval (Minutes)</label>
-                                <input type="number" className="input-field" value={settings.postInterval} onChange={e => setSettings({ ...settings, postInterval: e.target.value })} />
-                                <small style={{ color: 'var(--text-secondary)' }}>Forces VAs to wait between posts to prevent Reddit bans.</small>
-                            </div>
 
                             <button type="submit" className="btn btn-primary" style={{ marginTop: '16px', width: '100%' }}>Save Growth Configuration</button>
                         </form>

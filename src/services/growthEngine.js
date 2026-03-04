@@ -990,7 +990,7 @@ export const DailyPlanGenerator = {
                 // Use the distributed target for this account
                 accountQuota = accountTargets.get(account.id) || 0;
             } else {
-                const rawQuota = account.dailyCap || settings.dailyPostCap;
+                const rawQuota = account.dailyCap || 999; // Only per-account cap matters
                 // Cap at fair share to ensure even spread when subs are limited
                 accountQuota = totalAvailableSubs < (rawQuota * activeAccounts.length)
                     ? Math.min(rawQuota, fairSharePerAccount)
@@ -1348,7 +1348,7 @@ export const DailyPlanGenerator = {
         // ========== SMART POST TIMING ==========
         // Schedule posts at each subreddit's peak hour instead of a fixed 9AM start.
         // Falls back to NSFW defaults (20:00 UTC = evening US) if no data.
-        const postInterval = Number(settings.postInterval || 10);
+        const postInterval = 0; // No forced delay — VAs post as fast as they want
         const defaultPeakHour = 20; // 8PM UTC (evening US — peak NSFW window)
 
         // Build lookup: subredditId → peakPostHour (0-23)
