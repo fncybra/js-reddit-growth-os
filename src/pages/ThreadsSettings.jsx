@@ -5,10 +5,6 @@ export function ThreadsSettings() {
     const [apiKey, setApiKey] = useState('');
     const [baseId, setBaseId] = useState('');
     const [tableName, setTableName] = useState('Phone Posting');
-    const [patrolEnabled, setPatrolEnabled] = useState(1);
-    const [patrolInterval, setPatrolInterval] = useState(15);
-    const [patrolBatchSize, setPatrolBatchSize] = useState(3);
-    const [lastPatrol, setLastPatrol] = useState(null);
     const [loaded, setLoaded] = useState(false);
 
     useEffect(() => {
@@ -17,12 +13,6 @@ export function ThreadsSettings() {
             setApiKey(data.airtableApiKey || '');
             setBaseId(data.airtableBaseId || 'REDACTED_AIRTABLE_BASE_ID');
             setTableName(data.airtableTableName || 'Phone Posting');
-            setPatrolEnabled(Number(data.threadsPatrolEnabled ?? 1));
-            setPatrolInterval(Number(data.threadsPatrolIntervalMinutes) || 15);
-            setPatrolBatchSize(Number(data.threadsPatrolBatchSize) || 3);
-            try {
-                if (data.lastThreadsPatrol) setLastPatrol(JSON.parse(data.lastThreadsPatrol));
-            } catch (_) {}
             setLoaded(true);
         }
         load();
@@ -51,13 +41,6 @@ export function ThreadsSettings() {
         } catch (e) {
             alert('Connection failed: ' + e.message);
         }
-    }
-
-    async function handlePatrolSave() {
-        await SettingsService.updateSetting('threadsPatrolEnabled', patrolEnabled);
-        await SettingsService.updateSetting('threadsPatrolIntervalMinutes', Math.max(5, Math.min(120, patrolInterval)));
-        await SettingsService.updateSetting('threadsPatrolBatchSize', Math.max(1, Math.min(10, patrolBatchSize)));
-        alert('Patrol settings saved. Changes take effect on next patrol cycle.');
     }
 
     if (!loaded) return <div className="page-content">Loading...</div>;
@@ -108,61 +91,6 @@ export function ThreadsSettings() {
                                 Test Connection
                             </button>
                         </div>
-                    </div>
-
-                    <div className="card" style={{ marginTop: '24px' }}>
-                        <h2 style={{ fontSize: '1.2rem', marginBottom: '20px' }}>Health Patrol</h2>
-                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '16px' }}>
-                            Automatically scrapes Threads profiles to detect dead/suspended accounts and updates Airtable.
-                        </p>
-                        <div className="input-group">
-                            <label className="input-label">Enable Patrol</label>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                <button
-                                    className={`btn ${patrolEnabled ? 'btn-primary' : 'btn-outline'}`}
-                                    onClick={() => setPatrolEnabled(patrolEnabled ? 0 : 1)}
-                                    style={{ minWidth: '80px' }}
-                                >
-                                    {patrolEnabled ? 'ON' : 'OFF'}
-                                </button>
-                            </div>
-                        </div>
-                        <div className="input-group">
-                            <label className="input-label">Check Interval (minutes)</label>
-                            <input
-                                type="number"
-                                className="input-field"
-                                min={5}
-                                max={120}
-                                value={patrolInterval}
-                                onChange={e => setPatrolInterval(Number(e.target.value) || 15)}
-                            />
-                            <small style={{ color: 'var(--text-secondary)' }}>Min 5, max 120. Default 15 minutes.</small>
-                        </div>
-                        <div className="input-group">
-                            <label className="input-label">Batch Size</label>
-                            <input
-                                type="number"
-                                className="input-field"
-                                min={1}
-                                max={10}
-                                value={patrolBatchSize}
-                                onChange={e => setPatrolBatchSize(Number(e.target.value) || 3)}
-                            />
-                            <small style={{ color: 'var(--text-secondary)' }}>Accounts checked per interval. 3s delay between each.</small>
-                        </div>
-                        <button onClick={handlePatrolSave} className="btn btn-primary" style={{ marginTop: '16px' }}>
-                            Save Patrol Settings
-                        </button>
-
-                        {lastPatrol && (
-                            <div style={{ marginTop: '16px', padding: '12px', background: 'var(--bg-secondary)', borderRadius: '8px', fontSize: '0.8rem' }}>
-                                <div style={{ fontWeight: '600', marginBottom: '8px' }}>Last Patrol Result</div>
-                                <div>Time: {new Date(lastPatrol.timestamp).toLocaleString()}</div>
-                                <div>Checked: {lastPatrol.checked} | Healthy: {lastPatrol.healthy} | Dead: {lastPatrol.dead} | Errors: {lastPatrol.errors}</div>
-                                <div>Session: {lastPatrol.sessionProgress}/{lastPatrol.sessionTotal} accounts rotated</div>
-                            </div>
-                        )}
                     </div>
                 </div>
             </div>

@@ -340,14 +340,8 @@ select.input-field {
 .status-dot--info { background: var(--status-info); box-shadow: 0 0 6px rgba(14, 165, 233, 0.4); }
 .status-dot--muted { background: var(--text-muted); }
 
-/* Metric Cards with colored top border */
-.metric-card { background: var(--bg-surface); border-radius: var(--radius-lg); padding: 20px; border-top: 3px solid transparent; }
-.metric-card--blue { border-top-color: #3b82f6; }
-.metric-card--green { border-top-color: #10b981; }
-.metric-card--yellow { border-top-color: #f59e0b; }
-.metric-card--red { border-top-color: #f43f5e; }
-.metric-card--purple { border-top-color: #8b5cf6; }
-.metric-card--cyan { border-top-color: #06b6d4; }
+/* Metric Cards */
+.metric-card { background: var(--bg-surface); border-radius: var(--radius-lg); padding: 20px; border: 1px solid var(--border-light); }
 
 /* Activity rows */
 .activity-row {

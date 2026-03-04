@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { AirtableService, SettingsService, ThreadsHealthService, ThreadsGrowthService } from '../services/growthEngine';
-import { RefreshCw, AlertTriangle, Zap, Shield } from 'lucide-react';
+import { AirtableService, ThreadsGrowthService } from '../services/growthEngine';
+import { RefreshCw, AlertTriangle, Shield } from 'lucide-react';
 
 const COLORS = { success: '#10b981', warning: '#f59e0b', danger: '#f43f5e', accent: '#3b82f6', muted: '#6b7280' };
 const ThreadsLink = ({ username, style }) => (
@@ -14,15 +14,12 @@ const ThreadsLink = ({ username, style }) => (
 export function ThreadsDashboard() {
     const [loading, setLoading] = useState(true);
     const [syncing, setSyncing] = useState(false);
-    const [scanning, setScanning] = useState(false);
-    const [scanProgress, setScanProgress] = useState(null);
     const [error, setError] = useState(null);
     const [accounts, setAccounts] = useState([]);
     const [devices, setDevices] = useState([]);
     const [vaScorecard, setVAScorecard] = useState([]);
     const [actionItems, setActionItems] = useState([]);
     const [recommendations, setRecommendations] = useState([]);
-    const [patrolStatus, setPatrolStatus] = useState(null);
     const [expandedVA, setExpandedVA] = useState(null);
 
     async function loadData(forceRefresh = false) {
@@ -48,34 +45,9 @@ export function ThreadsDashboard() {
         }
     }
 
-    async function loadPatrolStatus() {
-        try {
-            const settings = await SettingsService.getSettings();
-            const raw = settings.lastThreadsPatrol;
-            if (raw) setPatrolStatus(JSON.parse(raw));
-        } catch (_) {}
-    }
-
-    useEffect(() => { loadData(); loadPatrolStatus(); }, []);
+    useEffect(() => { loadData(); }, []);
 
     function handleSync() { setSyncing(true); loadData(true); }
-
-    async function handleFullScan() {
-        if (!window.confirm('This will scan ALL checkable accounts. Continue?')) return;
-        setScanning(true);
-        setScanProgress({ current: 0, total: 0, username: '' });
-        try {
-            const result = await ThreadsHealthService.runFullScan((progress) => setScanProgress(progress));
-            alert(`Scan complete! Checked: ${result.total}, Healthy: ${result.healthy}, Dead: ${result.dead}, Errors: ${result.errors}`);
-            loadData(true);
-            loadPatrolStatus();
-        } catch (err) {
-            alert('Scan failed: ' + err.message);
-        } finally {
-            setScanning(false);
-            setScanProgress(null);
-        }
-    }
 
     if (loading) return <div className="page-content" style={{ padding: '48px', textAlign: 'center', color: 'var(--text-secondary)' }}>Loading Threads data from Airtable...</div>;
 
@@ -148,13 +120,6 @@ export function ThreadsDashboard() {
         ...recommendations.filter(r => r.severity === 'critical' || r.severity === 'warning').map(r => ({ severity: r.severity, title: r.message })),
     ].slice(0, 6);
 
-    // Patrol time
-    const patrolTimeLabel = (() => {
-        if (!patrolStatus?.timestamp) return null;
-        const minAgo = Math.round((Date.now() - new Date(patrolStatus.timestamp).getTime()) / 60000);
-        return minAgo < 1 ? 'just now' : minAgo < 60 ? `${minAgo}m ago` : `${Math.round(minAgo / 60)}h ago`;
-    })();
-
     const fmtFollowers = (n) => n >= 1000000 ? `${(n / 1000000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
     const fmtThreads = (n) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
     const postingPctTotal = activeAccs.length > 0 ? Math.round(postingAccs.length / activeAccs.length * 100) : 0;
@@ -163,32 +128,12 @@ export function ThreadsDashboard() {
         <>
             <header className="page-header">
                 <h1 className="page-title">Threads Dashboard</h1>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    {patrolTimeLabel && <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Last patrol: {patrolTimeLabel}</span>}
-                    <button className="btn btn-outline" onClick={handleFullScan} disabled={scanning} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}>
-                        <Zap size={14} />
-                        {scanning ? `Scanning ${scanProgress?.current || 0}/${scanProgress?.total || '...'}` : 'Full Fleet Scan'}
-                    </button>
-                    <button className="btn btn-primary" onClick={handleSync} disabled={syncing} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <RefreshCw size={16} className={syncing ? 'spinning' : ''} />
-                        {syncing ? 'Syncing...' : 'Sync from Airtable'}
-                    </button>
-                </div>
+                <button className="btn btn-primary" onClick={handleSync} disabled={syncing} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <RefreshCw size={16} className={syncing ? 'spinning' : ''} />
+                    {syncing ? 'Syncing...' : 'Sync from Airtable'}
+                </button>
             </header>
             <div className="page-content">
-                {/* Scan Progress */}
-                {scanning && scanProgress && (
-                    <div style={{ marginBottom: '16px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                            <span>Scanning: @{scanProgress.username}</span>
-                            <span>{scanProgress.current}/{scanProgress.total}</span>
-                        </div>
-                        <div className="progress-bar">
-                            <div className="progress-bar__fill" style={{ width: `${scanProgress.total ? (scanProgress.current / scanProgress.total * 100) : 0}%`, background: COLORS.accent }} />
-                        </div>
-                    </div>
-                )}
-
                 {/* Row 1: Active Fleet Strip */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '12px 16px', borderRadius: '8px', background: 'var(--bg-surface)', marginBottom: '16px', flexWrap: 'wrap' }}>
                     <span style={{ color: COLORS.success }}><strong>{activeAccs.length}</strong> <span style={{ fontSize: '0.85rem' }}>Active</span></span>

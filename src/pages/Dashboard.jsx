@@ -1,15 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../db/db';
 import { generateId } from '../db/generateId';
-import { AnalyticsEngine, AccountLifecycleService, SnapshotService, SettingsService } from '../services/growthEngine';
+import { AnalyticsEngine, SnapshotService, SettingsService } from '../services/growthEngine';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Link } from 'react-router-dom';
-import { ArrowUp, Users, Shield, AlertTriangle, RefreshCw, Cloud, RefreshCcw, Smartphone, CheckCircle, XCircle } from 'lucide-react';
+import { ArrowUp, Users, Shield, AlertTriangle, Cloud, RefreshCcw, Smartphone, CheckCircle, XCircle } from 'lucide-react';
 import { ManagerActionItems } from '../components/ManagerActionItems';
 
 export function Dashboard() {
     const [metrics, setMetrics] = useState(null);
-    const [syncing, setSyncing] = useState(false);
     const [snapshots, setSnapshots] = useState([]);
     const [hideWarming, setHideWarming] = useState(false);
     const models = useLiveQuery(() => db.models.toArray());
@@ -222,127 +221,6 @@ export function Dashboard() {
             .slice(0, 12);
     })();
 
-    async function handleSync() {
-        setSyncing(true);
-        try {
-            const { PerformanceSyncService, AccountSyncService, AccountLifecycleService, CloudSyncService } = await import('../services/growthEngine');
-
-            // Acquire lock to prevent background CloudSyncHandler from racing
-            const gotLock = await CloudSyncService.acquireLock();
-            if (!gotLock) {
-                alert('A sync is already in progress. Please wait and try again.');
-                setSyncing(false);
-                return;
-            }
-
-            const parts = [];
-
-            try {
-                // Step 1: Pull latest from cloud first (gets VA-submitted data)
-                const cloudEnabled = await CloudSyncService.isEnabled();
-                if (cloudEnabled) {
-                    try {
-                        await CloudSyncService.pullCloudToLocal();
-                        parts.push('Cloud pull: synced.');
-                    } catch (e) {
-                        parts.push('Cloud pull: failed (' + e.message + ')');
-                    }
-                }
-
-                // Step 2: Evaluate account lifecycle phases
-                try {
-                    await AccountLifecycleService.evaluateAccountPhases();
-                    parts.push('Phases: evaluated.');
-                } catch (e) {
-                    parts.push('Phases: failed (' + e.message + ')');
-                }
-
-                // Step 3: Sync account health from Reddit
-                try {
-                    const accountResult = await AccountSyncService.syncAllAccounts();
-                    if (accountResult.total === 0 && !accountResult.skippedNoHandle) {
-                        parts.push('Accounts: none found.');
-                    } else if (accountResult.failed > 0) {
-                        const failedNames = accountResult.failedHandles?.length
-                            ? ` [${accountResult.failedHandles.join(', ')}]`
-                            : '';
-                        parts.push(`Accounts: ${accountResult.succeeded}/${accountResult.total} synced (${accountResult.failed} failed${failedNames}).`);
-                    } else {
-                        parts.push(`Accounts: ${accountResult.succeeded}/${accountResult.total} synced.`);
-                    }
-                    if (accountResult.skippedNoHandle > 0) {
-                        parts.push(`(${accountResult.skippedNoHandle} account${accountResult.skippedNoHandle > 1 ? 's' : ''} skipped — no handle set)`);
-                    }
-                } catch (e) {
-                    parts.push('Accounts: failed (' + e.message + ')');
-                }
-
-                // Step 3b: Re-evaluate phases with fresh data (catches warming→ready transitions)
-                try {
-                    await AccountLifecycleService.evaluateAccountPhases();
-                } catch (e) { /* non-critical, already ran once above */ }
-
-                // Step 4: Sync Reddit post stats
-                try {
-                    const stats = await PerformanceSyncService.syncAllPendingPerformance();
-                    if (stats.scanned === 0) {
-                        const allTasks = await db.tasks.toArray();
-                        const statusCounts = {};
-                        allTasks.forEach(t => { statusCounts[t.status || 'unknown'] = (statusCounts[t.status || 'unknown'] || 0) + 1; });
-                        const breakdown = Object.entries(statusCounts).map(([s, c]) => `${s}: ${c}`).join(', ');
-                        parts.push(`Posts: 0 to check.`);
-                        if (allTasks.length > 0) {
-                            parts.push(`Task breakdown: ${breakdown}`);
-                            parts.push('(Only "closed" or "failed" tasks get synced. VAs must post and paste the Reddit URL first.)');
-                        } else {
-                            parts.push('No tasks exist yet. Generate a daily plan on the Tasks page first.');
-                        }
-                    } else {
-                        parts.push(`Posts: ${stats.attempted} checked, ${stats.succeeded} succeeded, ${stats.failed} failed.`);
-                        if (stats.skipped > 0) parts.push(`(${stats.skipped} skipped — no post ID)`);
-                    }
-                } catch (e) {
-                    parts.push('Post sync: failed (' + e.message + ')');
-                }
-
-                // Step 5: Take daily snapshot
-                try {
-                    await SnapshotService.takeDailySnapshot();
-                    parts.push('Snapshot: saved.');
-                } catch (e) {
-                    parts.push('Snapshot: failed (' + e.message + ')');
-                }
-
-                // Step 6: Push updated data back to cloud
-                if (cloudEnabled) {
-                    try {
-                        await CloudSyncService.pushLocalToCloud();
-                        parts.push('Cloud push: synced.');
-                    } catch (e) {
-                        parts.push('Cloud push: failed (' + e.message + ')');
-                    }
-                }
-
-                alert(parts.join('\n'));
-            } finally {
-                CloudSyncService.releaseLock();
-            }
-
-            // Refresh dashboard metrics after sync (outside lock — not critical)
-            try {
-                const data = await AnalyticsEngine.getAgencyMetrics();
-                setMetrics(data);
-            } catch (e) {
-                console.error('[Dashboard] Metrics refresh failed:', e);
-            }
-
-            setSyncing(false);
-        } catch (err) {
-            alert("Sync error: " + err.message);
-            setSyncing(false);
-        }
-    }
-
     return (
         <>
             {/* Header */}
@@ -355,24 +233,13 @@ export function Dashboard() {
                         </Link>
                     </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <button
-                        onClick={() => setHideWarming(h => !h)}
-                        className="btn btn-outline"
-                        style={{ padding: '6px 12px', fontSize: '0.75rem', backgroundColor: hideWarming ? '#6366f122' : 'transparent', borderColor: hideWarming ? '#6366f1' : undefined }}
-                    >
-                        {hideWarming ? 'Warming Hidden' : 'Showing All'}
-                    </button>
-                    <button
-                        className="btn btn-primary"
-                        onClick={handleSync}
-                        disabled={syncing}
-                        style={{ padding: '8px 16px', fontSize: '0.9rem' }}
-                    >
-                        <RefreshCw size={14} style={{ marginRight: '6px' }} className={syncing ? 'spin' : ''} />
-                        {syncing ? 'Syncing...' : 'Sync All Stats'}
-                    </button>
-                </div>
+                <button
+                    onClick={() => setHideWarming(h => !h)}
+                    className="btn btn-outline"
+                    style={{ padding: '6px 12px', fontSize: '0.75rem', backgroundColor: hideWarming ? '#6366f122' : 'transparent', borderColor: hideWarming ? '#6366f1' : undefined }}
+                >
+                    {hideWarming ? 'Warming Hidden' : 'Showing All'}
+                </button>
             </header>
 
             <div className="page-content">
