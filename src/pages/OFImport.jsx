@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { OFImportService } from '../services/growthEngine';
+import { db } from '../db/db';
 
 export function OFImport() {
     const [result, setResult] = useState(null);
@@ -7,6 +8,7 @@ export function OFImport() {
     const [dragOver, setDragOver] = useState(false);
     const [history, setHistory] = useState([]);
     const [expandedModels, setExpandedModels] = useState(new Set());
+    const [resetting, setResetting] = useState(false);
 
     useEffect(() => {
         OFImportService.getImportHistory().then(setHistory);
@@ -49,10 +51,50 @@ export function OFImport() {
 
     const catLabel = { va: 'VA', ads: 'Paid Ads', sfs: 'SFS', reddit: 'Reddit', unknown: 'Unknown' };
 
+    const resetAllOFData = useCallback(async () => {
+        if (!confirm('This will DELETE all OF import data, snapshots, daily stats, models, VAs, and tracking links. Are you sure?')) return;
+        if (!confirm('FINAL WARNING: This cannot be undone. All OF Tracker data will be wiped. Continue?')) return;
+        setResetting(true);
+        try {
+            // Clear local Dexie tables (dependency order)
+            await db.ofDailyStats.clear();
+            await db.ofLinkSnapshots.clear();
+            await db.ofTrackingLinks.clear();
+            await db.ofBulkImports.clear();
+            await db.ofVas.clear();
+            await db.ofModels.clear();
+            // Clear cloud Supabase tables
+            try {
+                const { supabase } = await import('../db/supabase');
+                if (supabase) {
+                    const tables = ['ofDailyStats', 'ofLinkSnapshots', 'ofTrackingLinks', 'ofBulkImports', 'ofVas', 'ofModels'];
+                    for (const t of tables) {
+                        await supabase.from(t).delete().gte('id', 0);
+                    }
+                }
+            } catch (e) { console.warn('Cloud reset failed:', e); }
+            setResult(null);
+            setHistory([]);
+            alert('All OF data has been reset. You can now import a fresh XLSX as the new baseline.');
+        } catch (e) {
+            alert('Reset failed: ' + e.message);
+        } finally {
+            setResetting(false);
+        }
+    }, []);
+
     return (
         <>
             <header className="page-header">
                 <h1 className="page-title">Import XLSX</h1>
+                <button
+                    onClick={resetAllOFData}
+                    disabled={resetting}
+                    className="btn"
+                    style={{ backgroundColor: 'var(--status-danger)', color: '#fff', opacity: resetting ? 0.6 : 1 }}
+                >
+                    {resetting ? 'Resetting...' : 'Reset All OF Data'}
+                </button>
             </header>
             <div className="page-content">
                 {/* Drop zone */}
