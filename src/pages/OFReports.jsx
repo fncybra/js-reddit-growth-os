@@ -57,6 +57,16 @@ export function OFReports() {
         return { label: 'OK', cls: 'badge-info' };
     };
 
+    const getModelStatus = (model, report) => {
+        if (model.subs === 0) return { label: 'ZERO', cls: 'badge-danger' };
+        const modelSubsArr = report.modelRanking.filter(m => m.subs > 0).map(m => m.subs).sort((a, b) => a - b);
+        const median = modelSubsArr.length >= 3 ? modelSubsArr[Math.floor(modelSubsArr.length / 2)] : 0;
+        const top = report.modelRanking[0]?.subs || 1;
+        if (model.subs >= top * 0.7) return { label: 'TOP', cls: 'badge-success' };
+        if (median > 0 && model.subs < Math.max(Math.floor(median * 0.3), 1)) return { label: 'LOW', cls: 'badge-warning' };
+        return { label: 'OK', cls: 'badge-info' };
+    };
+
     return (
         <>
             <header className="page-header">
@@ -118,8 +128,8 @@ export function OFReports() {
                             <div className="card" style={{ borderLeft: '3px solid var(--status-warning)' }}>
                                 <h3 style={{ fontSize: '1rem', marginBottom: '8px', color: 'var(--status-warning)' }}>Needs Attention</h3>
                                 <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                                    {report.needsAttention.map((v, i) => (
-                                        <div key={i}>{v.va}: {v.subs} subs (below median threshold)</div>
+                                    {report.needsAttention.map((m, i) => (
+                                        <div key={i}>{m.model}: {m.subs} subs (below median threshold)</div>
                                     ))}
                                 </div>
                             </div>
@@ -165,11 +175,25 @@ export function OFReports() {
                                 <h3 style={{ fontSize: '1rem', marginBottom: '16px' }}>Model Subscribers</h3>
                                 <div className="data-table-container">
                                     <table className="data-table">
-                                        <thead><tr><th>Model</th><th>New Subs</th></tr></thead>
+                                        <thead><tr><th>Model</th><th>New Subs</th><th>Bar</th><th>Status</th></tr></thead>
                                         <tbody>
-                                            {report.modelRanking.map((m, i) => (
-                                                <tr key={i}><td style={{ fontWeight: 600 }}>{m.model}</td><td>{m.subs}</td></tr>
-                                            ))}
+                                            {report.modelRanking.map((m, i) => {
+                                                const maxSubs = report.modelRanking[0]?.subs || 1;
+                                                const pct = Math.round((m.subs / maxSubs) * 100);
+                                                const status = getModelStatus(m, report);
+                                                return (
+                                                    <tr key={i}>
+                                                        <td style={{ fontWeight: 600 }}>{m.model}</td>
+                                                        <td>{m.subs}</td>
+                                                        <td style={{ width: '30%' }}>
+                                                            <div style={{ background: 'var(--bg-surface-hover)', borderRadius: '4px', height: '16px', overflow: 'hidden' }}>
+                                                                <div style={{ width: `${pct}%`, height: '100%', background: 'var(--accent-primary)', borderRadius: '4px', transition: 'width 0.3s' }} />
+                                                            </div>
+                                                        </td>
+                                                        <td><span className={`badge ${status.cls}`}>{status.label}</span></td>
+                                                    </tr>
+                                                );
+                                            })}
                                         </tbody>
                                     </table>
                                 </div>
@@ -206,11 +230,23 @@ export function OFReports() {
                                 <h3 style={{ fontSize: '1rem', marginBottom: '16px' }}>Ad Platforms</h3>
                                 <div className="data-table-container">
                                     <table className="data-table">
-                                        <thead><tr><th>Platform</th><th>Subs</th></tr></thead>
+                                        <thead><tr><th>Platform</th><th>Subs</th><th>Bar</th></tr></thead>
                                         <tbody>
-                                            {report.adPlatforms.map((p, i) => (
-                                                <tr key={i}><td>{p.platform}</td><td>{p.subs}</td></tr>
-                                            ))}
+                                            {report.adPlatforms.map((p, i) => {
+                                                const maxSubs = report.adPlatforms[0]?.subs || 1;
+                                                const pct = Math.round((p.subs / maxSubs) * 100);
+                                                return (
+                                                    <tr key={i}>
+                                                        <td>{p.platform}</td>
+                                                        <td>{p.subs}</td>
+                                                        <td style={{ width: '30%' }}>
+                                                            <div style={{ background: 'var(--bg-surface-hover)', borderRadius: '4px', height: '16px', overflow: 'hidden' }}>
+                                                                <div style={{ width: `${pct}%`, height: '100%', background: 'var(--status-info)', borderRadius: '4px', transition: 'width 0.3s' }} />
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
                                         </tbody>
                                     </table>
                                 </div>
@@ -223,11 +259,23 @@ export function OFReports() {
                                 <h3 style={{ fontSize: '1rem', marginBottom: '16px' }}>SFS Sources</h3>
                                 <div className="data-table-container">
                                     <table className="data-table">
-                                        <thead><tr><th>Source</th><th>Subs</th></tr></thead>
+                                        <thead><tr><th>Source</th><th>Subs</th><th>Bar</th></tr></thead>
                                         <tbody>
-                                            {report.sfsSources.map((s, i) => (
-                                                <tr key={i}><td>{s.platform}</td><td>{s.subs}</td></tr>
-                                            ))}
+                                            {report.sfsSources.map((s, i) => {
+                                                const maxSubs = report.sfsSources[0]?.subs || 1;
+                                                const pct = Math.round((s.subs / maxSubs) * 100);
+                                                return (
+                                                    <tr key={i}>
+                                                        <td>{s.platform}</td>
+                                                        <td>{s.subs}</td>
+                                                        <td style={{ width: '30%' }}>
+                                                            <div style={{ background: 'var(--bg-surface-hover)', borderRadius: '4px', height: '16px', overflow: 'hidden' }}>
+                                                                <div style={{ width: `${pct}%`, height: '100%', background: '#a855f7', borderRadius: '4px', transition: 'width 0.3s' }} />
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
                                         </tbody>
                                     </table>
                                 </div>
@@ -257,6 +305,27 @@ export function OFReports() {
                                 </div>
                             </div>
                         )}
+
+                        {/* Period Comparison */}
+                        <div className="card">
+                            <h3 style={{ fontSize: '1rem', marginBottom: '16px' }}>Period Comparison</h3>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', textAlign: 'center' }}>
+                                <div>
+                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Current</div>
+                                    <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{report.comparison.current}</div>
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Previous</div>
+                                    <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-secondary)' }}>{report.comparison.previous}</div>
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Delta</div>
+                                    <div style={{ fontSize: '1.5rem', fontWeight: 700, color: report.comparison.delta >= 0 ? 'var(--status-success)' : 'var(--status-danger)' }}>
+                                        {report.comparison.delta >= 0 ? '+' : ''}{report.comparison.delta}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 )}
             </div>

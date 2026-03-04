@@ -4490,29 +4490,30 @@ export const OFReportService = {
         }
         const vaByModel = Array.from(vaByModelMap.values()).sort((a, b) => b.totalSubs - a.totalSubs);
 
-        // Ad & SFS platform breakdown
-        const latestImport = await db.ofBulkImports.orderBy('importDate').reverse().first();
+        // Ad & SFS platform breakdown (period-aware import lookup)
+        const allImports = await db.ofBulkImports.orderBy('importDate').reverse().toArray();
+        const currentImport = allImports.find(i => i.importDate <= end);
+        const prevImport = allImports.find(i => i.importDate < start);
         const buildSourceBreakdown = async (category) => {
-            if (!latestImport) return [];
-            const currSnaps = (await db.ofLinkSnapshots.where('importId').equals(latestImport.id).toArray())
+            if (!currentImport) return [];
+            const currSnaps = (await db.ofLinkSnapshots.where('importId').equals(currentImport.id).toArray())
                 .filter(s => s.sourceCategory === category);
-
-            // Find previous import
-            const allImports = await db.ofBulkImports.orderBy('importDate').reverse().toArray();
-            const prevImport = allImports.find(i => i.id !== latestImport.id);
 
             const map = new Map();
             for (const curr of currSnaps) {
                 const key = OFVAPatternService.normalizePlatformLabel(curr.label, category);
-                let delta = curr.subsCumulative;
+                let subsDelta = curr.subsCumulative;
+                let earningsDelta = curr.earningsCumulative || 0;
                 if (prevImport) {
                     const prev = await db.ofLinkSnapshots
                         .where('importId').equals(prevImport.id)
                         .and(r => r.ofModelId === curr.ofModelId && r.label === curr.label).first();
-                    delta = prev ? Math.max(0, curr.subsCumulative - prev.subsCumulative) : 0;
+                    subsDelta = prev ? Math.max(0, curr.subsCumulative - prev.subsCumulative) : 0;
+                    earningsDelta = prev ? Math.max(0, (curr.earningsCumulative || 0) - (prev.earningsCumulative || 0)) : 0;
                 }
                 const e = map.get(key) || { subs: 0, earnings: 0 };
-                e.subs += delta;
+                e.subs += subsDelta;
+                e.earnings += earningsDelta;
                 map.set(key, e);
             }
             return Array.from(map.entries())
@@ -4524,11 +4525,14 @@ export const OFReportService = {
         const adPlatforms = await buildSourceBreakdown('ads');
         const sfsSources = await buildSourceBreakdown('sfs');
 
-        // Needs attention: median-based
-        const vaSubs = vaRanking.filter(v => v.subs > 0).map(v => v.subs).sort((a, b) => a - b);
-        const median = vaSubs.length > 0 ? vaSubs[Math.floor(vaSubs.length / 2)] : 0;
+        // Needs attention: median-based on models (not VAs)
+        const modelSubsArr = modelRanking.filter(m => m.subs > 0).map(m => m.subs).sort((a, b) => a - b);
+        const median = modelSubsArr.length >= 3 ? modelSubsArr[Math.floor(modelSubsArr.length / 2)] : 0;
         const threshold = Math.max(Math.floor(median * 0.3), 1);
-        const needsAttention = vaRanking.filter(v => v.subs > 0 && v.subs < threshold);
+        const needsAttention = median > 0
+            ? modelRanking.filter(m => m.subs > 0 && m.subs < threshold && m.subs < median)
+                .map(m => ({ model: m.model, subs: m.subs }))
+            : [];
 
         return {
             period: { start, end, label: periodLabel },
@@ -4656,22 +4660,80 @@ export const OFReportService = {
         lines.push(`Active VAs: ${report.activeVAs} | Producing: ${report.producingVAs}`);
         lines.push('');
 
+        // Model subscribers with status tags
         if (report.modelRanking.length > 0) {
+            const modelSubsArr = report.modelRanking.filter(m => m.subs > 0).map(m => m.subs).sort((a, b) => a - b);
+            const median = modelSubsArr.length >= 3 ? modelSubsArr[Math.floor(modelSubsArr.length / 2)] : 0;
+            const topThreshold = modelSubsArr.length > 0 ? modelSubsArr[modelSubsArr.length - 1] * 0.7 : 0;
             lines.push('MODEL SUBSCRIBERS');
-            for (const m of report.modelRanking) lines.push(`  ${m.model}: ${m.subs}`);
+            for (const m of report.modelRanking) {
+                let tag = '';
+                if (m.subs === 0) tag = ' [ZERO]';
+                else if (median > 0 && m.subs < Math.max(Math.floor(median * 0.3), 1)) tag = ' [LOW]';
+                else if (m.subs >= topThreshold && topThreshold > 0) tag = ' [TOP]';
+                lines.push(`  ${m.model}: ${m.subs}${tag}`);
+            }
             lines.push('');
         }
 
+        // Needs Attention
+        if (report.needsAttention?.length > 0) {
+            lines.push('NEEDS ATTENTION');
+            for (const m of report.needsAttention) lines.push(`  ${m.model}: ${m.subs} subs (below median threshold)`);
+            lines.push('');
+        }
+
+        // VA performance with status tags
         if (report.vaRanking.length > 0) {
+            const topVASubs = report.vaRanking[0]?.subs || 1;
             lines.push('VA PERFORMANCE');
-            for (const v of report.vaRanking) lines.push(`  ${v.va}: ${v.subs} subs (${v.modelCount} models)`);
+            for (const v of report.vaRanking) {
+                let tag = '';
+                if (v.subs === 0) tag = ' [ZERO]';
+                else if (v.subs >= topVASubs * 0.7) tag = ' [TOP]';
+                lines.push(`  ${v.va}: ${v.subs} subs (${v.modelCount} models)${tag}`);
+            }
             lines.push('');
         }
 
+        // Subs by Model (nested VA + category per model)
+        if (report.vaByModel?.length > 0) {
+            lines.push('SUBS BY MODEL');
+            for (const m of report.vaByModel) {
+                lines.push(`  ${m.model}: ${m.totalSubs} subs`);
+                for (const v of m.vas) {
+                    lines.push(`    ${v.va}: ${v.subs}`);
+                }
+            }
+            lines.push('');
+        }
+
+        // Ad Platforms
+        if (report.adPlatforms?.length > 0) {
+            lines.push('AD PLATFORMS');
+            for (const p of report.adPlatforms) lines.push(`  ${p.platform}: ${p.subs} subs`);
+            lines.push('');
+        }
+
+        // SFS Sources
+        if (report.sfsSources?.length > 0) {
+            lines.push('SFS SOURCES');
+            for (const s of report.sfsSources) lines.push(`  ${s.platform}: ${s.subs} subs`);
+            lines.push('');
+        }
+
+        // Compensation
         if (report.compensation.length > 0) {
             lines.push('COMPENSATION');
             for (const c of report.compensation) lines.push(`  ${c.va}: ${c.subs} subs → $${c.amount}`);
+            lines.push('');
         }
+
+        // Period Comparison
+        lines.push('COMPARISON');
+        lines.push(`  Current: ${report.comparison.current}`);
+        lines.push(`  Previous: ${report.comparison.previous}`);
+        lines.push(`  Delta: ${report.comparison.delta >= 0 ? '+' : ''}${report.comparison.delta}`);
 
         return lines.join('\n');
     }
