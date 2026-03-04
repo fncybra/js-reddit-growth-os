@@ -65,7 +65,8 @@ export function OFImport() {
             await db.ofModels.clear();
             // Clear cloud Supabase tables
             try {
-                const { supabase } = await import('../db/supabase');
+                const { getSupabaseClient } = await import('../db/supabase');
+                const supabase = await getSupabaseClient();
                 if (supabase) {
                     const tables = ['ofDailyStats', 'ofLinkSnapshots', 'ofTrackingLinks', 'ofBulkImports', 'ofVas', 'ofModels'];
                     for (const t of tables) {
