@@ -145,3 +145,12 @@ db.on('populate', async () => {
         { id: generateId(), key: 'supabaseAnonKey', value: '' }
     ]);
 });
+
+// Auto-recover from stuck upgrade errors (e.g. failed v16 compound index attempt)
+db.open().catch(async (err) => {
+    if (err.name === 'UpgradeError' || err.name === 'VersionError') {
+        console.warn('Dexie upgrade failed, deleting and recreating DB...', err.message);
+        await db.delete();
+        await db.open();
+    }
+});
