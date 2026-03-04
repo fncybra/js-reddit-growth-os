@@ -66,7 +66,7 @@ export function Settings() {
         for (const [key, value] of Object.entries(settings)) {
             // Handle mixing types: vaPin stays string, others are numbers, api key is string
             let finalValue = value;
-            const textKeys = ['vaPin', 'openRouterApiKey', 'aiBaseUrl', 'openRouterModel', 'supabaseUrl', 'supabaseAnonKey', 'proxyUrl', 'telegramBotToken', 'telegramChatId', 'telegramThreadId', 'lastTelegramReportDate', 'airtableApiKey', 'airtableBaseId', 'airtableTableName', 'lastThreadsPatrol', 'threadsTelegramBotToken', 'threadsTelegramChatId', 'threadsTelegramThreadId', 'lastThreadsDailyReportDate', 'lastVASnapshot', 'threadsManagerPin', 'redditManagerPin'];
+            const textKeys = ['vaPin', 'openRouterApiKey', 'aiBaseUrl', 'openRouterModel', 'supabaseUrl', 'supabaseAnonKey', 'proxyUrl', 'telegramBotToken', 'telegramChatId', 'telegramThreadId', 'lastTelegramReportDate', 'airtableApiKey', 'airtableBaseId', 'airtableTableName', 'lastThreadsPatrol', 'threadsTelegramBotToken', 'threadsTelegramChatId', 'threadsTelegramThreadId', 'lastThreadsDailyReportDate', 'lastVASnapshot', 'threadsManagerPin', 'redditManagerPin', 'ofTelegramBotToken', 'ofTelegramChatId', 'ofTelegramThreadId', 'lastOFDailyReportDate'];
             if (!textKeys.includes(key) && value !== '') {
                 finalValue = Number(value);
             }
@@ -403,36 +403,6 @@ export function Settings() {
                             </div>
                         </div>
                         <div className="card">
-                            <h2 style={{ fontSize: '1.2rem', marginBottom: '20px' }}>Threads Health Patrol</h2>
-                            <small style={{ color: 'var(--text-secondary)', display: 'block', marginBottom: '16px' }}>
-                                Auto-detects dead/suspended Threads accounts across your fleet. Scaled for 2k+ accounts with adaptive batching and rate limit backoff.
-                            </small>
-                            <div className="input-group">
-                                <label className="input-label">Enable Health Patrol</label>
-                                <select className="input-field" value={String(settings.threadsPatrolEnabled ?? 1)} onChange={e => setSettings({ ...settings, threadsPatrolEnabled: Number(e.target.value) })}>
-                                    <option value="1">Enabled</option>
-                                    <option value="0">Disabled</option>
-                                </select>
-                            </div>
-                            <div className="input-group">
-                                <label className="input-label">Batch Size (accounts per patrol run)</label>
-                                <input type="number" className="input-field" value={settings.threadsPatrolBatchSize ?? 10} onChange={e => setSettings({ ...settings, threadsPatrolBatchSize: e.target.value })} min="1" max="50" />
-                                <small style={{ color: 'var(--text-secondary)' }}>For 2k accounts, use 15-25. Higher = faster rotation but more API calls per run.</small>
-                            </div>
-                            <div className="input-group">
-                                <label className="input-label">Patrol Interval (minutes)</label>
-                                <input type="number" className="input-field" value={settings.threadsPatrolIntervalMinutes ?? 15} onChange={e => setSettings({ ...settings, threadsPatrolIntervalMinutes: e.target.value })} min="5" max="120" />
-                                <small style={{ color: 'var(--text-secondary)' }}>How often the background patrol runs. At batch=20, interval=10min, 2k accounts take ~17 hours for full rotation.</small>
-                            </div>
-                            <div className="input-group">
-                                <label className="input-label">Delay Between Checks (ms)</label>
-                                <input type="number" className="input-field" value={settings.threadsPatrolDelayMs ?? 2000} onChange={e => setSettings({ ...settings, threadsPatrolDelayMs: e.target.value })} min="1000" max="10000" />
-                                <small style={{ color: 'var(--text-secondary)' }}>Lower = faster but risks rate limiting. 2000ms recommended.</small>
-                            </div>
-                            <button onClick={handleSave} className="btn btn-outline" style={{ width: '100%', marginTop: '8px' }}>Save Patrol Settings</button>
-                        </div>
-
-                        <div className="card">
                             <h2 style={{ fontSize: '1.2rem', marginBottom: '20px' }}>Threads Telegram Alerts</h2>
                             <small style={{ color: 'var(--text-secondary)', display: 'block', marginBottom: '16px' }}>
                                 Separate Telegram settings for Threads patrol alerts. If left blank, falls back to the main Reddit Telegram settings above.
@@ -533,6 +503,100 @@ export function Settings() {
                                     Send Now
                                 </button>
                             </div>
+                        </div>
+
+                        <div className="card">
+                            <h2 style={{ fontSize: '1.2rem', marginBottom: '20px' }}>OF Tracker Telegram</h2>
+                            <small style={{ color: 'var(--text-secondary)', display: 'block', marginBottom: '16px' }}>
+                                Separate Telegram settings for OF Tracker daily reports. If left blank, falls back to the main Telegram settings.
+                            </small>
+                            <div className="input-group">
+                                <label className="input-label">Bot Token (OF)</label>
+                                <input
+                                    type="password"
+                                    className="input-field"
+                                    placeholder="Leave blank to use main bot token"
+                                    value={settings.ofTelegramBotToken || ''}
+                                    onChange={e => setSettings({ ...settings, ofTelegramBotToken: e.target.value })}
+                                />
+                            </div>
+                            <div className="input-group">
+                                <label className="input-label">Chat ID (OF)</label>
+                                <input
+                                    type="text"
+                                    className="input-field"
+                                    placeholder="Leave blank to use main chat ID"
+                                    value={settings.ofTelegramChatId || ''}
+                                    onChange={e => setSettings({ ...settings, ofTelegramChatId: e.target.value })}
+                                />
+                            </div>
+                            <div className="input-group">
+                                <label className="input-label">Topic Thread ID (OF) <small>(optional)</small></label>
+                                <input
+                                    type="text"
+                                    className="input-field"
+                                    placeholder="Leave blank to use main thread ID"
+                                    value={settings.ofTelegramThreadId || ''}
+                                    onChange={e => setSettings({ ...settings, ofTelegramThreadId: e.target.value })}
+                                />
+                            </div>
+                            <div className="input-group">
+                                <label className="input-label">Enable OF Daily Report</label>
+                                <select className="input-field" value={String(settings.ofDailyReportEnabled ?? 0)} onChange={e => setSettings({ ...settings, ofDailyReportEnabled: Number(e.target.value) })}>
+                                    <option value="1">Enabled</option>
+                                    <option value="0">Disabled</option>
+                                </select>
+                            </div>
+                            <div className="input-group">
+                                <label className="input-label">Send After Hour (0-23)</label>
+                                <input type="number" className="input-field" value={settings.ofDailyReportHour ?? 20} onChange={e => setSettings({ ...settings, ofDailyReportHour: e.target.value })} min="0" max="23" />
+                                <small style={{ color: 'var(--text-secondary)' }}>Report auto-sends once per day after this hour (local time). Default: 8 PM.</small>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '12px' }}>
+                                <button onClick={handleSave} className="btn btn-primary">Save</button>
+                                <button
+                                    type="button"
+                                    className="btn btn-outline"
+                                    onClick={async () => {
+                                        const token = (settings.ofTelegramBotToken || settings.telegramBotToken || '').trim();
+                                        const chatId = (settings.ofTelegramChatId || settings.telegramChatId || '').trim();
+                                        const threadId = (settings.ofTelegramThreadId || settings.telegramThreadId || '').trim();
+                                        if (!token || !chatId) {
+                                            alert('No Telegram credentials configured for OF reports.');
+                                            return;
+                                        }
+                                        try {
+                                            const { TelegramService } = await import('../services/growthEngine');
+                                            await TelegramService.sendMessage(token, chatId, '<b>OF Tracker</b> — Test message. Reports will appear here.', threadId);
+                                            alert('Test message sent! Check your Telegram.');
+                                        } catch (e) {
+                                            alert('Failed: ' + e.message);
+                                        }
+                                    }}
+                                >
+                                    Test
+                                </button>
+                            </div>
+                            <button
+                                type="button"
+                                className="btn btn-outline"
+                                style={{ width: '100%', marginTop: '12px' }}
+                                onClick={async () => {
+                                    try {
+                                        const { TelegramService } = await import('../services/growthEngine');
+                                        const result = await TelegramService.sendOFDailyReport();
+                                        if (result.sent) {
+                                            alert('OF daily report sent! Check your Telegram.');
+                                        } else {
+                                            alert('Report not sent: ' + (result.reason || 'Unknown error'));
+                                        }
+                                    } catch (e) {
+                                        alert('Failed: ' + e.message);
+                                    }
+                                }}
+                            >
+                                Send OF Report Now
+                            </button>
                         </div>
 
                     </div>

@@ -17,6 +17,9 @@ import {
   Link2,
   AtSign,
   Lock,
+  BarChart3,
+  Upload,
+  FileText,
 } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
@@ -48,6 +51,15 @@ const navSections = [
     items: [
       { path: '/threads', label: 'Threads Dashboard', icon: AtSign },
       { path: '/threads/settings', label: 'Threads Settings', icon: Settings2 },
+    ],
+  },
+  {
+    label: 'OF TRACKER',
+    items: [
+      { path: '/of', label: 'OF Dashboard', icon: BarChart3 },
+      { path: '/of/import', label: 'Import Data', icon: Upload },
+      { path: '/of/reports', label: 'Reports', icon: FileText },
+      { path: '/of/config', label: 'Configuration', icon: Settings2 },
     ],
   },
   {

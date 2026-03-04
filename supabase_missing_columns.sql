@@ -116,3 +116,67 @@ ALTER TABLE models ADD COLUMN IF NOT EXISTS "identityNicheKeywords" TEXT;
 ALTER TABLE subreddits ADD COLUMN IF NOT EXISTS "postErrorHistory" TEXT;
 ALTER TABLE subreddits ADD COLUMN IF NOT EXISTS "minRequiredKarma" INTEGER;
 ALTER TABLE subreddits ADD COLUMN IF NOT EXISTS "minAccountAgeDays" INTEGER;
+
+-- ─── OF Tracker tables ───────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS "ofModels" (
+    "id" BIGSERIAL PRIMARY KEY,
+    "name" TEXT NOT NULL,
+    "ofUsername" TEXT,
+    "active" INTEGER DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS "ofVas" (
+    "id" BIGSERIAL PRIMARY KEY,
+    "name" TEXT NOT NULL,
+    "active" INTEGER DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS "ofTrackingLinks" (
+    "id" BIGSERIAL PRIMARY KEY,
+    "label" TEXT NOT NULL,
+    "ofModelId" BIGINT REFERENCES "ofModels"("id") ON DELETE CASCADE,
+    "ofVaId" BIGINT REFERENCES "ofVas"("id") ON DELETE CASCADE,
+    "platform" TEXT,
+    UNIQUE("label", "ofModelId")
+);
+
+CREATE TABLE IF NOT EXISTS "ofBulkImports" (
+    "id" BIGSERIAL PRIMARY KEY,
+    "importDate" TEXT NOT NULL,
+    "filename" TEXT NOT NULL,
+    "sheetCount" INTEGER DEFAULT 0,
+    "totalLinks" INTEGER DEFAULT 0,
+    "totalNewSubs" INTEGER DEFAULT 0,
+    "totalEarningsDelta" REAL DEFAULT 0,
+    "createdAt" TEXT
+);
+
+CREATE TABLE IF NOT EXISTS "ofLinkSnapshots" (
+    "id" BIGSERIAL PRIMARY KEY,
+    "importId" BIGINT REFERENCES "ofBulkImports"("id") ON DELETE CASCADE,
+    "ofModelId" BIGINT REFERENCES "ofModels"("id") ON DELETE CASCADE,
+    "ofVaId" BIGINT,
+    "label" TEXT NOT NULL,
+    "source" TEXT,
+    "platform" TEXT,
+    "sourceCategory" TEXT DEFAULT 'unknown',
+    "subsCumulative" INTEGER DEFAULT 0,
+    "clicksCumulative" INTEGER DEFAULT 0,
+    "earningsCumulative" REAL DEFAULT 0,
+    "fansWhoSpent" INTEGER DEFAULT 0,
+    "profit" REAL DEFAULT 0,
+    "lastUpdated" TEXT,
+    UNIQUE("importId", "ofModelId", "label")
+);
+
+CREATE TABLE IF NOT EXISTS "ofDailyStats" (
+    "id" BIGSERIAL PRIMARY KEY,
+    "statDate" TEXT NOT NULL,
+    "ofModelId" BIGINT REFERENCES "ofModels"("id") ON DELETE CASCADE,
+    "ofVaId" BIGINT,
+    "newSubs" INTEGER DEFAULT 0,
+    "totalSubs" INTEGER DEFAULT 0,
+    "revenueTotal" REAL DEFAULT 0,
+    UNIQUE("statDate", "ofModelId", "ofVaId")
+);

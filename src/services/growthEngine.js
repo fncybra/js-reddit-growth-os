@@ -77,11 +77,6 @@ export const SettingsService = {
             airtableApiKey: '',
             airtableBaseId: 'REDACTED_AIRTABLE_BASE_ID',
             airtableTableName: 'Phone Posting',
-            threadsPatrolEnabled: 1,
-            threadsPatrolIntervalMinutes: 15,
-            threadsPatrolBatchSize: 10,
-            threadsPatrolDelayMs: 2000,
-            lastThreadsPatrol: '',
             threadsTelegramBotToken: '',
             threadsTelegramChatId: '',
             threadsTelegramThreadId: '',
@@ -90,7 +85,13 @@ export const SettingsService = {
             lastThreadsDailyReportDate: '',
             lastVASnapshot: '',
             threadsManagerPin: '',
-            redditManagerPin: ''
+            redditManagerPin: '',
+            ofTelegramBotToken: '',
+            ofTelegramChatId: '',
+            ofTelegramThreadId: '',
+            ofDailyReportEnabled: 0,
+            ofDailyReportHour: 20,
+            lastOFDailyReportDate: ''
         };
         const settingsArr = await db.settings.toArray();
         const settings = { ...defaultSettings };
@@ -2049,7 +2050,7 @@ export const CloudSyncService = {
         const supabase = await getSupabaseClient();
         if (!supabase) return;
 
-        const allTables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'settings', 'verifications', 'dailySnapshots', 'competitors'];
+        const allTables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'settings', 'verifications', 'dailySnapshots', 'competitors', 'ofModels', 'ofVas', 'ofTrackingLinks', 'ofBulkImports', 'ofLinkSnapshots', 'ofDailyStats'];
         const tables = onlyTables || allTables;
         const TASK_STATUS_RANK = { 'generated': 1, 'failed': 2, 'closed': 3 };
 
@@ -2186,7 +2187,7 @@ export const CloudSyncService = {
         const supabase = await getSupabaseClient();
         if (!supabase) return;
 
-        const tables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'settings', 'verifications', 'dailySnapshots', 'competitors'];
+        const tables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'settings', 'verifications', 'dailySnapshots', 'competitors', 'ofModels', 'ofVas', 'ofTrackingLinks', 'ofBulkImports', 'ofLinkSnapshots', 'ofDailyStats'];
         const fetched = {};
 
         // Phase 1: fetch every table first; skip tables that don't exist in cloud yet
@@ -2384,7 +2385,7 @@ export const CloudSyncService = {
         const supabase = await getSupabaseClient();
         if (!supabase) return;
 
-        const tables = ['verifications', 'dailySnapshots', 'competitors', 'performances', 'tasks', 'assets', 'subreddits', 'accounts', 'models', 'settings'];
+        const tables = ['ofDailyStats', 'ofLinkSnapshots', 'ofTrackingLinks', 'ofBulkImports', 'ofVas', 'ofModels', 'verifications', 'dailySnapshots', 'competitors', 'performances', 'tasks', 'assets', 'subreddits', 'accounts', 'models', 'settings'];
         for (const table of tables) {
             const { error } = await supabase.from(table).delete().neq('id', -1);
             if (error) {
@@ -2410,7 +2411,26 @@ export const DriveSyncService = {
 
         if (!res.ok) {
             const errData = await res.json().catch(() => ({}));
-            throw new Error(errData.error || 'Failed to fetch from Drive');
+            const detail = errData.detail || '';
+            if (res.status === 403) {
+                // Fetch service account email to show the user exactly what to share with
+                let shareHint = 'Share the Google Drive folder with the service account email (check Settings or proxy logs).';
+                try {
+                    const infoRes = await fetch(`${proxyUrl}/api/drive/info`);
+                    if (infoRes.ok) {
+                        const info = await infoRes.json();
+                        if (info.email) shareHint = `Share the folder with: ${info.email}`;
+                    }
+                } catch (_) {}
+                throw new Error(`Drive folder not accessible (403 Forbidden). ${shareHint}`);
+            }
+            if (res.status === 404) {
+                throw new Error(`Drive folder not found (404). Check that the Folder ID is correct in the Models tab. ${detail ? '(' + detail + ')' : ''}`);
+            }
+            if (res.status === 503) {
+                throw new Error('Google Drive not configured on the proxy server. Check that SERVICE_ACCOUNT_JSON is set.');
+            }
+            throw new Error(detail || errData.error || 'Failed to fetch from Drive');
         }
 
         const driveFiles = await res.json();
@@ -3070,10 +3090,18 @@ export const TelegramService = {
             if (phases[p] !== undefined) phases[p]++;
         }
 
-        // Filter action items to critical + warning
+        // Stale accounts (no posts 3+ days)
+        const staleAccounts = accounts.filter(a => {
+            const p = (a.phase || '').toLowerCase();
+            if (p === 'burned' || p === 'warming') return false;
+            if (!a.lastSyncDate) return false;
+            const daysSinceSync = Math.floor((Date.now() - new Date(a.lastSyncDate).getTime()) / 86400000);
+            return daysSinceSync >= 3;
+        });
+
+        // Filter action items to critical + warning only
         const urgent = actionItems.filter(i => i.priority === 'critical' || i.priority === 'warning');
-        const criticalCount = urgent.filter(i => i.priority === 'critical').length;
-        const warningCount = urgent.filter(i => i.priority === 'warning').length;
+        const suspended = accounts.filter(a => a.isSuspended);
 
         // Top performer
         const topModel = metrics.leaderboard?.[0];
@@ -3082,27 +3110,28 @@ export const TelegramService = {
         const now = new Date();
         const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
-        // Build HTML report
-        const lines = [];
-        lines.push(`<b>Reddit Growth OS — Daily Report</b>`);
-        lines.push(dateStr);
-        lines.push('');
-
-        // Execution
         const exec = metrics.executionToday;
-        lines.push(`<b>Execution</b>`);
-        lines.push(`Posts completed: ${exec.completed}/${exec.total} (${exec.percent}%)`);
+        const lines = [];
+        lines.push(`<b>Reddit Daily Report</b> — ${dateStr}`);
         lines.push('');
 
-        // Agency KPIs
-        lines.push(`<b>Agency KPIs</b>`);
-        lines.push(`Total upvotes: ${metrics.agencyTotalViews.toLocaleString()} | Avg per post: ${metrics.agencyAvgViews.toLocaleString()}`);
-        lines.push(`Removal rate: ${metrics.agencyRemovalRate}% | Active accounts: ${metrics.activeAccounts}/${metrics.totalAccounts}`);
+        // EXECUTION
+        lines.push('<b>EXECUTION</b>');
+        lines.push(`Posts: ${exec.completed}/${exec.total} (${exec.percent}%)`);
+        lines.push(`Removal rate: ${metrics.agencyRemovalRate}%`);
         lines.push('');
 
-        // Account status
-        lines.push(`<b>Account Status</b>`);
-        lines.push(`Warming: ${phases.warming} | Ready: ${phases.ready} | Active: ${phases.active} | Resting: ${phases.resting} | Burned: ${phases.burned}`);
+        // PERFORMANCE
+        lines.push('<b>PERFORMANCE</b>');
+        lines.push(`Total views: ${metrics.agencyTotalViews.toLocaleString()} | Avg/post: ${metrics.agencyAvgViews.toLocaleString()}`);
+        if (topModel) {
+            lines.push(`Top model: ${topModel.name} — ${topModel.metrics.totalViews.toLocaleString()} views`);
+        }
+        lines.push('');
+
+        // FLEET
+        lines.push('<b>FLEET</b>');
+        lines.push(`Active: ${phases.active} | Ready: ${phases.ready} | Warming: ${phases.warming} | Burned: ${phases.burned}`);
         if (postedHandles.length > 0) {
             lines.push(`Posted today: ${postedHandles.join(', ')}`);
         } else {
@@ -3110,26 +3139,21 @@ export const TelegramService = {
         }
         lines.push('');
 
-        // Action items
-        if (urgent.length > 0) {
-            lines.push(`<b>Action Items</b> (${criticalCount} critical, ${warningCount} warnings)`);
-            const show = urgent.slice(0, 5);
-            for (const item of show) {
-                const icon = item.priority === 'critical' ? '🔴' : '🟡';
-                lines.push(`${icon} ${item.message}`);
+        // ATTENTION — only if there are issues
+        if (suspended.length > 0 || staleAccounts.length > 0 || urgent.length > 0) {
+            lines.push('<b>ATTENTION</b>');
+            if (suspended.length > 0) {
+                lines.push(`🔴 ${suspended.length} account${suspended.length > 1 ? 's' : ''} suspended`);
             }
-            if (urgent.length > 5) {
-                lines.push(`...and ${urgent.length - 5} more — check the dashboard`);
+            if (staleAccounts.length > 0) {
+                lines.push(`🟡 ${staleAccounts.length} account${staleAccounts.length > 1 ? 's' : ''} stale (no posts 3+ days)`);
             }
-        } else {
-            lines.push('<b>Action Items</b>: All clear!');
-        }
-        lines.push('');
-
-        // Top performer
-        if (topModel) {
-            lines.push(`<b>Top Performer</b>`);
-            lines.push(`${topModel.name}: ${topModel.metrics.totalViews.toLocaleString()} total upvotes`);
+            for (const item of urgent.filter(i => i.priority === 'critical').slice(0, 3)) {
+                lines.push(`🔴 ${item.message}`);
+            }
+            for (const item of urgent.filter(i => i.priority === 'warning').slice(0, 3)) {
+                lines.push(`🟡 ${item.message}`);
+            }
         }
 
         return lines.join('\n');
@@ -3165,76 +3189,67 @@ export const TelegramService = {
         const now = new Date();
         const dateStr = now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 
+        const totalThreads = vaCards.reduce((sum, v) => sum + (v.totalThreads || 0), 0);
+        const totalIdle = vaCards.reduce((sum, v) => sum + (v.idle || 0), 0);
+        const postingPct = fleet.active > 0 ? Math.round((fleet.active - totalIdle) / fleet.active * 100) : 0;
+        const fmt = (n) => (n >= 0 ? '+' + n : String(n));
+
         const lines = [];
         lines.push(`<b>Threads Daily Report</b> — ${dateStr}`);
         lines.push('');
 
-        // Active fleet only
-        const totalThreads = vaCards.reduce((sum, v) => sum + (v.totalThreads || 0), 0);
-        const totalIdle = vaCards.reduce((sum, v) => sum + (v.idle || 0), 0);
-        const totalPosting = fleet.active - totalIdle;
-        const postingPct = fleet.active > 0 ? Math.round(totalPosting / fleet.active * 100) : 0;
-        lines.push(`<b>Active Fleet</b>`);
+        // FLEET
+        lines.push('<b>FLEET</b>');
         lines.push(`${fleet.active} Active | ${fleet.warmUp} Warming | ${fleet.loginErrors} Errors`);
         lines.push(`${postingPct}% posting | ${totalIdle} idle | ${totalThreads.toLocaleString()} total posts`);
         if (delta.fleet) {
-            const d = delta.fleet;
-            const fmt = (n) => (n >= 0 ? '+' + n : String(n));
-            lines.push(`vs yesterday: ${fmt(d.activeChange)} active | ${fmt(d.followerChange)} followers`);
+            lines.push(`vs yesterday: ${fmt(delta.fleet.activeChange)} active | ${fmt(delta.fleet.followerChange)} followers`);
         }
         lines.push('');
 
-        // Slackers — VAs with idle accounts (not posting)
-        const slackers = vaCards
-            .filter(v => v.handler !== 'Unassigned' && v.idle > 0)
-            .sort((a, b) => b.idle - a.idle);
+        // VA SCORECARD — sorted worst → best posting %
+        const assignedVAs = vaCards
+            .filter(v => v.handler !== 'Unassigned' && (v.active + v.warmUp + v.loginErrors) > 0)
+            .sort((a, b) => (a.postingPct || 0) - (b.postingPct || 0));
 
-        if (slackers.length > 0) {
-            lines.push(`<b>Not Posting (${totalIdle} idle accounts)</b>`);
-            for (const v of slackers) {
-                const names = v.idleAccountNames.slice(0, 5).map(n => '@' + n).join(', ');
-                const extra = v.idleAccountNames.length > 5 ? ` +${v.idleAccountNames.length - 5} more` : '';
-                lines.push(`${v.handler}: ${v.idle} idle — ${names}${extra}`);
+        if (assignedVAs.length > 0) {
+            lines.push('<b>VA SCORECARD</b>');
+            for (const v of assignedVAs) {
+                const pct = v.postingPct || 0;
+                let icon;
+                if (pct < 50) icon = '❌';
+                else if (pct < 80) icon = '⚠️';
+                else icon = '✅';
+
+                let line = `${icon} ${v.handler}: ${pct}% posting (${v.idle}/${v.active} idle)`;
+                // Show idle account names for underperformers
+                if (pct < 80 && v.idleAccountNames && v.idleAccountNames.length > 0) {
+                    const names = v.idleAccountNames.slice(0, 3).map(n => '@' + n).join(', ');
+                    const extra = v.idleAccountNames.length > 3 ? ` +${v.idleAccountNames.length - 3}` : '';
+                    line += ` — ${names}${extra}`;
+                }
+                lines.push(line);
             }
             lines.push('');
         }
 
-        // Stale logins
+        // STALE LOGINS
         const staleVAs = vaCards.filter(v => v.handler !== 'Unassigned' && v.staleLogins.length > 0);
         if (staleVAs.length > 0) {
-            const totalStale = staleVAs.reduce((sum, v) => sum + v.staleLogins.length, 0);
-            lines.push(`<b>Not Logging In (${totalStale} stale)</b>`);
+            lines.push('<b>STALE LOGINS</b>');
             for (const v of staleVAs) {
-                const names = v.staleLogins.slice(0, 3).map(s => `@${s.username} (${s.daysSinceLogin}d)`).join(', ');
-                const extra = v.staleLogins.length > 3 ? ` +${v.staleLogins.length - 3} more` : '';
-                lines.push(`${v.handler}: ${v.staleLogins.length} stale — ${names}${extra}`);
+                lines.push(`${v.handler}: ${v.staleLogins.length} not logged in 3+ days`);
             }
             lines.push('');
         }
 
-        // Login errors
-        const errorVAs = vaCards.filter(v => v.handler !== 'Unassigned' && v.loginErrors > 0);
-        if (errorVAs.length > 0) {
-            lines.push(`<b>Login Errors</b>`);
-            for (const v of errorVAs) {
-                lines.push(`${v.handler}: ${v.loginErrors} error(s)`);
-            }
-            lines.push('');
-        }
-
-        // All clear
-        if (slackers.length === 0 && staleVAs.length === 0 && errorVAs.length === 0) {
-            lines.push('All VAs posting and logged in. No issues.');
-            lines.push('');
-        }
-
-        // Top VAs by posting %
+        // TOP 3
         const topVAs = vaCards
             .filter(v => v.handler !== 'Unassigned' && v.active > 0)
             .sort((a, b) => (b.postingPct || 0) - (a.postingPct || 0))
             .slice(0, 3);
         if (topVAs.length > 0) {
-            lines.push('<b>Top VAs</b>');
+            lines.push('<b>TOP 3</b>');
             topVAs.forEach((v, i) => {
                 const followerDelta = delta.va[v.handler]?.followerChange;
                 const fDelta = followerDelta ? ` (${followerDelta >= 0 ? '+' : ''}${followerDelta.toLocaleString()})` : '';
@@ -3261,6 +3276,61 @@ export const TelegramService = {
             return { sent: true };
         } catch (e) {
             console.error('[TelegramService] sendThreadsDailyReport failed:', e);
+            return { sent: false, reason: e.message || 'Unknown error' };
+        }
+    },
+
+    async buildOFDailyReport() {
+        const today = new Date().toISOString().split('T')[0];
+        const report = await OFReportService.getDailyReport(today);
+        const dateStr = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+        const fmt = (n) => (n >= 0 ? '+' + n : String(n));
+
+        const lines = [];
+        lines.push(`<b>OF Tracker Daily Report</b> — ${dateStr}`);
+        lines.push('');
+
+        // Model subs ranking
+        if (report.modelRanking.length > 0) {
+            lines.push('<b>MODEL SUBS</b>');
+            for (const m of report.modelRanking) {
+                lines.push(`${m.model}: ${m.subs}`);
+            }
+            lines.push('');
+        }
+
+        // VA performance
+        if (report.vaRanking.length > 0) {
+            lines.push('<b>VA PERFORMANCE</b>');
+            for (const v of report.vaRanking) {
+                const icon = v.subs === 0 ? '🔴' : v.subs >= 10 ? '🟢' : '🟡';
+                lines.push(`${icon} ${v.va}: ${v.subs} subs (${v.modelCount} models)`);
+            }
+            lines.push('');
+        }
+
+        // Totals
+        lines.push('<b>TOTALS</b>');
+        lines.push(`New subs: ${report.totalSubs} | vs yesterday: ${fmt(report.comparison.delta)}`);
+        lines.push(`VAs producing: ${report.producingVAs}/${report.activeVAs}`);
+
+        return lines.join('\n');
+    },
+
+    async sendOFDailyReport() {
+        try {
+            const settings = await SettingsService.getSettings();
+            const token = (settings.ofTelegramBotToken || settings.telegramBotToken || '').trim();
+            const chatId = (settings.ofTelegramChatId || settings.telegramChatId || '').trim();
+            const threadId = (settings.ofTelegramThreadId || settings.telegramThreadId || '').trim();
+            if (!token || !chatId) {
+                return { sent: false, reason: 'No Telegram credentials configured (OF or main)' };
+            }
+            const report = await this.buildOFDailyReport();
+            await this.sendMessage(token, chatId, report, threadId);
+            return { sent: true };
+        } catch (e) {
+            console.error('[TelegramService] sendOFDailyReport failed:', e);
             return { sent: false, reason: e.message || 'Unknown error' };
         }
     }
@@ -3504,302 +3574,6 @@ export const AirtableService = {
 };
 
 
-// ─── Threads Health Patrol (Automated Dead Account Detection) ─────────────────
-// Scaled for 2k+ accounts: adaptive batching, rate limit backoff, follower tracking
-
-export const ThreadsHealthService = {
-    _checkedThisSession: new Set(),
-    _rateLimitBackoff: 0, // ms to wait after rate limit hit
-    _consecutiveErrors: 0,
-
-    async checkAccountStatus(username) {
-        const proxyUrl = await SettingsService.getProxyUrl();
-        if (!proxyUrl) throw new Error('Proxy URL not configured');
-        const cleanName = String(username || '').replace(/^@/, '').trim();
-        if (!cleanName) return { status: 'error', error: 'Empty username' };
-
-        try {
-            const res = await fetchWithTimeout(
-                `${proxyUrl}/api/scrape/threads/user/stats/${encodeURIComponent(cleanName)}`,
-                {},
-                15000
-            );
-            if (!res.ok) {
-                return { status: 'error', error: `HTTP ${res.status}` };
-            }
-            return await res.json();
-        } catch (err) {
-            return { status: 'error', error: err.message };
-        }
-    },
-
-    async updateAirtableStatus(apiKey, baseId, tableName, recordId, newStatus) {
-        const url = `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}/${recordId}`;
-        const res = await fetch(url, {
-            method: 'PATCH',
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ fields: { 'Status': newStatus } }),
-        });
-        if (!res.ok) {
-            const body = await res.text().catch(() => '');
-            throw new Error(`Airtable write failed ${res.status}: ${body}`);
-        }
-        return await res.json();
-    },
-
-    async updateAirtableThreadCount(apiKey, baseId, tableName, recordId, threadCount) {
-        const url = `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}/${recordId}`;
-        const res = await fetch(url, {
-            method: 'PATCH',
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ fields: { 'Thread Count': threadCount, 'Last Post Date': new Date().toISOString().slice(0, 10) } }),
-        });
-        if (!res.ok) {
-            console.warn(`[ThreadsPatrol] Thread count update failed for ${recordId}`);
-        }
-    },
-
-    async updateAirtableFollowers(apiKey, baseId, tableName, recordId, followerCount) {
-        const url = `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}/${recordId}`;
-        const res = await fetch(url, {
-            method: 'PATCH',
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ fields: { 'Followers': followerCount } }),
-        });
-        if (!res.ok) {
-            // Non-critical — don't throw, just log
-            console.warn(`[ThreadsPatrol] Follower update failed for ${recordId}`);
-        }
-    },
-
-    async runPatrol() {
-        const settings = await SettingsService.getSettings();
-        if (!Number(settings.threadsPatrolEnabled)) {
-            console.log('[ThreadsPatrol] Disabled, skipping');
-            return { skipped: true, reason: 'disabled' };
-        }
-
-        const apiKey = (settings.airtableApiKey || '').trim();
-        const baseId = (settings.airtableBaseId || '').trim();
-        const tableName = (settings.airtableTableName || 'Phone Posting').trim();
-        if (!apiKey || !baseId) {
-            console.log('[ThreadsPatrol] Airtable not configured, skipping');
-            return { skipped: true, reason: 'airtable_not_configured' };
-        }
-
-        // Scale: allow batch sizes up to 50 for large fleets
-        const batchSize = Math.max(1, Math.min(50, Number(settings.threadsPatrolBatchSize) || 10));
-        const delayBetweenChecks = Math.max(1000, Number(settings.threadsPatrolDelayMs) || 2000);
-
-        // Rate limit backoff — if we got rate limited recently, wait before resuming
-        if (this._rateLimitBackoff > 0) {
-            const now = Date.now();
-            if (now < this._rateLimitBackoff) {
-                const waitSec = Math.round((this._rateLimitBackoff - now) / 1000);
-                console.log(`[ThreadsPatrol] Rate limit backoff active, ${waitSec}s remaining`);
-                return { skipped: true, reason: 'rate_limit_backoff', waitSeconds: waitSec };
-            }
-            this._rateLimitBackoff = 0;
-        }
-
-        // Pull accounts from Airtable
-        let accounts;
-        try {
-            accounts = await AirtableService.fetchAllAccounts(true);
-        } catch (err) {
-            console.error('[ThreadsPatrol] Failed to fetch accounts:', err.message);
-            return { skipped: true, reason: 'airtable_fetch_failed', error: err.message };
-        }
-
-        // Filter: skip accounts already marked Dead/Shadowbanned or Dead
-        const checkable = accounts.filter(a => {
-            const s = (a.status || '').toLowerCase();
-            return a.username && s !== 'dead' && s !== 'dead/shadowbanned';
-        });
-
-        if (checkable.length === 0) {
-            console.log('[ThreadsPatrol] No checkable accounts');
-            return { checked: 0, dead: 0, total: accounts.length };
-        }
-
-        // Reset rotation when all accounts have been checked
-        if (this._checkedThisSession.size >= checkable.length) {
-            console.log(`[ThreadsPatrol] Full rotation complete (${checkable.length} accounts), resetting`);
-            this._checkedThisSession.clear();
-        }
-
-        // Pick batch: accounts not yet checked this session
-        const unchecked = checkable.filter(a => !this._checkedThisSession.has(a.username));
-        const batch = unchecked.slice(0, batchSize);
-
-        const remaining = unchecked.length - batch.length;
-        const rotationsLeft = Math.ceil(remaining / batchSize);
-        const intervalMin = Number(settings.threadsPatrolIntervalMinutes) || 15;
-        const etaMinutes = rotationsLeft * intervalMin;
-
-        console.log(`[ThreadsPatrol] Checking ${batch.length}/${unchecked.length} accounts (${this._checkedThisSession.size}/${checkable.length} done, ETA: ~${etaMinutes}min for full rotation)`);
-
-        const results = [];
-        const newlyDead = [];
-        const newlySuspended = [];
-        const followerUpdates = [];
-        let rateLimited = false;
-
-        for (let i = 0; i < batch.length; i++) {
-            const account = batch[i];
-            this._checkedThisSession.add(account.username);
-            try {
-                const result = await this.checkAccountStatus(account.username);
-                results.push({ username: account.username, model: account.model, ...result });
-
-                if (result.status === 'not_found') {
-                    console.log(`[ThreadsPatrol] DEAD detected: ${account.username}`);
-                    newlyDead.push(account);
-                    try {
-                        await this.updateAirtableStatus(apiKey, baseId, tableName, account.id, 'Dead');
-                    } catch (writeErr) {
-                        console.error(`[ThreadsPatrol] Airtable write failed for ${account.username}:`, writeErr.message);
-                    }
-                } else if (result.status === 'rate_limited') {
-                    console.warn('[ThreadsPatrol] Rate limited — applying exponential backoff');
-                    this._consecutiveErrors++;
-                    const backoffMs = Math.min(300000, 30000 * Math.pow(2, this._consecutiveErrors - 1)); // 30s, 60s, 120s, max 5min
-                    this._rateLimitBackoff = Date.now() + backoffMs;
-                    rateLimited = true;
-                    break;
-                } else if (result.status === 'active' || result.exists) {
-                    this._consecutiveErrors = 0;
-                    // Track follower count changes
-                    if (result.followerCount != null && result.followerCount !== account.followers) {
-                        followerUpdates.push({ account, newCount: result.followerCount, oldCount: account.followers });
-                        this.updateAirtableFollowers(apiKey, baseId, tableName, account.id, result.followerCount).catch(() => {});
-                    }
-                    // Track thread/post count
-                    if (result.threadCount != null && result.threadCount > 0 && result.threadCount !== account.threadCount) {
-                        this.updateAirtableThreadCount(apiKey, baseId, tableName, account.id, result.threadCount).catch(() => {});
-                    }
-                }
-
-                // Delay between requests
-                if (i < batch.length - 1) {
-                    await new Promise(r => setTimeout(r, delayBetweenChecks));
-                }
-            } catch (err) {
-                console.error(`[ThreadsPatrol] Error checking ${account.username}:`, err.message);
-                results.push({ username: account.username, model: account.model, status: 'error', error: err.message });
-                this._consecutiveErrors++;
-                // If too many consecutive errors, pause
-                if (this._consecutiveErrors >= 5) {
-                    console.warn('[ThreadsPatrol] 5+ consecutive errors, pausing');
-                    break;
-                }
-            }
-        }
-
-        // Dead accounts are tracked — no instant alerts, covered by daily report
-
-        // Store patrol summary
-        const summary = {
-            timestamp: new Date().toISOString(),
-            checked: results.length,
-            healthy: results.filter(r => r.status === 'active' || r.exists).length,
-            dead: newlyDead.length,
-            errors: results.filter(r => r.status === 'error').length,
-            rateLimited,
-            followerUpdates: followerUpdates.length,
-            totalAccounts: accounts.length,
-            sessionProgress: this._checkedThisSession.size,
-            sessionTotal: checkable.length,
-            etaMinutes,
-            batchSize,
-        };
-        await SettingsService.updateSetting('lastThreadsPatrol', JSON.stringify(summary));
-
-        // Clear Airtable cache so next dashboard load shows fresh data
-        if (newlyDead.length > 0 || followerUpdates.length > 0) {
-            AirtableService.clearCache();
-        }
-
-        console.log(`[ThreadsPatrol] Done: ${results.length} checked, ${newlyDead.length} dead, ${summary.healthy} healthy, ${followerUpdates.length} follower updates`);
-        return summary;
-    },
-
-    // Manual full-fleet scan — runs through ALL accounts in one go (for dashboard button)
-    async runFullScan(onProgress) {
-        const settings = await SettingsService.getSettings();
-        const apiKey = (settings.airtableApiKey || '').trim();
-        const baseId = (settings.airtableBaseId || '').trim();
-        const tableName = (settings.airtableTableName || 'Phone Posting').trim();
-        if (!apiKey || !baseId) throw new Error('Airtable not configured');
-
-        const accounts = await AirtableService.fetchAllAccounts(true);
-        const checkable = accounts.filter(a => {
-            const s = (a.status || '').toLowerCase();
-            return a.username && s !== 'dead' && s !== 'dead/shadowbanned';
-        });
-
-        const totalDead = [];
-        const totalErrors = [];
-        const totalHealthy = [];
-
-        for (let i = 0; i < checkable.length; i++) {
-            const account = checkable[i];
-            if (onProgress) onProgress({ current: i + 1, total: checkable.length, username: account.username });
-
-            try {
-                const result = await this.checkAccountStatus(account.username);
-                if (result.status === 'not_found') {
-                    totalDead.push(account);
-                    try {
-                        await this.updateAirtableStatus(apiKey, baseId, tableName, account.id, 'Dead');
-                    } catch (_) {}
-                } else if (result.status === 'rate_limited') {
-                    // Wait 30s and continue
-                    await new Promise(r => setTimeout(r, 30000));
-                    i--; // retry this account
-                    continue;
-                } else if (result.exists) {
-                    totalHealthy.push(account);
-                    if (result.followerCount != null && result.followerCount !== account.followers) {
-                        this.updateAirtableFollowers(apiKey, baseId, tableName, account.id, result.followerCount).catch(() => {});
-                    }
-                    if (result.threadCount != null && result.threadCount > 0 && result.threadCount !== account.threadCount) {
-                        this.updateAirtableThreadCount(apiKey, baseId, tableName, account.id, result.threadCount).catch(() => {});
-                    }
-                } else {
-                    totalErrors.push(account);
-                }
-            } catch (err) {
-                totalErrors.push(account);
-            }
-
-            // 2s delay between checks
-            if (i < checkable.length - 1) {
-                await new Promise(r => setTimeout(r, 2000));
-            }
-        }
-
-        AirtableService.clearCache();
-        this._checkedThisSession.clear();
-
-        return {
-            total: checkable.length,
-            healthy: totalHealthy.length,
-            dead: totalDead.length,
-            errors: totalErrors.length,
-            deadAccounts: totalDead.map(a => ({ username: a.username, model: a.model })),
-        };
-    }
-};
 
 // ─── Threads Growth Intelligence ──────────────────────────────────────────────
 // Analyzes Threads fleet data for growth insights, patterns, and recommendations
@@ -4194,4 +3968,687 @@ export const VAReportService = {
         }
         await SettingsService.updateSetting('lastVASnapshot', JSON.stringify(snapshot));
     },
+};
+
+// ─── OF Tracker: VA Pattern Matching ──────────────────────────────────────────
+
+export const OFVAPatternService = {
+    VA_LABEL_PATTERNS: [
+        { va: 'Sarah', regex: /^SARAH\s+(P|M|PHONE|POST)\b/i },
+        { va: 'Arron', regex: /^ARRON\s+(P|B|BOT|M)\b/i },
+        { va: 'Cha', regex: /^CHA\s+P\b/i },
+        { va: 'Jaja', regex: /^JA\s+P\b/i },
+        { va: 'Jeff', regex: /^JEFF\s+(M|F|M\/S)\b/i },
+        { va: 'Michon', regex: /^MICHON\s+P\b/i },
+        { va: 'John', regex: /^JOHN\s+(P|M\/S)\b/i },
+        { va: 'MK', regex: /^MK\s+(P|F)\b/i },
+        { va: 'Kaye', regex: /^KAYE\s+P\b/i },
+        { va: 'Angel', regex: /^ANGEL\s+(P|PHONE)\b/i },
+        { va: 'Gabbie', regex: /^GABBIE\s+P\b/i },
+        { va: 'Aira', regex: /^AIRA\s+(P|M|M\/S)\b/i },
+        { va: 'Kyle', regex: /^KYLE\s+(P|TEST)\b/i },
+        { va: 'Migs', regex: /^MIGS\s+P\b/i },
+        { va: 'Trixie', regex: /^TRIXIE\s+(PHONE|P|E)\b/i },
+        { va: 'Trixie', regex: /^erome\b/i },
+        { va: 'Jaja', regex: /^JAJA\s+(P|MAIA)\b/i },
+        { va: 'Amaka', regex: /^AMAKA\s+P\b/i },
+        { va: 'Cozza', regex: /^COZZA\s+(S|POSTING)\b/i },
+        { va: 'Den', regex: /^DEN\s+BOT\b/i },
+        { va: 'Larry', regex: /^LARRY\s+P\b/i },
+        { va: 'Ogug', regex: /^OGUG\s+P\b/i },
+        { va: 'Anthonia', regex: /^ANTHONIA\s+P\b/i },
+        { va: 'Matteo', regex: /\bmatteo\b/i },
+        { va: 'Nathanael', regex: /^Nathanael\b/i },
+        { va: 'Mimi', regex: /\bmimi\b/i },
+        { va: 'Maxime', regex: /\bMaxime\b/i },
+        { va: 'Hans', regex: /\bHANS\b/i },
+        { va: 'Jake', regex: /^(JAKE|THREADS JAKE)\b/i },
+    ],
+
+    ADS_PATTERNS: [
+        /onlyfinder/i, /juicy\s*(ads|traffic)/i, /juicyads/i, /vaultfinder/i,
+        /creatortraffic/i, /creator traffic/i, /onlysearch/i, /porndude/i,
+        /pornpics/i, /juicysearch/i, /inflow/i, /oneup/i, /one up/i,
+    ],
+
+    REDDIT_PATTERNS: [/\breddit\b/i, /\breddit\s+preggo\b/i],
+
+    SFS_PATTERNS: [
+        /^sfs\b/i, /\bsfs\b/i, /\bcrosspromo\b/i, /\bswap\b/i,
+        /\bshout\s*out\b/i, /\bcollab\b/i, /\bGG\b/, /\b\d+\s*gg\b/i,
+    ],
+
+    SENTINEL_VA_IDS: { unknown: -1, ads: -2, sfs: -3, reddit: -4 },
+
+    matchVA(label) {
+        for (const { va, regex } of this.VA_LABEL_PATTERNS) {
+            if (regex.test(label)) return va;
+        }
+        return null;
+    },
+
+    classifySource(label) {
+        if (this.matchVA(label)) return 'va';
+        for (const re of this.REDDIT_PATTERNS) { if (re.test(label)) return 'reddit'; }
+        for (const re of this.ADS_PATTERNS) { if (re.test(label)) return 'ads'; }
+        for (const re of this.SFS_PATTERNS) { if (re.test(label)) return 'sfs'; }
+        return 'unknown';
+    },
+
+    detectPlatform(label, source) {
+        const l = label.toLowerCase();
+        const s = (source || '').toLowerCase();
+        if (s === 'reddit' || l.includes('reddit')) return 'reddit';
+        if (s === 'instagram' || l.includes('insta') || l.includes('ig ') || l.startsWith('ig') || l.includes('m/s')) return 'instagram';
+        if (l.includes('thread')) return 'threads';
+        if (s === 'twitter' || l.includes('twitter') || l.includes('x mass') || l.includes('xbot') || l.includes('cupid x')) return 'twitter';
+        if (s.includes('tinder') || l.includes('tinder')) return 'tinder';
+        if (s === 'onlyfinder' || l.includes('onlyfinder') || l.includes('juicy')) return 'ads';
+        if (l.includes('erome')) return 'erome';
+        if (l.includes('tiktok') || s === 'tiktok') return 'tiktok';
+        if (l.includes('fetlife')) return 'fetlife';
+        if (l.includes('telegram')) return 'telegram';
+        if (l.includes('sfs') || s === 'sfs') return 'sfs';
+        if (l.includes('youtube') || s === 'youtube') return 'youtube';
+        if (l.includes('snap')) return 'snapchat';
+        if (s.includes('dating') || l.includes('bumble') || l.includes('okcupid') || l.includes('ok cupid')) return 'dating';
+        return null;
+    },
+
+    extractModelName(sheetName) {
+        const match = sheetName.match(/^(.+?)\s*\(/);
+        return match ? match[1].trim().replace(/[^\w\s'-]/g, '').trim() : sheetName.trim();
+    },
+
+    normalizePlatformLabel(label, category) {
+        const l = label.toLowerCase().trim();
+        if (category === 'ads') {
+            if (l.includes('juicy')) return 'Juicy Ads';
+            if (l.includes('onlyfinder')) return 'OnlyFinder';
+            if (l.includes('vaultfinder')) return 'VaultFinder';
+            if (l.includes('creatortraffic') || l.includes('creator traffic')) return 'Creator Traffic';
+            if (l.includes('onlysearch')) return 'OnlySearch';
+            if (l.includes('porndude')) return 'PornDude';
+            if (l.includes('pornpics')) return 'PornPics';
+            if (l.includes('juicysearch')) return 'JuicySearch';
+            if (l.includes('inflow')) return 'Inflow';
+            if (l.includes('oneup') || l.includes('one up')) return 'OneUp';
+            return label.trim();
+        }
+        if (category === 'sfs') {
+            const ggMatch = label.match(/^(.+?)\s+\d+\s*gg/i);
+            if (ggMatch) return ggMatch[1].trim();
+            return label.trim();
+        }
+        return label.trim();
+    },
+
+    computeCompensation(subs) {
+        if (subs >= 2000) return 20;
+        if (subs >= 1200) return 15;
+        if (subs >= 600) return 10;
+        return 0;
+    }
+};
+
+// ─── OF Tracker: XLSX Import Service ──────────────────────────────────────────
+
+export const OFImportService = {
+    parseAmount(val) {
+        if (val === null || val === undefined || val === '') return 0;
+        const str = String(val).replace(/[$,]/g, '');
+        const num = parseFloat(str);
+        return isNaN(num) ? 0 : num;
+    },
+
+    async processXLSX(arrayBuffer, filename) {
+        const XLSX = (await import('xlsx')).default || await import('xlsx');
+        const dateMatch = filename.match(/(\d{4}-\d{2}-\d{2})/);
+        const importDate = dateMatch ? dateMatch[1] : new Date().toISOString().split('T')[0];
+
+        const wb = XLSX.read(arrayBuffer, { type: 'array' });
+        const errors = [];
+
+        if (wb.SheetNames.length === 0) {
+            return {
+                importId: 0, importDate, sheetCount: 0, totalLinks: 0,
+                totalNewSubs: 0, totalCumulativeSubs: 0, totalEarningsDelta: 0, totalCumulativeEarnings: 0,
+                sourceBreakdown: [], models: [], unmappedLabels: [], errors: ['No sheets found in XLSX file'],
+            };
+        }
+
+        const importId = generateId();
+        await db.ofBulkImports.add({
+            id: importId, filename, importDate, sheetCount: wb.SheetNames.length,
+            totalLinks: 0, totalNewSubs: 0, totalEarningsDelta: 0, createdAt: new Date().toISOString()
+        });
+
+        // Check if this is the very first import
+        const allImports = await db.ofBulkImports.toArray();
+        const isFirstEverImport = allImports.length <= 1;
+
+        const modelResults = [];
+        const unmappedLabels = [];
+        let totalLinks = 0, totalNewSubs = 0, totalEarningsDelta = 0;
+        const globalSourceStats = new Map();
+
+        for (const sheetName of wb.SheetNames) {
+            const modelName = OFVAPatternService.extractModelName(sheetName);
+            const ws = wb.Sheets[sheetName];
+            const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+            if (rows.length === 0) {
+                errors.push(`Sheet "${sheetName}" has no data rows`);
+                continue;
+            }
+
+            // Find or create model
+            let model = (await db.ofModels.where('name').equalsIgnoreCase(modelName).first());
+            if (!model) {
+                const modelId = generateId();
+                model = { id: modelId, name: modelName, ofUsername: '', active: 1 };
+                await db.ofModels.add(model);
+            }
+            const modelId = model.id;
+
+            let sheetLinks = 0;
+            const vaSubsMap = new Map();
+            const catStatsMap = new Map();
+            let modelSubs = 0, modelCumSubs = 0, modelEarnings = 0, modelCumEarnings = 0;
+
+            for (const row of rows) {
+                const label = String(row['Tracking link'] || '').trim();
+                if (!label) continue;
+
+                const source = String(row['Source'] || '').trim();
+                const subsCumulative = this.parseAmount(row['Subs']);
+                const earningsCumulative = this.parseAmount(row['Earnings']);
+                const clicksCumulative = this.parseAmount(row['Clicks']);
+                const fansWhoSpent = this.parseAmount(row['Fans who spent']);
+                const profit = this.parseAmount(row['Profit']);
+                const lastUpdated = String(row['Last updated'] || '').trim() || null;
+
+                const category = OFVAPatternService.classifySource(label);
+                const vaName = category === 'va' ? OFVAPatternService.matchVA(label) : null;
+                let vaId = null;
+
+                if (vaName) {
+                    let va = await db.ofVas.where('name').equalsIgnoreCase(vaName).first();
+                    if (!va) {
+                        vaId = generateId();
+                        va = { id: vaId, name: vaName, active: 1 };
+                        await db.ofVas.add(va);
+                    } else {
+                        vaId = va.id;
+                    }
+                }
+
+                if (category === 'unknown') {
+                    unmappedLabels.push({ label, model: model.name, category });
+                }
+
+                const platform = OFVAPatternService.detectPlatform(label, source);
+
+                // Auto-create tracking link if VA-owned
+                if (vaId) {
+                    const existingLink = await db.ofTrackingLinks
+                        .where('[label+ofModelId]').equals([label, modelId]).first();
+                    if (!existingLink) {
+                        await db.ofTrackingLinks.add({
+                            id: generateId(), label, ofModelId: modelId, ofVaId: vaId, platform
+                        });
+                    }
+                }
+
+                // Insert link snapshot (check for dupe within same import)
+                const existingSnap = await db.ofLinkSnapshots
+                    .where('[importId+ofModelId+label]').equals([importId, modelId, label]).first();
+                if (!existingSnap) {
+                    const sentinelId = !vaId ? (OFVAPatternService.SENTINEL_VA_IDS[category] ?? -1) : null;
+                    await db.ofLinkSnapshots.add({
+                        id: generateId(), importId, ofModelId: modelId,
+                        ofVaId: vaId || sentinelId, label, source: source || null,
+                        platform, sourceCategory: category,
+                        subsCumulative, clicksCumulative, earningsCumulative,
+                        fansWhoSpent, profit, lastUpdated
+                    });
+                }
+
+                sheetLinks++;
+                totalLinks++;
+
+                // Delta computation — find previous snapshot for this model+label
+                const prevSnapshots = await db.ofLinkSnapshots
+                    .where('[importId+ofModelId+label]')
+                    .between(
+                        [0, modelId, label],
+                        [importId, modelId, label],
+                        true, false
+                    ).reverse().toArray();
+                // Filter to only those from different imports
+                const prevSnapshot = prevSnapshots.find(s => s.importId !== importId);
+
+                let subsDelta, earningsDelta;
+                if (prevSnapshot) {
+                    subsDelta = Math.max(0, subsCumulative - prevSnapshot.subsCumulative);
+                    earningsDelta = Math.max(0, earningsCumulative - prevSnapshot.earningsCumulative);
+                } else {
+                    subsDelta = isFirstEverImport ? subsCumulative : 0;
+                    earningsDelta = isFirstEverImport ? earningsCumulative : 0;
+                }
+
+                // Global source stats
+                const gs = globalSourceStats.get(category) || { subs: 0, cumSubs: 0, earnings: 0, cumEarnings: 0, links: 0 };
+                gs.subs += subsDelta; gs.cumSubs += subsCumulative;
+                gs.earnings += earningsDelta; gs.cumEarnings += earningsCumulative; gs.links++;
+                globalSourceStats.set(category, gs);
+
+                // Model totals
+                modelSubs += subsDelta; modelCumSubs += subsCumulative;
+                modelEarnings += earningsDelta; modelCumEarnings += earningsCumulative;
+                totalNewSubs += subsDelta; totalEarningsDelta += earningsDelta;
+
+                // VA breakdown
+                if (category === 'va' && vaName) {
+                    const existing = vaSubsMap.get(vaName) || { subs: 0, cumSubs: 0, earnings: 0, cumEarnings: 0, vaId };
+                    existing.subs += subsDelta; existing.cumSubs += subsCumulative;
+                    existing.earnings += earningsDelta; existing.cumEarnings += earningsCumulative;
+                    vaSubsMap.set(vaName, existing);
+                }
+
+                // Non-VA category totals
+                if (category !== 'va') {
+                    const cs = catStatsMap.get(category) || { subs: 0, earnings: 0 };
+                    cs.subs += subsDelta; cs.earnings += earningsDelta;
+                    catStatsMap.set(category, cs);
+                }
+            }
+
+            const vaBreakdown = Array.from(vaSubsMap.entries())
+                .map(([va, s]) => ({ va, subs: s.subs, cumulativeSubs: s.cumSubs, earnings: s.earnings, cumulativeEarnings: s.cumEarnings }))
+                .sort((a, b) => b.subs - a.subs);
+
+            modelResults.push({
+                name: model.name, links: sheetLinks, newSubs: modelSubs,
+                cumulativeSubs: modelCumSubs, earnings: modelEarnings,
+                cumulativeEarnings: modelCumEarnings, vaBreakdown,
+            });
+
+            // Upsert daily stats — VA-attributed
+            for (const [vaName, stats] of vaSubsMap) {
+                if (stats.subs === 0 && stats.earnings === 0) continue;
+                const existingStat = await db.ofDailyStats
+                    .where('[statDate+ofModelId+ofVaId]')
+                    .equals([importDate, modelId, stats.vaId]).first();
+                if (existingStat) {
+                    await db.ofDailyStats.update(existingStat.id, { newSubs: stats.subs, revenueTotal: stats.earnings });
+                } else {
+                    await db.ofDailyStats.add({
+                        id: generateId(), statDate: importDate, ofModelId: modelId,
+                        ofVaId: stats.vaId, newSubs: stats.subs, totalSubs: stats.subs, revenueTotal: stats.earnings
+                    });
+                }
+            }
+
+            // Upsert daily stats — non-VA categories (sentinel IDs)
+            for (const [cat, stats] of catStatsMap) {
+                if (stats.subs === 0 && stats.earnings === 0) continue;
+                const sentinelId = OFVAPatternService.SENTINEL_VA_IDS[cat] ?? -1;
+                const existingStat = await db.ofDailyStats
+                    .where('[statDate+ofModelId+ofVaId]')
+                    .equals([importDate, modelId, sentinelId]).first();
+                if (existingStat) {
+                    await db.ofDailyStats.update(existingStat.id, { newSubs: stats.subs, revenueTotal: stats.earnings });
+                } else {
+                    await db.ofDailyStats.add({
+                        id: generateId(), statDate: importDate, ofModelId: modelId,
+                        ofVaId: sentinelId, newSubs: stats.subs, totalSubs: stats.subs, revenueTotal: stats.earnings
+                    });
+                }
+            }
+        }
+
+        // Update import totals
+        await db.ofBulkImports.update(importId, { totalLinks, totalNewSubs, totalEarningsDelta });
+
+        // Deduplicate unmapped
+        const seenUnmapped = new Set();
+        const dedupedUnmapped = unmappedLabels.filter(u => {
+            const key = `${u.model}||${u.label}`;
+            if (seenUnmapped.has(key)) return false;
+            seenUnmapped.add(key);
+            return true;
+        });
+
+        const totalCumulativeSubs = modelResults.reduce((s, m) => s + m.cumulativeSubs, 0);
+        const totalCumulativeEarnings = modelResults.reduce((s, m) => s + m.cumulativeEarnings, 0);
+
+        // Build source breakdown
+        const sourceBreakdown = [];
+        for (const [cat, stats] of globalSourceStats) {
+            sourceBreakdown.push({
+                category: cat, subs: stats.subs, cumulativeSubs: stats.cumSubs,
+                earnings: stats.earnings, cumulativeEarnings: stats.cumEarnings, linkCount: stats.links,
+            });
+        }
+        sourceBreakdown.sort((a, b) => b.cumulativeSubs - a.cumulativeSubs);
+
+        return {
+            importId, importDate, sheetCount: wb.SheetNames.length, totalLinks,
+            totalNewSubs, totalCumulativeSubs, totalEarningsDelta, totalCumulativeEarnings,
+            sourceBreakdown, models: modelResults, unmappedLabels: dedupedUnmapped, errors,
+        };
+    },
+
+    async getImportHistory() {
+        return (await db.ofBulkImports.orderBy('importDate').reverse().toArray());
+    }
+};
+
+// ─── OF Tracker: Report & Stats Service ───────────────────────────────────────
+
+export const OFReportService = {
+    async getSummary() {
+        const totalModels = await db.ofModels.where('active').equals(1).count();
+        const totalVAs = await db.ofVas.where('active').equals(1).count();
+
+        // Latest import for cumulative totals
+        const latestImport = await db.ofBulkImports.orderBy('id').reverse().first();
+        let totalSubs = 0, totalRevenue = 0;
+
+        if (latestImport) {
+            const snaps = await db.ofLinkSnapshots.where('importId').equals(latestImport.id).toArray();
+            for (const s of snaps) {
+                totalSubs += s.subsCumulative || 0;
+                totalRevenue += s.earningsCumulative || 0;
+            }
+        }
+
+        // Today's new subs
+        const today = new Date().toISOString().split('T')[0];
+        const todayStats = await db.ofDailyStats.where('statDate').equals(today).toArray();
+        const todayNewSubs = todayStats.reduce((sum, s) => sum + (s.newSubs || 0), 0);
+        const todayEarnings = todayStats.reduce((sum, s) => sum + (s.revenueTotal || 0), 0);
+
+        return { totalModels, totalVAs, totalSubs, totalRevenue, todayNewSubs, todayEarnings };
+    },
+
+    async getTrends(days = 30, modelId, vaId) {
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - days);
+        const cutoffStr = cutoff.toISOString().split('T')[0];
+
+        let allStats = await db.ofDailyStats.toArray();
+        allStats = allStats.filter(s => s.statDate >= cutoffStr);
+        if (modelId) allStats = allStats.filter(s => s.ofModelId === modelId);
+        if (vaId) allStats = allStats.filter(s => s.ofVaId === vaId);
+
+        // Group by date
+        const byDate = new Map();
+        for (const s of allStats) {
+            const d = byDate.get(s.statDate) || { date: s.statDate, newSubs: 0, revenue: 0 };
+            d.newSubs += s.newSubs || 0;
+            d.revenue += s.revenueTotal || 0;
+            byDate.set(s.statDate, d);
+        }
+        return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+    },
+
+    async buildReport(periodLabel, start, end, prevStart, prevEnd) {
+        const allStats = await db.ofDailyStats.toArray();
+        const periodStats = allStats.filter(s => s.statDate >= start && s.statDate <= end);
+        const prevStats = allStats.filter(s => s.statDate >= prevStart && s.statDate <= prevEnd);
+
+        const allModels = await db.ofModels.toArray();
+        const allVAs = await db.ofVas.toArray();
+        const modelMap = new Map(allModels.map(m => [m.id, m]));
+        const vaMap = new Map(allVAs.map(v => [v.id, v]));
+
+        const catNames = { [-1]: 'Unknown', [-2]: 'Paid Ads', [-3]: 'SFS', [-4]: 'Reddit' };
+
+        // Model ranking
+        const modelAgg = new Map();
+        for (const s of periodStats) {
+            const agg = modelAgg.get(s.ofModelId) || { subs: 0, earnings: 0 };
+            agg.subs += s.newSubs || 0; agg.earnings += s.revenueTotal || 0;
+            modelAgg.set(s.ofModelId, agg);
+        }
+        const modelRanking = Array.from(modelAgg.entries())
+            .map(([id, a]) => ({ model: modelMap.get(id)?.name || 'Unknown', subs: a.subs, earnings: a.earnings }))
+            .sort((a, b) => b.subs - a.subs);
+
+        // VA ranking (include all active VAs)
+        const vaAgg = new Map();
+        for (const s of periodStats) {
+            if (s.ofVaId <= 0) continue; // skip sentinel
+            const agg = vaAgg.get(s.ofVaId) || { subs: 0, earnings: 0, models: new Set() };
+            agg.subs += s.newSubs || 0; agg.earnings += s.revenueTotal || 0;
+            agg.models.add(s.ofModelId);
+            vaAgg.set(s.ofVaId, agg);
+        }
+        const activeVAs = allVAs.filter(v => v.active === 1 || v.active === true);
+        const vaRanking = activeVAs.map(v => {
+            const stats = vaAgg.get(v.id);
+            return { va: v.name, subs: stats?.subs ?? 0, earnings: stats?.earnings ?? 0, modelCount: stats?.models?.size ?? 0 };
+        }).sort((a, b) => b.subs - a.subs);
+
+        // Compensation
+        const compensation = vaRanking.map(v => ({
+            va: v.va, subs: v.subs, amount: OFVAPatternService.computeCompensation(v.subs),
+        }));
+
+        // Totals
+        const totalSubs = modelRanking.reduce((s, r) => s + r.subs, 0);
+        const totalEarnings = modelRanking.reduce((s, r) => s + r.earnings, 0);
+        const previousSubs = prevStats.reduce((s, r) => s + (r.newSubs || 0), 0);
+        const producingVAs = vaRanking.filter(v => v.subs > 0).length;
+
+        // VA by model breakdown (VA + non-VA categories)
+        const vaByModelMap = new Map();
+        for (const s of periodStats) {
+            const mName = modelMap.get(s.ofModelId)?.name || 'Unknown';
+            let entry = vaByModelMap.get(mName);
+            if (!entry) { entry = { model: mName, totalSubs: 0, totalEarnings: 0, vas: [] }; vaByModelMap.set(mName, entry); }
+            const vaLabel = s.ofVaId > 0 ? (vaMap.get(s.ofVaId)?.name || 'Unknown VA') : (catNames[s.ofVaId] || 'Other');
+            entry.vas.push({ va: vaLabel, subs: s.newSubs || 0, earnings: s.revenueTotal || 0 });
+            entry.totalSubs += s.newSubs || 0;
+            entry.totalEarnings += s.revenueTotal || 0;
+        }
+        // Merge duplicate VA entries within each model
+        for (const entry of vaByModelMap.values()) {
+            const merged = new Map();
+            for (const v of entry.vas) {
+                const e = merged.get(v.va) || { va: v.va, subs: 0, earnings: 0 };
+                e.subs += v.subs; e.earnings += v.earnings;
+                merged.set(v.va, e);
+            }
+            entry.vas = Array.from(merged.values()).sort((a, b) => b.subs - a.subs);
+        }
+        const vaByModel = Array.from(vaByModelMap.values()).sort((a, b) => b.totalSubs - a.totalSubs);
+
+        // Ad & SFS platform breakdown
+        const latestImport = await db.ofBulkImports.orderBy('importDate').reverse().first();
+        const buildSourceBreakdown = async (category) => {
+            if (!latestImport) return [];
+            const currSnaps = (await db.ofLinkSnapshots.where('importId').equals(latestImport.id).toArray())
+                .filter(s => s.sourceCategory === category);
+
+            // Find previous import
+            const allImports = await db.ofBulkImports.orderBy('importDate').reverse().toArray();
+            const prevImport = allImports.find(i => i.id !== latestImport.id);
+
+            const map = new Map();
+            for (const curr of currSnaps) {
+                const key = OFVAPatternService.normalizePlatformLabel(curr.label, category);
+                let delta = curr.subsCumulative;
+                if (prevImport) {
+                    const prev = await db.ofLinkSnapshots
+                        .where('[importId+ofModelId+label]')
+                        .equals([prevImport.id, curr.ofModelId, curr.label]).first();
+                    delta = prev ? Math.max(0, curr.subsCumulative - prev.subsCumulative) : 0;
+                }
+                const e = map.get(key) || { subs: 0, earnings: 0 };
+                e.subs += delta;
+                map.set(key, e);
+            }
+            return Array.from(map.entries())
+                .map(([platform, s]) => ({ platform, ...s }))
+                .filter(p => p.subs > 0)
+                .sort((a, b) => b.subs - a.subs);
+        };
+
+        const adPlatforms = await buildSourceBreakdown('ads');
+        const sfsSources = await buildSourceBreakdown('sfs');
+
+        // Needs attention: median-based
+        const vaSubs = vaRanking.filter(v => v.subs > 0).map(v => v.subs).sort((a, b) => a - b);
+        const median = vaSubs.length > 0 ? vaSubs[Math.floor(vaSubs.length / 2)] : 0;
+        const threshold = Math.max(Math.floor(median * 0.3), 1);
+        const needsAttention = vaRanking.filter(v => v.subs > 0 && v.subs < threshold);
+
+        return {
+            period: { start, end, label: periodLabel },
+            modelRanking, vaRanking, vaByModel, adPlatforms, sfsSources,
+            compensation, needsAttention,
+            comparison: { current: totalSubs, previous: previousSubs, delta: totalSubs - previousSubs },
+            totalSubs, totalEarnings, activeVAs: activeVAs.length, producingVAs,
+        };
+    },
+
+    async getDailyReport(date) {
+        const d = new Date(date + 'T00:00:00');
+        const prev = new Date(d); prev.setDate(prev.getDate() - 1);
+        return this.buildReport(`Daily - ${date}`, date, date, prev.toISOString().split('T')[0], prev.toISOString().split('T')[0]);
+    },
+
+    async getWeeklyReport(date) {
+        const d = new Date(date + 'T00:00:00');
+        const day = d.getDay();
+        const diffToMonday = day === 0 ? -6 : 1 - day;
+        const monday = new Date(d); monday.setDate(d.getDate() + diffToMonday);
+        const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+        const start = monday.toISOString().split('T')[0];
+        const end = sunday.toISOString().split('T')[0];
+        const prevMonday = new Date(monday); prevMonday.setDate(monday.getDate() - 7);
+        const prevSunday = new Date(prevMonday); prevSunday.setDate(prevMonday.getDate() + 6);
+        return this.buildReport(`Week of ${start}`, start, end, prevMonday.toISOString().split('T')[0], prevSunday.toISOString().split('T')[0]);
+    },
+
+    async getMonthlyReport(year, month) {
+        const start = `${year}-${String(month).padStart(2, '0')}-01`;
+        const lastDay = new Date(year, month, 0).getDate();
+        const end = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+        const prevMonth = month === 1 ? 12 : month - 1;
+        const prevYear = month === 1 ? year - 1 : year;
+        const prevStart = `${prevYear}-${String(prevMonth).padStart(2, '0')}-01`;
+        const prevLastDay = new Date(prevYear, prevMonth, 0).getDate();
+        const prevEnd = `${prevYear}-${String(prevMonth).padStart(2, '0')}-${String(prevLastDay).padStart(2, '0')}`;
+        const monthNames = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+        return this.buildReport(`${monthNames[month]} ${year}`, start, end, prevStart, prevEnd);
+    },
+
+    async getModelStats() {
+        const latestImport = await db.ofBulkImports.orderBy('id').reverse().first();
+        if (!latestImport) return [];
+        const snaps = await db.ofLinkSnapshots.where('importId').equals(latestImport.id).toArray();
+        const allModels = await db.ofModels.where('active').equals(1).toArray();
+        const allVAs = await db.ofVas.toArray();
+        const vaMap = new Map(allVAs.map(v => [v.id, v.name]));
+
+        const modelAgg = new Map();
+        for (const s of snaps) {
+            const agg = modelAgg.get(s.ofModelId) || { subs: 0, earnings: 0, vaMap: new Map() };
+            agg.subs += s.subsCumulative || 0;
+            agg.earnings += s.earningsCumulative || 0;
+            if (s.ofVaId > 0) {
+                const vSubs = (agg.vaMap.get(s.ofVaId) || 0) + (s.subsCumulative || 0);
+                agg.vaMap.set(s.ofVaId, vSubs);
+            }
+            modelAgg.set(s.ofModelId, agg);
+        }
+
+        return allModels.map(m => {
+            const agg = modelAgg.get(m.id);
+            let topVA = null;
+            if (agg?.vaMap?.size > 0) {
+                const topEntry = [...agg.vaMap.entries()].sort((a, b) => b[1] - a[1])[0];
+                topVA = vaMap.get(topEntry[0]) || null;
+            }
+            return {
+                modelId: m.id, modelName: m.name, ofUsername: m.ofUsername,
+                subCount: agg?.subs ?? 0, revenue: agg?.earnings ?? 0, topVA
+            };
+        }).sort((a, b) => b.subCount - a.subCount);
+    },
+
+    async getVAStats(period, modelId) {
+        const today = new Date().toISOString().split('T')[0];
+        let startDate;
+        switch (period) {
+            case 'today': startDate = today; break;
+            case 'week': { const d = new Date(); d.setDate(d.getDate() - 7); startDate = d.toISOString().split('T')[0]; break; }
+            case 'month': { const d = new Date(); d.setDate(d.getDate() - 30); startDate = d.toISOString().split('T')[0]; break; }
+            default: startDate = '1970-01-01';
+        }
+
+        let stats = await db.ofDailyStats.toArray();
+        stats = stats.filter(s => s.statDate >= startDate && s.statDate <= today && s.ofVaId > 0);
+        if (modelId) stats = stats.filter(s => s.ofModelId === modelId);
+
+        const vaAgg = new Map();
+        for (const s of stats) {
+            const agg = vaAgg.get(s.ofVaId) || { subs: 0, earnings: 0 };
+            agg.subs += s.newSubs || 0; agg.earnings += s.revenueTotal || 0;
+            vaAgg.set(s.ofVaId, agg);
+        }
+
+        const allVAs = await db.ofVas.where('active').equals(1).toArray();
+        return allVAs.map(v => {
+            const a = vaAgg.get(v.id);
+            return { vaId: v.id, vaName: v.name, subs: a?.subs ?? 0, earnings: a?.earnings ?? 0 };
+        }).sort((a, b) => b.subs - a.subs);
+    },
+
+    async getDailyStatsForDate(date) {
+        const stats = await db.ofDailyStats.where('statDate').equals(date).toArray();
+        const allModels = await db.ofModels.toArray();
+        const allVAs = await db.ofVas.toArray();
+        const modelMap = new Map(allModels.map(m => [m.id, m.name]));
+        const vaMap = new Map(allVAs.map(v => [v.id, v.name]));
+        const catNames = { [-1]: 'Unknown', [-2]: 'Paid Ads', [-3]: 'SFS', [-4]: 'Reddit' };
+
+        return stats.map(s => ({
+            modelName: modelMap.get(s.ofModelId) || 'Unknown',
+            vaName: s.ofVaId > 0 ? (vaMap.get(s.ofVaId) || 'Unknown') : (catNames[s.ofVaId] || 'Unmapped'),
+            newSubs: s.newSubs, totalSubs: s.totalSubs, revenueTotal: s.revenueTotal,
+        })).sort((a, b) => b.newSubs - a.newSubs);
+    },
+
+    // Copy-friendly plaintext report
+    async buildPlaintextReport(report) {
+        const lines = [];
+        lines.push(`=== ${report.period.label} ===`);
+        lines.push(`Total Subs: ${report.totalSubs} | vs Previous: ${report.comparison.delta >= 0 ? '+' : ''}${report.comparison.delta}`);
+        lines.push(`Active VAs: ${report.activeVAs} | Producing: ${report.producingVAs}`);
+        lines.push('');
+
+        if (report.modelRanking.length > 0) {
+            lines.push('MODEL SUBSCRIBERS');
+            for (const m of report.modelRanking) lines.push(`  ${m.model}: ${m.subs}`);
+            lines.push('');
+        }
+
+        if (report.vaRanking.length > 0) {
+            lines.push('VA PERFORMANCE');
+            for (const v of report.vaRanking) lines.push(`  ${v.va}: ${v.subs} subs (${v.modelCount} models)`);
+            lines.push('');
+        }
+
+        if (report.compensation.length > 0) {
+            lines.push('COMPENSATION');
+            for (const c of report.compensation) lines.push(`  ${c.va}: ${c.subs} subs → $${c.amount}`);
+        }
+
+        return lines.join('\n');
+    }
 };
