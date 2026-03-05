@@ -6058,14 +6058,78 @@ export const AIChatReportService = {
             };
         }).sort((a, b) => (b.ppvRevenue || 0) - (a.ppvRevenue || 0));
 
+        // Compute team averages from all reports in this import
+        const allReports = await db.aiChatterReports.where('importId').equals(importId).toArray();
+        const teamCount = allReports.length;
+        const teamAverages = { totalRevenue: 0, conversionRate: 0, avgReplyTimeSec: 0, avgSopScore: 0, totalPPVSent: 0, totalPPVPurchased: 0, totalConversations: 0, totalMessages: 0 };
+        if (teamCount > 0) {
+            for (const r of allReports) {
+                teamAverages.totalRevenue += r.totalRevenue || 0;
+                teamAverages.conversionRate += r.conversionRate || 0;
+                teamAverages.avgReplyTimeSec += r.avgReplyTimeSec || 0;
+                teamAverages.avgSopScore += r.avgSopScore || 0;
+                teamAverages.totalPPVSent += r.totalPPVSent || 0;
+                teamAverages.totalPPVPurchased += r.totalPPVPurchased || 0;
+                teamAverages.totalConversations += r.totalConversations || 0;
+                teamAverages.totalMessages += r.totalMessages || 0;
+            }
+            teamAverages.totalRevenue /= teamCount;
+            teamAverages.conversionRate /= teamCount;
+            teamAverages.avgReplyTimeSec /= teamCount;
+            teamAverages.avgSopScore /= teamCount;
+            teamAverages.totalPPVSent /= teamCount;
+            teamAverages.totalPPVPurchased /= teamCount;
+            teamAverages.totalConversations /= teamCount;
+            teamAverages.totalMessages /= teamCount;
+            teamAverages.offerRate = teamAverages.totalConversations > 0 ? teamAverages.totalPPVSent / teamAverages.totalConversations : 0;
+        }
+
         return {
             chatterId, chatterName: chatter?.name || 'Unknown',
             ...report,
             eventCounts: typeof report.eventCounts === 'string' ? JSON.parse(report.eventCounts || '{}') : report.eventCounts,
             strengths: typeof report.strengths === 'string' ? JSON.parse(report.strengths || '[]') : report.strengths,
             weaknesses: typeof report.weaknesses === 'string' ? JSON.parse(report.weaknesses || '[]') : report.weaknesses,
-            conversations
+            conversations,
+            teamAverages,
+            teamCount
         };
+    },
+
+    async getEventSamples(importId, chatterId, eventType) {
+        const grades = await db.aiChatGrades.where('importId').equals(importId).filter(g => g.chatterId === chatterId).toArray();
+        const samples = [];
+        for (const g of grades) {
+            const events = typeof g.events === 'string' ? JSON.parse(g.events || '[]') : (g.events || []);
+            const matching = events.filter(e => e.type === eventType);
+            if (matching.length === 0) continue;
+            const conv = await db.aiChatConversations.get(g.conversationId);
+            const msgs = await db.aiChatMessages.where('conversationId').equals(g.conversationId).toArray();
+            msgs.sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
+            for (const evt of matching) {
+                const mi = evt.messageIndex || 0;
+                const start = Math.max(0, mi - 2);
+                const end = Math.min(msgs.length, mi + 3);
+                samples.push({
+                    conversationId: g.conversationId,
+                    fanName: conv?.fanName || 'Unknown',
+                    modelName: conv?.modelName || '',
+                    messageCount: conv?.messageCount || msgs.length,
+                    description: evt.description || '',
+                    severity: evt.severity || 'warning',
+                    messages: msgs.slice(start, end).map(m => ({
+                        sender: m.sender,
+                        content: m.content,
+                        timestamp: m.timestamp,
+                        price: m.price,
+                        purchased: m.purchased
+                    }))
+                });
+                if (samples.length >= 3) return samples;
+            }
+            if (samples.length >= 3) return samples;
+        }
+        return samples;
     },
 
     async getConversationReplay(conversationId) {
