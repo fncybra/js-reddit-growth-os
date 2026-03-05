@@ -1,14 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AIChatImportService, AIChatGradingService } from '../services/growthEngine';
 
 export function AIChatImport() {
     const navigate = useNavigate();
     const [importing, setImporting] = useState(false);
-    const [grading, setGrading] = useState(false);
     const [progress, setProgress] = useState(null);
     const [result, setResult] = useState(null);
-    const [costEstimate, setCostEstimate] = useState(null);
     const [history, setHistory] = useState([]);
     const [dragOver, setDragOver] = useState(false);
     const [error, setError] = useState(null);
@@ -37,32 +35,17 @@ export function AIChatImport() {
             // Pass File object directly — streaming CSV parser reads in chunks, never loads full file
             const res = await AIChatImportService.processFile(file, file.name, setProgress);
             setResult(res);
-            // Estimate LLM cost
-            const est = AIChatGradingService.estimateCost(res.totalMessages, res.totalConversations, res.totalChatters);
-            setCostEstimate(est);
+            // Auto-grade with rules (instant, free)
+            setProgress({ phase: 'grading', current: 0, total: res.totalConversations, label: 'Analyzing conversations...' });
+            await AIChatGradingService.ruleBasedGradeImport(res.importId, setProgress);
+            setProgress({ phase: 'done', label: 'Import & analysis complete! View the leaderboard.' });
             AIChatImportService.getImportHistory().then(setHistory);
         } catch (e) {
             setError(e.message);
         } finally {
             setImporting(false);
-            setProgress(null);
         }
     }, []);
-
-    const handleGrade = useCallback(async () => {
-        if (!result?.importId) return;
-        setGrading(true);
-        setError(null);
-        try {
-            await AIChatGradingService.processImport(result.importId, setProgress);
-            setProgress({ phase: 'done', label: 'Grading complete! View the leaderboard.' });
-            AIChatImportService.getImportHistory().then(setHistory);
-        } catch (e) {
-            setError(`Grading failed: ${e.message}`);
-        } finally {
-            setGrading(false);
-        }
-    }, [result]);
 
     const handleDelete = useCallback(async (importId) => {
         if (!confirm('Delete this import and all associated grades/reports?')) return;
@@ -170,28 +153,11 @@ export function AIChatImport() {
                             </div>
                         </div>
 
-                        {/* Grade with AI button */}
+                        {/* Result actions */}
                         <div className="card" style={{ textAlign: 'center', padding: '32px' }}>
-                            {grading ? (
+                            {progress?.phase === 'done' ? (
                                 <div>
-                                    <div style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '12px', color: 'var(--accent-primary)' }}>
-                                        {progress?.label || 'Processing...'}
-                                    </div>
-                                    {progress?.total > 0 && (
-                                        <div style={{ maxWidth: '400px', margin: '0 auto' }}>
-                                            <div style={{ background: 'var(--bg-surface-elevated)', borderRadius: '4px', height: '8px', overflow: 'hidden' }}>
-                                                <div style={{ background: '#6366f1', height: '100%', width: `${Math.round((progress.current / progress.total) * 100)}%`, transition: 'width 0.3s' }} />
-                                            </div>
-                                            <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', marginTop: '4px' }}>
-                                                {progress.current} / {progress.total} chatters
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            ) : progress?.phase === 'done' ? (
-                                <div>
-                                    <div style={{ fontSize: '1.5rem', marginBottom: '8px' }}>✅</div>
-                                    <div style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '16px' }}>Grading Complete!</div>
+                                    <div style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '16px' }}>Analysis Complete!</div>
                                     <button
                                         className="btn btn-primary"
                                         onClick={() => navigate('/of/ai-chat-leaderboard')}
@@ -202,19 +168,15 @@ export function AIChatImport() {
                                 </div>
                             ) : (
                                 <div>
-                                    <div style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '8px' }}>Ready to Grade</div>
-                                    <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '16px' }}>
-                                        {result.totalConversations} conversations across {result.totalChatters} chatters will be analyzed by AI.
-                                        {costEstimate && (
-                                            <span> Estimated cost: <strong>${costEstimate.totalCost.toFixed(2)}</strong></span>
-                                        )}
+                                    <div style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '16px' }}>
+                                        {result.totalConversations} conversations analyzed across {result.totalChatters} chatters
                                     </div>
                                     <button
                                         className="btn btn-primary"
-                                        onClick={handleGrade}
+                                        onClick={() => navigate('/of/ai-chat-leaderboard')}
                                         style={{ padding: '12px 32px', fontSize: '1rem' }}
                                     >
-                                        Grade with AI
+                                        View Leaderboard →
                                     </button>
                                 </div>
                             )}

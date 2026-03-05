@@ -2078,6 +2078,24 @@ export const CloudSyncService = {
             }
         }
 
+        // OF config tables: sync deletions to cloud (local is authoritative)
+        const ofConfigTables = ['ofModels', 'ofVas', 'ofTrackingLinks'];
+        for (const table of ofConfigTables) {
+            if (!tables.includes(table)) continue;
+            try {
+                const localData = await db[table].toArray();
+                const localIds = new Set(localData.map(r => r.id));
+                const { data: cloudData } = await supabase.from(table).select('id');
+                if (cloudData && cloudData.length > 0) {
+                    const orphanIds = cloudData.filter(r => !localIds.has(r.id)).map(r => r.id);
+                    for (const oid of orphanIds) {
+                        await supabase.from(table).delete().eq('id', oid);
+                    }
+                    if (orphanIds.length > 0) console.log(`[CloudSync] Deleted ${orphanIds.length} orphaned cloud rows from ${table}`);
+                }
+            } catch (e) { console.warn(`[CloudSync] OF config cloud cleanup failed for ${table}:`, e.message); }
+        }
+
         for (const table of tables) {
             const localData = await db[table].toArray();
             if (localData.length === 0) continue;
@@ -2224,8 +2242,18 @@ export const CloudSyncService = {
         // Phase 2: MERGE cloud data into local (never clear — prevents data loss)
         for (const table of tables) {
             let cloudData = fetched[table] || [];
+            const ofConfigTables = ['ofModels', 'ofVas', 'ofTrackingLinks'];
             if (cloudData.length === 0) {
-                console.log(`[CloudSync] Skipped ${table} — cloud is empty, keeping local data`);
+                // OF config tables: if cloud is empty, clear local too (cloud is authoritative)
+                if (ofConfigTables.includes(table)) {
+                    const localCount = await db[table].count();
+                    if (localCount > 0) {
+                        await db[table].clear();
+                        console.log(`[CloudSync] Cleared local ${table} — cloud is empty`);
+                    }
+                } else {
+                    console.log(`[CloudSync] Skipped ${table} — cloud is empty, keeping local data`);
+                }
                 continue;
             }
 
@@ -2358,7 +2386,6 @@ export const CloudSyncService = {
 
             // For OF config tables: remove local records that no longer exist in cloud
             // This ensures deletions propagate properly (cloud is authoritative for these tables)
-            const ofConfigTables = ['ofModels', 'ofVas', 'ofTrackingLinks'];
             if (ofConfigTables.includes(table)) {
                 const cloudIds = new Set(cloudData.map(r => r.id));
                 const localRecords = await db[table].toArray();
@@ -5619,6 +5646,41 @@ Return ONLY valid JSON. No markdown fences.`;
         }
     },
 
+    async callOllama(model, systemPrompt, userPrompt, temperature = 0.5) {
+        const TIMEOUT_MS = 120000; // 2 min timeout for local models
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+        try {
+            const response = await fetch('http://localhost:11434/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                signal: controller.signal,
+                body: JSON.stringify({
+                    model: model || 'qwen2.5:7b',
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: userPrompt }
+                    ],
+                    stream: false,
+                    format: 'json',
+                    options: { temperature, num_predict: 2000 }
+                })
+            });
+            clearTimeout(timeoutId);
+            if (!response.ok) {
+                const err = await response.text().catch(() => '');
+                throw new Error(`Ollama error (${response.status}): ${err.slice(0, 200)}`);
+            }
+            const data = await response.json();
+            return { content: data.message?.content || '', usage: {} };
+        } catch (err) {
+            clearTimeout(timeoutId);
+            if (err.name === 'AbortError') throw new Error('Ollama timed out — is the model loaded? Run: ollama pull qwen2.5:7b');
+            if (err.message?.includes('Failed to fetch')) throw new Error('Cannot reach Ollama at localhost:11434 — make sure Ollama is running');
+            throw err;
+        }
+    },
+
     parseJsonResponse(raw) {
         let text = (raw || '').trim();
         // Strip markdown fences
@@ -5913,6 +5975,365 @@ Return ONLY valid JSON. No markdown fences.`;
         // Sonnet coaching: ~2000 tokens per chatter
         const sonnetCost = (totalChatters * 2000 * 3.0 / 1_000_000) + (totalChatters * 500 * 15.0 / 1_000_000);
         return { haikuCost, sonnetCost, totalCost: haikuCost + sonnetCost };
+    },
+
+    // ═══════════════════════════════════════════════════
+    // RULE-BASED GRADING — instant, free, all conversations
+    // ═══════════════════════════════════════════════════
+
+    BUY_SIGNAL_PATTERNS: /\b(how much|price|pric|send me|send it|i want|show me|can i see|let me see|i('d|'ll| will| would) (buy|pay|get)|take my money|shut up and take|worth it|i('m| am) interested|where do i|sign me up|i need (this|that|it)|buying|purchase)\b/i,
+
+    GENERIC_OPENER_PATTERNS: /^(hey|hi|hello|hii+|heyy+|what'?s up|sup|how are you|how('s| is) it going|what are you (doing|up to)|good (morning|afternoon|evening)|howdy)\b/i,
+
+    detectConversationEvents(msgs, conv) {
+        const events = [];
+        if (!msgs || msgs.length < 2) return { events, sopScore: 50 };
+
+        const chatterMsgs = msgs.filter(m => m.sender === 'chatter');
+        const fanMsgs = msgs.filter(m => m.sender === 'fan');
+        if (chatterMsgs.length === 0) return { events, sopScore: 50 };
+
+        // --- OPENER ANALYSIS ---
+        const firstChatter = chatterMsgs[0];
+        const firstContent = (firstChatter?.content || '').trim();
+        const wordCount = firstContent.split(/\s+/).length;
+        const hasQuestion = firstContent.includes('?');
+
+        if (wordCount <= 8 && !hasQuestion && this.GENERIC_OPENER_PATTERNS.test(firstContent)) {
+            events.push({ type: 'GENERIC_OPENER', severity: 'critical', messageIndex: msgs.indexOf(firstChatter), description: `Generic opener: "${firstContent.slice(0, 80)}"` });
+        } else if (hasQuestion && wordCount > 5) {
+            events.push({ type: 'GOOD_OPENER', severity: 'positive', messageIndex: msgs.indexOf(firstChatter), description: `Personalized opener with question` });
+        }
+
+        // --- PPV ANALYSIS ---
+        const ppvMsgs = msgs.filter(m => m.price > 0);
+        const ppvPurchased = ppvMsgs.filter(m => m.purchased);
+        const ppvNotPurchased = ppvMsgs.filter(m => !m.purchased);
+
+        // Premature pitch: PPV sent before message #20
+        if (ppvMsgs.length > 0) {
+            const firstPPVIdx = msgs.indexOf(ppvMsgs[0]);
+            if (firstPPVIdx < 20 && msgs.length > 25) {
+                events.push({ type: 'PREMATURE_PITCH', severity: 'critical', messageIndex: firstPPVIdx, description: `PPV sent at message #${firstPPVIdx + 1} of ${msgs.length} — too early, need rapport first` });
+            }
+        }
+
+        // Bad pricing: first PPV outside sweet spot
+        if (ppvMsgs.length > 0) {
+            const firstPrice = ppvMsgs[0].price;
+            if (firstPrice > 30) {
+                events.push({ type: 'BAD_PRICING', severity: 'warning', messageIndex: msgs.indexOf(ppvMsgs[0]), description: `First PPV priced at $${firstPrice} — start lower (<$25) to build buying habit` });
+            }
+        }
+
+        // Successful sales
+        for (const pm of ppvPurchased) {
+            events.push({ type: 'SUCCESSFUL_SALE', severity: 'positive', messageIndex: msgs.indexOf(pm), description: `PPV purchased: $${pm.price}` });
+        }
+
+        // Failed closes
+        for (const pm of ppvNotPurchased) {
+            events.push({ type: 'FAILED_CLOSE', severity: 'warning', messageIndex: msgs.indexOf(pm), description: `PPV not purchased: $${pm.price}` });
+        }
+
+        // PPV looping: check if chatter follows up after purchase
+        for (const pm of ppvPurchased) {
+            const pmIdx = msgs.indexOf(pm);
+            const nextChatterMsg = msgs.slice(pmIdx + 1, pmIdx + 4).find(m => m.sender === 'chatter');
+            if (nextChatterMsg) {
+                events.push({ type: 'GOOD_PPV_LOOPING', severity: 'positive', messageIndex: pmIdx, description: `Follow-up after sale — good looping` });
+            } else {
+                events.push({ type: 'NO_AFTERCARE', severity: 'warning', messageIndex: pmIdx, description: `No follow-up after $${pm.price} purchase — lost upsell opportunity` });
+            }
+        }
+
+        // --- MISSED BUY SIGNALS ---
+        for (let i = 0; i < msgs.length; i++) {
+            if (msgs[i].sender !== 'fan') continue;
+            const content = msgs[i].content || '';
+            if (!this.BUY_SIGNAL_PATTERNS.test(content)) continue;
+
+            // Check if chatter sent PPV within next 5 messages
+            const nextMsgs = msgs.slice(i + 1, i + 6);
+            const hasPPV = nextMsgs.some(m => m.sender === 'chatter' && m.price > 0);
+            if (!hasPPV && ppvMsgs.length === 0) {
+                // Only flag if there were no PPVs at all (clear miss)
+                events.push({ type: 'MISSED_BUY_SIGNAL', severity: 'critical', messageIndex: i, description: `Fan said: "${content.slice(0, 80)}" — no PPV followed` });
+            } else if (!hasPPV && i > msgs.length * 0.5) {
+                // In second half of convo, should definitely capitalize
+                events.push({ type: 'MISSED_BUY_SIGNAL', severity: 'critical', messageIndex: i, description: `Fan showed interest: "${content.slice(0, 60)}" — PPV not sent soon enough` });
+            }
+        }
+
+        // --- REPLY SPEED ---
+        const replyTimes = [];
+        for (let i = 1; i < msgs.length; i++) {
+            if (msgs[i].sender === 'chatter' && msgs[i - 1].sender === 'fan') {
+                const rt = msgs[i].replyTimeSec || 0;
+                if (rt > 0) replyTimes.push({ idx: i, time: rt });
+            }
+        }
+
+        const fastReplies = replyTimes.filter(r => r.time < 60);
+        const slowReplies = replyTimes.filter(r => r.time > 300);
+
+        if (fastReplies.length > replyTimes.length * 0.6 && replyTimes.length >= 3) {
+            events.push({ type: 'FAST_RESPONSE', severity: 'positive', messageIndex: 0, description: `${fastReplies.length}/${replyTimes.length} replies under 1 min` });
+        }
+
+        // Slow replies near PPV = critical
+        for (const pm of ppvMsgs) {
+            const pmIdx = msgs.indexOf(pm);
+            const nearbySlowReplies = replyTimes.filter(r => Math.abs(r.idx - pmIdx) < 5 && r.time > 120);
+            if (nearbySlowReplies.length > 0) {
+                events.push({ type: 'SLOW_REPLY_SELLING', severity: 'critical', messageIndex: nearbySlowReplies[0].idx, description: `${Math.round(nearbySlowReplies[0].time / 60)}min reply during PPV sequence — should be <1min` });
+                break; // One flag per convo
+            }
+        }
+
+        // Idle time: gap > 10min between messages
+        let idleCount = 0;
+        for (const r of replyTimes) {
+            if (r.time > 600) idleCount++;
+        }
+        if (idleCount > 0) {
+            events.push({ type: 'IDLE_TIME', severity: 'warning', messageIndex: 0, description: `${idleCount} gaps over 10 minutes` });
+        }
+
+        // --- SPAMMING ---
+        let maxConsecutive = 0, curConsecutive = 0;
+        let spamIdx = 0;
+        for (let i = 0; i < msgs.length; i++) {
+            if (msgs[i].sender === 'chatter') {
+                curConsecutive++;
+                if (curConsecutive > maxConsecutive) { maxConsecutive = curConsecutive; spamIdx = i; }
+            } else { curConsecutive = 0; }
+        }
+        if (maxConsecutive >= 4) {
+            events.push({ type: 'SPAMMING', severity: 'warning', messageIndex: spamIdx, description: `${maxConsecutive} consecutive messages without fan reply` });
+        }
+
+        // --- DRY REPLIES ---
+        const dryReplies = chatterMsgs.filter(m => (m.content || '').trim().split(/\s+/).length <= 3 && !(m.price > 0));
+        if (dryReplies.length > chatterMsgs.length * 0.3 && chatterMsgs.length >= 5) {
+            events.push({ type: 'DRY_REPLIES', severity: 'warning', messageIndex: msgs.indexOf(dryReplies[0]), description: `${dryReplies.length}/${chatterMsgs.length} messages are 3 words or less` });
+        }
+
+        // --- LEFT ON READ ---
+        const lastMsg = msgs[msgs.length - 1];
+        if (lastMsg.sender === 'fan' && msgs.length > 5) {
+            events.push({ type: 'NO_FOLLOWUP', severity: 'warning', messageIndex: msgs.length - 1, description: `Last message from fan — conversation left on read` });
+        }
+
+        // --- INTEREST SIGNAL (fan engagement) ---
+        let interestSignals = 0;
+        for (const m of fanMsgs) {
+            const c = (m.content || '').toLowerCase();
+            if (/(\b(love|amazing|hot|perfect|omg|wow|damn|sexy|beautiful|gorgeous)\b|❤|🔥|😍|💦|🥵)/.test(c)) {
+                interestSignals++;
+            }
+        }
+        if (interestSignals >= 3) {
+            events.push({ type: 'INTEREST_SIGNAL', severity: 'positive', messageIndex: 0, description: `${interestSignals} high-interest fan messages detected` });
+        }
+
+        // --- COMPUTE SOP SCORE ---
+        let score = 60; // baseline
+        const criticalCount = events.filter(e => e.severity === 'critical').length;
+        const warningCount = events.filter(e => e.severity === 'warning').length;
+        const positiveCount = events.filter(e => e.severity === 'positive').length;
+
+        score -= criticalCount * 12;
+        score -= warningCount * 4;
+        score += positiveCount * 5;
+
+        // Bonus for conversions
+        if (ppvPurchased.length > 0) score += 10;
+        if (ppvPurchased.length >= 3) score += 5;
+
+        // Penalty for no engagement
+        if (chatterMsgs.length < 3 && msgs.length > 5) score -= 10;
+
+        score = Math.max(0, Math.min(100, score));
+
+        return { events, sopScore: score };
+    },
+
+    async ruleBasedGradeImport(importId, onProgress) {
+        // Clear any prior grades/reports
+        await db.aiChatGrades.where('importId').equals(importId).delete();
+        await db.aiChatterReports.where('importId').equals(importId).delete();
+        await db.aiChatImports.update(importId, { status: 'grading' });
+
+        const convos = await db.aiChatConversations.where('importId').equals(importId).toArray();
+        const allChatters = await db.aiChatters.toArray();
+        const chatterNameMap = new Map(allChatters.map(c => [c.id, c.name]));
+
+        const totalConvos = convos.length;
+        onProgress?.({ phase: 'grading', current: 0, total: totalConvos, label: `Analyzing 0/${totalConvos} conversations...` });
+
+        // Group by chatter for reports
+        const chatterData = new Map();
+
+        for (let i = 0; i < convos.length; i++) {
+            const conv = convos[i];
+            const msgs = await db.aiChatMessages.where('conversationId').equals(conv.id).toArray();
+            msgs.sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
+
+            const { events, sopScore } = this.detectConversationEvents(msgs, conv);
+
+            // Store grade
+            await db.aiChatGrades.add({
+                id: generateId(), importId,
+                conversationId: conv.id, chatterId: conv.chatterId, modelId: conv.modelId,
+                sopScore, events: JSON.stringify(events),
+                stageProgression: JSON.stringify([]),
+                summary: events.filter(e => e.severity === 'critical').map(e => e.description).join('; ') || 'No critical issues',
+                rawResponse: '', model: 'rule-based',
+                tokenCount: 0, cost: 0, createdAt: new Date().toISOString()
+            });
+
+            // Accumulate chatter data
+            if (!chatterData.has(conv.chatterId)) {
+                chatterData.set(conv.chatterId, {
+                    convos: [], scores: [], totalMessages: 0, totalRevenue: 0,
+                    ppvSent: 0, ppvPurchased: 0, replyTimes: [], allEvents: [], eventCounts: {}
+                });
+            }
+            const d = chatterData.get(conv.chatterId);
+            d.convos.push(conv);
+            d.scores.push(sopScore);
+            d.totalMessages += conv.messageCount || 0;
+            d.totalRevenue += conv.ppvRevenue || 0;
+            d.ppvSent += conv.ppvSent || 0;
+            d.ppvPurchased += conv.ppvPurchased || 0;
+            if (conv.avgReplyTimeSec) d.replyTimes.push(conv.avgReplyTimeSec);
+            for (const e of events) {
+                d.eventCounts[e.type] = (d.eventCounts[e.type] || 0) + 1;
+                d.allEvents.push(e);
+            }
+
+            if ((i + 1) % 50 === 0 || i === convos.length - 1) {
+                onProgress?.({ phase: 'grading', current: i + 1, total: totalConvos, label: `Analyzing ${i + 1}/${totalConvos} conversations...` });
+            }
+        }
+
+        // Generate per-chatter reports with AI coaching via Ollama
+        const totalChatters = chatterData.size;
+        onProgress?.({ phase: 'coaching', current: 0, total: totalChatters, label: `AI coaching 0/${totalChatters} chatters...` });
+
+        // Check if Ollama is reachable
+        let ollamaAvailable = false;
+        try {
+            const ping = await fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(3000) });
+            ollamaAvailable = ping.ok;
+        } catch { ollamaAvailable = false; }
+
+        const coachingSystemPrompt = `You are a senior QA coach for an OnlyFans chatting agency. Based on the chatter's metrics and detected issues, give specific, actionable coaching.
+
+Return JSON:
+{
+  "strengths": ["specific strength with evidence"],
+  "weaknesses": ["specific weakness with fix from SOP"],
+  "coachingFeedback": "2-3 sentences. Be specific: what they did wrong, what the SOP says to do instead. Focus on the ONE fix that would increase revenue most.",
+  "tier": "top" | "average" | "at_risk"
+}
+
+Tier rules: "top" if score >= 70 AND conversion >= 15%. "at_risk" if score < 45 OR conversion < 5%. Otherwise "average".
+Return ONLY valid JSON.`;
+
+        let chatterIdx = 0;
+        for (const [chatterId, data] of chatterData) {
+            chatterIdx++;
+            const chatterName = chatterNameMap.get(chatterId) || 'Unknown';
+            const avgSopScore = data.scores.length > 0 ? data.scores.reduce((a, b) => a + b, 0) / data.scores.length : null;
+            const avgReplyTimeSec = data.replyTimes.length > 0 ? Math.round(data.replyTimes.reduce((a, b) => a + b, 0) / data.replyTimes.length) : null;
+            const conversionRate = data.ppvSent > 0 ? data.ppvPurchased / data.ppvSent : 0;
+
+            // Rule-based fallback tier
+            let tier = 'average';
+            const criticals = data.allEvents.filter(e => e.severity === 'critical').length;
+            if (avgSopScore >= 70 && conversionRate >= 0.15) tier = 'top';
+            else if (avgSopScore < 45 || conversionRate < 0.05 || criticals > data.convos.length * 0.5) tier = 'at_risk';
+
+            let strengths = [];
+            let weaknesses = [];
+            let coachingFeedback = '';
+            const ec = data.eventCounts;
+
+            if (ollamaAvailable) {
+                onProgress?.({ phase: 'coaching', current: chatterIdx, total: totalChatters, label: `AI coaching ${chatterIdx}/${totalChatters} (${chatterName})...` });
+                try {
+                    // Build concise coaching prompt from rule-based results
+                    const topCritical = Object.entries(ec).filter(([t]) => ['GENERIC_OPENER','PREMATURE_PITCH','MISSED_BUY_SIGNAL','OBJECTION_FAILURE','SLOW_REPLY_SELLING'].includes(t)).map(([t, c]) => `${t}: ${c}`).join(', ');
+                    const topPositive = Object.entries(ec).filter(([t]) => t.startsWith('GOOD_') || t === 'SUCCESSFUL_SALE' || t === 'FAST_RESPONSE').map(([t, c]) => `${t}: ${c}`).join(', ');
+
+                    const userPrompt = `Chatter: ${chatterName}
+Metrics: ${data.convos.length} conversations, ${data.totalMessages} messages, $${data.totalRevenue.toFixed(0)} revenue, ${(conversionRate * 100).toFixed(0)}% conversion, ${avgReplyTimeSec || '--'}s avg reply, score ${avgSopScore?.toFixed(0) || '--'}/100
+Critical issues: ${topCritical || 'none'}
+Positive: ${topPositive || 'none'}
+Failed closes: ${ec.FAILED_CLOSE || 0}, No follow-up: ${ec.NO_FOLLOWUP || 0}, Dry replies: ${ec.DRY_REPLIES || 0}
+
+Generate coaching feedback.`;
+
+                    const result = await this.callOllama('qwen2.5:7b', coachingSystemPrompt, userPrompt);
+                    const parsed = this.parseJsonResponse(result.content);
+                    if (parsed) {
+                        tier = parsed.tier || tier;
+                        strengths = parsed.strengths || [];
+                        weaknesses = parsed.weaknesses || [];
+                        coachingFeedback = parsed.coachingFeedback || '';
+                    }
+                } catch (err) {
+                    console.warn(`[AI Coach] Ollama failed for ${chatterName}:`, err.message);
+                    // Fall through to rule-based coaching
+                }
+            }
+
+            // Fallback: rule-based coaching if Ollama failed or unavailable
+            if (!coachingFeedback) {
+                if (ec.GOOD_OPENER > 0) strengths.push(`Good openers in ${ec.GOOD_OPENER} conversations`);
+                if (ec.FAST_RESPONSE > 0) strengths.push(`Fast response times`);
+                if (ec.SUCCESSFUL_SALE > 0) strengths.push(`${ec.SUCCESSFUL_SALE} successful sales`);
+                if (ec.GOOD_PPV_LOOPING > 0) strengths.push(`Good PPV looping — follows up after purchases`);
+                if (conversionRate >= 0.2) strengths.push(`Strong ${(conversionRate * 100).toFixed(0)}% conversion rate`);
+
+                if (ec.GENERIC_OPENER > 0) weaknesses.push(`Generic openers in ${ec.GENERIC_OPENER} conversations — use name + location question + playful comment`);
+                if (ec.PREMATURE_PITCH > 0) weaknesses.push(`Premature pitching in ${ec.PREMATURE_PITCH} conversations — build rapport before selling`);
+                if (ec.MISSED_BUY_SIGNAL > 0) weaknesses.push(`Missed ${ec.MISSED_BUY_SIGNAL} buy signals — capitalize when fans show interest`);
+                if (ec.SLOW_REPLY_SELLING > 0) weaknesses.push(`Slow replies during selling — keep under 1 minute when money is on the table`);
+                if (ec.DRY_REPLIES > 0) weaknesses.push(`Too many dry replies — expand messages, show enthusiasm`);
+                if (ec.NO_AFTERCARE > 0) weaknesses.push(`No aftercare after ${ec.NO_AFTERCARE} purchases — follow up to keep connection open`);
+                if (ec.NO_FOLLOWUP > 0) weaknesses.push(`${ec.NO_FOLLOWUP} conversations left on read — always follow up`);
+                if (ec.BAD_PRICING > 0) weaknesses.push(`Pricing issues in ${ec.BAD_PRICING} PPVs — start lower to build buying habit`);
+
+                const topIssue = weaknesses[0] || 'Keep up the good work';
+                coachingFeedback = weaknesses.length > 0
+                    ? `Priority fix: ${topIssue}. ${weaknesses.length > 1 ? `Also work on: ${weaknesses.slice(1, 3).join('; ')}.` : ''}`
+                    : `Strong performance. ${strengths.slice(0, 2).join('. ')}.`;
+            }
+
+            await db.aiChatterReports.add({
+                id: generateId(), importId, chatterId,
+                totalConversations: data.convos.length,
+                totalMessages: data.totalMessages,
+                totalRevenue: data.totalRevenue,
+                totalPPVSent: data.ppvSent,
+                totalPPVPurchased: data.ppvPurchased,
+                conversionRate, avgReplyTimeSec, avgSopScore,
+                eventCounts: JSON.stringify(data.eventCounts),
+                tier, coachingFeedback,
+                strengths: JSON.stringify(strengths),
+                weaknesses: JSON.stringify(weaknesses),
+                model: ollamaAvailable ? 'ollama/qwen2.5:7b' : 'rule-based',
+                tokenCount: 0, cost: 0,
+                createdAt: new Date().toISOString()
+            });
+        }
+
+        await db.aiChatImports.update(importId, { status: 'complete' });
+        onProgress?.({ phase: 'done', label: 'Analysis complete!' });
+        return { totalChatters, totalConversations: totalConvos };
     }
 };
 
