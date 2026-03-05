@@ -5368,43 +5368,69 @@ export const AIChatImportService = {
 
 export const AIChatGradingService = {
     buildSystemPrompt() {
-        return `You are a QA analyst for an OnlyFans agency. Your job is to evaluate chatter performance against the agency's Standard Operating Procedures (SOPs). You are reviewing real business conversations to grade employee performance. This is workplace analytics — evaluate objectively and professionally.
+        return `You are a QA analyst for an OnlyFans chatting agency. Grade chatter performance against the agency SOPs. This is workplace analytics — evaluate objectively.
 
-The SOPs define a conversation funnel with these stages:
-1. OPENER — Must use Name + Hook + Question (not generic "hey" or "how are you"). Warm, curious, personal.
-2. EARLY/PROFILE — Get to know them: name, location, age, job, interests. ONE question per message. No interview mode.
-3. BUILD_CONNECTION — Build rapport, find common ground, light teasing. Inside jokes, shared experiences. Balanced flirtation + emotional depth.
-4. TRANSITION — Gradually increase flirtiness. Drop hints about content. Let them escalate too. Build anticipation naturally.
-5. SEXT — Scenario-based, descriptive. Build tension with "and then...", "imagine...". Match their pace. Peak moment bridges to PPV.
-6. SELL — Casual pitch ONLY after strong rapport (40+ messages for new fans). "i made smth u might like", "only if u want". NEVER pushy.
-7. AFTERCARE — Warm follow-up post-purchase. Brief, not clingy. Keep connection open for next session.
+CONVERSATION FUNNEL (required stages in order):
+1. OPENER — Personalized: Name + Location Question + Playful comment about their name. NEVER "hey how are you" or "what are you up to". Must feel like a real message, not automated.
+   Example: "Hey Jake! Where are you from? Btw my ex's name was Jake... should I be scared? 😂"
+2. LOCATION_MATCH — ALWAYS pretend you're from the same area. Use local weather, landmarks, slang. Update notes with their location. This is STEP 1 of every conversation.
+3. HUMANIZE — Tell a relatable funny story about your day. Setup: "I did something so stupid just then, can I tell you? 😅" then share specific mundane details. Creates connection beyond sex.
+4. PROFILE — Gather: location (first!), real name, job, age. Use 3-step method: ask → respond to their answer → answer it yourself. NEVER interview-style rapid-fire.
+5. BUILD_CONNECTION — Find 2-3 commonalities WITH EVIDENCE (not just "me too"). Create inside jokes & nicknames. Friends-with-benefits vibe (NOT girlfriend experience). Banter and humor.
+6. TRANSITION — NEVER let them see the sale coming. 4-step framework: (1) Send non-sexual teaser photo (watching TV, in bed, about to shower), (2) Talk about what they're doing 5-10 mins, (3) Ask "if you were here" question (still not sexual), (4) Start flirty/teasing. NEVER: "can I show you something?", "want to have some fun?", "I'm so horny right now".
+7. SEXT — SCENARIO-BASED only (NOT real-time). Tell a vivid story: beginning→middle→end. Pick a believable scenario (Netflix, shower, car). Use LOTS of detail and expanding. Send PPV at end of each stage. Personalize for dominant (questions, "what do you want me to do?") vs submissive (commands, "you will watch this").
+8. SELL — Sequences: series of photos/videos getting progressively more explicit and expensive. Start LOW (<$20), increase gradually. Get to triple digits by 4th PPV. PPV captions MUST include: (1) pressure removal "here's an idea but up to you", (2) link to conversation topic, (3) question they can only answer by watching, (4) their REAL name. Speed up PPV frequency as they buy more (10 replies → 5 → 2 → 1). Instant follow-up when they buy for looping.
+9. AFTERCARE — Warm follow-up post-purchase. Don't disappear after they buy. Keep connection open.
 
-Critical SOP rules:
-- Messages should be SHORT (1-8 words average), lowercase, casual texting style
-- Abbreviations: u, ur, rn, ngl, tbh, fr, wym
-- Max 1 emoji per message, usually none. Never: 💕 🥰 😘 (fake energy)
-- NEVER sell before building rapport (~40+ messages for new fans)
-- PPV captions MUST include: (1) pressure removal, (2) callback to conversation, (3) fan's name, (4) open-ended question
-- PPV price sweet spot: $15-$25 for new subscribers
-- Objection handling: ignore → intangible value → gamify (NEVER defensive)
-- One pitch attempt per conversation segment; back off if declined
-- NEVER: generic greetings, customer service tone, bio dumps, multiple questions in one message, walls of text
+CRITICAL RULES:
+- Carry the conversation at all times, never let chats die
+- Reply within 1 minute when selling or handling objections
+- Send multiple messages (shows enthusiasm), use tasteful emojis (😏😊😂💦 only)
+- Open-ended questions, not yes/no. "This or That" format is best
+- Talk about yourself too — don't just interrogate
+- NEVER: dry replies (okay, cool, haha, wow), generic greetings, customer service tone, walls of text, multiple questions in one message
+- Follow up on read messages: "Tom? 👀" or "You still there?"
+- After goodnight, wait 5 min then send: "I can't sleep, still thinking about you 😏"
 
-Patterns of WINNING conversations (proven to convert):
-- Warm personalized opener referencing something specific
-- Patient rapport building (40-55+ messages before any selling)
-- Energy matching: mirror the fan's message length and tone
-- Natural stage progression without forced transitions
-- Questions that create emotional connection, not just information gathering
-- Playful teasing that builds tension organically
+OBJECTION HANDLING:
+- "Too expensive": (1) Ignore once, (2) Offer intangibles (dick rating, voice note), (3) Gamify "if you can watch without finishing, next one free 😏", (4) Add 3-5 extra pics, (5) Renegotiate (different content for lower price, NEVER just discount)
+- "Can we meet/go off platform": Playful dodge, never agree, never say no definitively. "I'm open-minded but it's only been [time]". Use stories about friends who had bad experiences.
+- "Is this pre-recorded/agency?": Ignore once, use humor "am I a robot? (the funniest robot ever) 😂", don't get defensive, stall with conversation, get voice note
+- "Want something else": Ignore once, divert with "what if" to content you DO have, resend original PPV
+- NEVER: guilt trip, get angry, over-negotiate, get defensive
 
-Patterns of FAILING conversations:
-- Generic "hey" or "how are you" openers
-- Rushing to sell within first 15 messages
-- Multiple unprompted messages without fan response (spamming)
-- Interview-mode rapid-fire questions
-- Ignoring fan's buying signals (interest in content, body compliments)
-- Being defensive when fan objects to price`;
+PRICING:
+- Tier 1 ($20-60): Boobs, teasing
+- Tier 2 ($60-100): Masturbation solo, reveal
+- Tier 3 ($100-150): Masturbation with toys
+- Tier 4 ($150-200): Most explicit content
+- Sequences: $15→$35→$60→$100→$150→$200 progression
+- FOMO: "I'm probably going to unsend this", "get it before I change my mind"
+- Whales: push price up 10-20% each time, move to single high payments
+- Dummy customs: sell existing long videos as custom "just for them" ($400-$800)
+
+WINNING PATTERNS:
+- Personalized opener + location match + humanizing story in first interaction
+- Patient rapport: 2-3 commonalities before any selling, 40+ messages for new fans
+- Invisible transitions: non-sexual teaser → activity talk → "if you were here" → flirty
+- Scenario sexting with lots of detail, proper pacing, PPV at each escalation stage
+- Good PPV captions with all 4 elements
+- Fast replies when selling, instant follow-up on purchases for looping
+- Energy matching: mirror fan's message length and tone
+
+FAILING PATTERNS:
+- Generic openers ("hey how are you")
+- No location match attempt
+- Interview-mode rapid-fire questions without sharing about yourself
+- Visible transitions ("can I show you something?", "I'm so horny")
+- Real-time sexting instead of scenario-based
+- Premature selling before rapport (under 40 messages for new fans)
+- Slow replies during active selling
+- Guilt tripping or getting defensive on objections
+- Disappearing after purchase (no aftercare)
+- GF experience instead of friends-with-benefits
+- Multiple messages with no fan response (spamming)
+- Dry one-word replies`;
     },
 
     buildGradingPrompt(chatterName, conversations) {
@@ -5434,28 +5460,54 @@ For each conversation, output a JSON object:
 {
   "conversationIndex": 0,
   "sopScore": 72,
-  "stageProgression": ["OPENER", "CONNECT", "TRANSITION"],
+  "stageProgression": ["OPENER", "LOCATION_MATCH", "HUMANIZE", "PROFILE", "BUILD_CONNECTION", "TRANSITION", "SEXT", "SELL", "AFTERCARE"],
   "events": [
-    {"type": "GOOD_OPENER", "severity": "positive", "messageIndex": 1, "description": "Used casual greeting with question"},
-    {"type": "PREMATURE_PITCH", "severity": "critical", "messageIndex": 12, "description": "Offered PPV before building rapport"}
+    {"type": "GOOD_OPENER", "severity": "positive", "messageIndex": 1, "description": "Personalized opener with name + location question + playful comment"},
+    {"type": "PREMATURE_PITCH", "severity": "critical", "messageIndex": 12, "description": "Sent PPV before building rapport — only 12 messages in"}
   ],
-  "summary": "Good opener but rushed to sell before fan was warmed up."
+  "summary": "Good opener but rushed to sell. No location match or humanizing story."
 }
 
-Event types to detect:
-- POOR_OPENER (critical) — generic greeting, no hook or question
-- PREMATURE_PITCH (critical) — selling before ~40 messages for new fans
-- MISSED_BUY_SIGNAL (critical) — fan shows buying intent but chatter doesn't transition within 2-3 messages
-- SPAMMY_BEHAVIOR (warning) — walls of text, multiple messages without fan response
-- CAPTION_VIOLATION (warning) — PPV caption missing required elements
-- PRICING_VIOLATION (warning) — price below $15 sweet spot for standard content
-- OBJECTION_FAILURE (critical) — defensive response to price/meetup objection
-- SUCCESSFUL_UPSELL (positive) — correct post-purchase follow-up and looping
-- GOOD_OPENER (positive) — warm, personalized, with question
-- GOOD_RAPPORT (positive) — natural connection building, energy matching
-- GOOD_TRANSITION (positive) — smooth escalation from casual to flirty/sexual
+CRITICAL events (major SOP violations):
+- GENERIC_OPENER — "hey how are you", "what are you up to", no name/hook/location question
+- NO_LOCATION_MATCH — didn't ask where they're from or pretend to be from same area
+- PREMATURE_PITCH — selling before ~40 messages for new fans, or before 2-3 commonalities
+- VISIBLE_TRANSITION — obvious transition: "can I show you something?", "want to have some fun?", "I'm so horny"
+- MISSED_BUY_SIGNAL — fan shows buying intent but chatter doesn't capitalize within 2-3 messages
+- OBJECTION_FAILURE — got defensive, guilt tripped, or over-negotiated on objections
+- GF_EXPERIENCE — acting like girlfriend instead of friends-with-benefits
+- SLOW_REPLY_SELLING — slow replies during active selling (should be <1 min)
 
-sopScore: 0-100 where 80+ = excellent SOP adherence, 60-79 = adequate, below 60 = needs coaching.
+WARNING events (needs improvement):
+- INTERVIEW_MODE — rapid-fire questions without sharing about yourself, no 3-step method
+- NO_HUMANIZING — didn't share relatable story to seem like a real person
+- DRY_REPLIES — "okay", "cool", "haha", "wow", one-word responses
+- SPAMMING — walls of text or 3+ messages without fan response
+- WEAK_PPV_CAPTION — missing elements: pressure removal, convo link, question, name
+- BAD_PRICING — first PPV too expensive (>$25 for new fans) or bad sequence progression
+- REAL_TIME_SEXTING — generic "I'm so horny" instead of scenario-based with story/detail
+- NO_AFTERCARE — disappeared after purchase, no warm follow-up
+- NO_FOLLOWUP — let conversation die, didn't check unread/delivered messages
+
+POSITIVE events (good SOP adherence):
+- GOOD_OPENER — personalized with name + location question + playful comment
+- GOOD_LOCATION_MATCH — matched their location, used local references
+- GOOD_HUMANIZING — shared relatable funny story with specific details
+- GOOD_PROFILING — gathered info naturally using 3-step method (ask→respond→answer yourself)
+- GOOD_CONNECTION — built commonalities with evidence, created inside jokes/nicknames
+- SMOOTH_TRANSITION — invisible 4-step: non-sexual teaser → activity talk → "if you were here" → flirty
+- GOOD_SCENARIO_SEXT — scenario-based sexting with story structure, detail, proper pacing
+- GOOD_PPV_CAPTION — includes all 4 elements (pressure removal, convo link, question, name)
+- GOOD_PPV_LOOPING — instant follow-up after purchase, upsell, increasing price
+- GOOD_OBJECTION_HANDLING — ignore → intangibles → gamify → add content → renegotiate
+- GOOD_AFTERCARE — warm follow-up post-purchase
+
+sopScore: 0-100 rubric:
+- 90-100: All stages followed perfectly, invisible transitions, scenario sexting, great captions, fast replies
+- 75-89: Most stages followed, minor issues (e.g. could humanize more, slight pricing issue)
+- 60-74: Some stages skipped, visible transition OR weak sexting OR missing PPV elements
+- 40-59: Multiple SOP violations — premature pitch, interview mode, generic opener, etc.
+- 0-39: Major failures — guilt tripping, defensive objection handling, GF experience, spamming
 
 Return ONLY a valid JSON array. No markdown fences, no explanation.`;
 
@@ -5463,7 +5515,7 @@ Return ONLY a valid JSON array. No markdown fences, no explanation.`;
     },
 
     buildCoachingPrompt(chatterName, metrics, eventCounts, worstConvos) {
-        let prompt = `You are a senior QA coach reviewing chatter "${chatterName}"'s daily performance.\n\n`;
+        let prompt = `You are a senior QA coach for an OF chatting agency. Review chatter "${chatterName}"'s daily shift.\n\n`;
         prompt += `Metrics:\n`;
         prompt += `- ${metrics.totalConversations} conversations, ${metrics.totalMessages} messages\n`;
         prompt += `- Revenue: $${metrics.totalRevenue.toFixed(2)}, Conversion rate: ${(metrics.conversionRate * 100).toFixed(1)}%\n`;
@@ -5483,11 +5535,13 @@ Return ONLY a valid JSON array. No markdown fences, no explanation.`;
             prompt += '\n';
         }
 
-        prompt += `Generate a coaching report as JSON:
+        prompt += `Agency SOP priorities: (1) Personalized opener + location match, (2) Humanizing story, (3) Natural profiling with 3-step method, (4) 2-3 commonalities before selling, (5) Invisible 4-step transitions, (6) Scenario-based sexting with detail, (7) PPV captions with all 4 elements, (8) Fast replies when selling, (9) Proper objection handling (ignore→intangibles→gamify), (10) Aftercare post-purchase.
+
+Generate a coaching report as JSON:
 {
-  "strengths": ["strength 1", "strength 2"],
-  "weaknesses": ["weakness 1", "weakness 2"],
-  "coachingFeedback": "3-5 specific actionable sentences about what to improve and how.",
+  "strengths": ["specific strength referencing SOP module, e.g. 'Good location matching — matched fan's city in 3/5 conversations'"],
+  "weaknesses": ["specific weakness with fix, e.g. 'Visible transitions in 4 conversations — used \"want to see my content?\" instead of the 4-step framework (teaser→activity→if you were here→flirty)'"],
+  "coachingFeedback": "2-4 sentences. Be specific: quote what they did wrong and what the SOP says to do instead. Reference module numbers when relevant. Focus on the ONE biggest improvement that would increase their revenue.",
   "tier": "top" | "average" | "at_risk"
 }
 
