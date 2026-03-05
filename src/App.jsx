@@ -28,6 +28,10 @@ const OFDashboard = lazy(() => import('./pages/OFDashboard').then(m => ({ defaul
 const OFImport = lazy(() => import('./pages/OFImport').then(m => ({ default: m.OFImport })));
 const OFReports = lazy(() => import('./pages/OFReports').then(m => ({ default: m.OFReports })));
 const OFConfig = lazy(() => import('./pages/OFConfig').then(m => ({ default: m.OFConfig })));
+const AIChatImport = lazy(() => import('./pages/AIChatImport').then(m => ({ default: m.AIChatImport })));
+const AIChatLeaderboard = lazy(() => import('./pages/AIChatLeaderboard').then(m => ({ default: m.AIChatLeaderboard })));
+const AIChatReport = lazy(() => import('./pages/AIChatReport').then(m => ({ default: m.AIChatReport })));
+const AIChatReplay = lazy(() => import('./pages/AIChatReplay').then(m => ({ default: m.AIChatReplay })));
 
 const PageLoader = () => (
   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
@@ -94,6 +98,10 @@ function App() {
                 <Route path="of/import" element={<OFImport />} />
                 <Route path="of/reports" element={<OFReports />} />
                 <Route path="of/config" element={<OFConfig />} />
+                <Route path="of/ai-chat-import" element={<AIChatImport />} />
+                <Route path="of/ai-chat-leaderboard" element={<AIChatLeaderboard />} />
+                <Route path="of/ai-chat-report/:chatterId" element={<AIChatReport />} />
+                <Route path="of/ai-chat-replay/:conversationId" element={<AIChatReplay />} />
                 <Route path="discovery" element={<Discovery />} />
                 <Route path="models" element={<Models />} />
                 <Route path="model/:id" element={<ModelDetail />} />

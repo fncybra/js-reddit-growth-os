@@ -91,7 +91,10 @@ export const SettingsService = {
             ofTelegramThreadId: '',
             ofDailyReportEnabled: 0,
             ofDailyReportHour: 20,
-            lastOFDailyReportDate: ''
+            lastOFDailyReportDate: '',
+            aiChatApiKey: '',
+            aiChatHaikuModel: 'anthropic/claude-haiku-4.5',
+            aiChatSonnetModel: 'anthropic/claude-sonnet-4'
         };
         const settingsArr = await db.settings.toArray();
         const settings = { ...defaultSettings };
@@ -2050,7 +2053,7 @@ export const CloudSyncService = {
         const supabase = await getSupabaseClient();
         if (!supabase) return;
 
-        const allTables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'settings', 'verifications', 'dailySnapshots', 'competitors', 'ofModels', 'ofVas', 'ofTrackingLinks', 'ofBulkImports', 'ofLinkSnapshots', 'ofDailyStats'];
+        const allTables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'settings', 'verifications', 'dailySnapshots', 'competitors', 'ofModels', 'ofVas', 'ofTrackingLinks', 'ofBulkImports', 'ofLinkSnapshots', 'ofDailyStats', 'aiChatImports', 'aiChatters', 'aiChatModels', 'aiChatConversations', 'aiChatMessages', 'aiChatGrades', 'aiChatterReports'];
         const tables = onlyTables || allTables;
         const TASK_STATUS_RANK = { 'generated': 1, 'failed': 2, 'closed': 3 };
 
@@ -2187,7 +2190,7 @@ export const CloudSyncService = {
         const supabase = await getSupabaseClient();
         if (!supabase) return;
 
-        const tables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'settings', 'verifications', 'dailySnapshots', 'competitors', 'ofModels', 'ofVas', 'ofTrackingLinks', 'ofBulkImports', 'ofLinkSnapshots', 'ofDailyStats'];
+        const tables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'settings', 'verifications', 'dailySnapshots', 'competitors', 'ofModels', 'ofVas', 'ofTrackingLinks', 'ofBulkImports', 'ofLinkSnapshots', 'ofDailyStats', 'aiChatImports', 'aiChatters', 'aiChatModels', 'aiChatConversations', 'aiChatMessages', 'aiChatGrades', 'aiChatterReports'];
         const fetched = {};
 
         // Phase 1: fetch every table first; skip tables that don't exist in cloud yet
@@ -2343,6 +2346,19 @@ export const CloudSyncService = {
             // Merge: upsert cloud data without clearing local
             await db[table].bulkPut(cloudData);
             console.log(`[CloudSync] Merged ${cloudData.length} cloud rows into ${table}`);
+
+            // For OF config tables: remove local records that no longer exist in cloud
+            // This ensures deletions propagate properly (cloud is authoritative for these tables)
+            const ofConfigTables = ['ofModels', 'ofVas', 'ofTrackingLinks'];
+            if (ofConfigTables.includes(table)) {
+                const cloudIds = new Set(cloudData.map(r => r.id));
+                const localRecords = await db[table].toArray();
+                const orphanIds = localRecords.filter(r => !cloudIds.has(r.id)).map(r => r.id);
+                if (orphanIds.length > 0) {
+                    await db[table].bulkDelete(orphanIds);
+                    console.log(`[CloudSync] Removed ${orphanIds.length} orphaned local rows from ${table}`);
+                }
+            }
         }
     },
 
@@ -2385,7 +2401,7 @@ export const CloudSyncService = {
         const supabase = await getSupabaseClient();
         if (!supabase) return;
 
-        const tables = ['ofDailyStats', 'ofLinkSnapshots', 'ofTrackingLinks', 'ofBulkImports', 'ofVas', 'ofModels', 'verifications', 'dailySnapshots', 'competitors', 'performances', 'tasks', 'assets', 'subreddits', 'accounts', 'models', 'settings'];
+        const tables = ['aiChatterReports', 'aiChatGrades', 'aiChatMessages', 'aiChatConversations', 'aiChatModels', 'aiChatters', 'aiChatImports', 'ofDailyStats', 'ofLinkSnapshots', 'ofTrackingLinks', 'ofBulkImports', 'ofVas', 'ofModels', 'verifications', 'dailySnapshots', 'competitors', 'performances', 'tasks', 'assets', 'subreddits', 'accounts', 'models', 'settings'];
         for (const table of tables) {
             const { error } = await supabase.from(table).delete().neq('id', -1);
             if (error) {
@@ -3605,12 +3621,118 @@ export const AirtableService = {
         return { success: true, recordCount: data.records?.length || 0 };
     },
 
+    async updateAccountsBatch(updates) {
+        // updates = [{ id: recordId, fields: { 'Status': 'Dead/Shadowbanned', ... } }, ...]
+        const { apiKey, baseId, tableName } = await this._getConfig();
+        const batches = [];
+        for (let i = 0; i < updates.length; i += 10) {
+            batches.push(updates.slice(i, i + 10));
+        }
+        for (const batch of batches) {
+            const res = await fetch(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`, {
+                method: 'PATCH',
+                headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ records: batch })
+            });
+            if (!res.ok) {
+                const body = await res.text().catch(() => '');
+                throw new Error(`Airtable batch update failed ${res.status}: ${body}`);
+            }
+        }
+    },
+
     clearCache() {
         this._cache = null;
         this._cacheTime = 0;
     }
 };
 
+
+
+// ─── Threads Health Patrol ────────────────────────────────────────────────────
+// Bulk-checks all active/warmup accounts via proxy scraper, writes dead status back to Airtable
+
+export const ThreadsPatrolService = {
+    _STORAGE_KEY: 'threadsPatrol_lastRun',
+
+    getLastRunDate() {
+        try { return localStorage.getItem(this._STORAGE_KEY) || null; } catch { return null; }
+    },
+
+    _setLastRunDate() {
+        try { localStorage.setItem(this._STORAGE_KEY, new Date().toISOString().slice(0, 10)); } catch {}
+    },
+
+    canRunToday() {
+        const last = this.getLastRunDate();
+        if (!last) return true;
+        const today = new Date().toISOString().slice(0, 10);
+        return last !== today;
+    },
+
+    async runPatrol(onProgress) {
+        if (!this.canRunToday()) {
+            throw new Error('DAILY_LIMIT');
+        }
+
+        const accounts = await AirtableService.fetchAllAccounts(true);
+        const proxyUrl = await SettingsService.getProxyUrl();
+        if (!proxyUrl) throw new Error('Proxy URL not configured. Set it in Settings.');
+
+        const toCheck = accounts.filter(a =>
+            a.status === 'Active' || a.status === 'Warm Up' || a.status === 'Setting Up'
+        );
+
+        const results = { alive: 0, dead: 0, errors: 0, updated: [] };
+        const updates = [];
+
+        onProgress?.({ checked: 0, total: toCheck.length, ...results });
+
+        const settled = await Promise.allSettled(
+            toCheck.map(async (acc) => {
+                const res = await fetch(`${proxyUrl}/api/scrape/threads/user/stats/${acc.username}`, { signal: AbortSignal.timeout(30000) });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                return res.json();
+            })
+        );
+
+        for (let j = 0; j < toCheck.length; j++) {
+            const acc = toCheck[j];
+            const r = settled[j];
+            if (r.status === 'fulfilled') {
+                const data = r.value;
+                const fields = {};
+
+                if (!data.exists || data.status === 'not_found') {
+                    fields['Status'] = 'Dead/Shadowbanned';
+                    results.dead++;
+                    results.updated.push({ username: acc.username, prevStatus: acc.status, newStatus: 'Dead/Shadowbanned' });
+                } else {
+                    if (data.followerCount !== undefined) fields['Followers'] = data.followerCount;
+                    if (data.threadCount !== undefined) fields['Thread Count'] = data.threadCount;
+                    results.alive++;
+                }
+
+                if (Object.keys(fields).length > 0) {
+                    updates.push({ id: acc.id, fields });
+                }
+            } else {
+                results.errors++;
+            }
+        }
+
+        onProgress?.({ checked: toCheck.length, total: toCheck.length, ...results });
+
+        if (updates.length > 0) {
+            await AirtableService.updateAccountsBatch(updates);
+        }
+
+        AirtableService.clearCache();
+        this._setLastRunDate();
+
+        return results;
+    }
+};
 
 
 // ─── Threads Growth Intelligence ──────────────────────────────────────────────
@@ -4662,7 +4784,7 @@ export const OFReportService = {
         })).sort((a, b) => b.newSubs - a.newSubs);
     },
 
-    // Copy-friendly plaintext report
+    // Copy-friendly plaintext report (OF Tracker)
     async buildPlaintextReport(report) {
         const lines = [];
         lines.push(`=== ${report.period.label} ===`);
@@ -4746,5 +4868,1098 @@ export const OFReportService = {
         lines.push(`  Delta: ${report.comparison.delta >= 0 ? '+' : ''}${report.comparison.delta}`);
 
         return lines.join('\n');
+    }
+};
+
+// ──────────────────────────────────────────────────────────────────────────────
+// AI CHAT REPORT DASHBOARD — Import, Grading, and Report Services
+// ──────────────────────────────────────────────────────────────────────────────
+
+export const AIChatImportService = {
+    // Parse "Mon DD, YYYY" + "HH:MM:SS" → ISO string
+    parseInflowTimestamp(dateStr, timeStr) {
+        if (!dateStr) return null;
+        try {
+            // dateStr: "Mar 5, 2026" or "Mar 05, 2026"
+            const d = new Date(`${dateStr} ${timeStr || '00:00:00'}`);
+            return isNaN(d.getTime()) ? null : d.toISOString();
+        } catch { return null; }
+    },
+
+    // Parse "Replay time" column → seconds (handles "Xm Ys", "Xh Ym Zs", empty, "--")
+    parseReplyTime(replayStr) {
+        if (!replayStr || replayStr === '--' || replayStr === '0') return null;
+        const s = String(replayStr).trim();
+        // "0m 26s" → 26, "2m 23s" → 143, "1h 2m 3s" → 3723
+        let total = 0;
+        const hMatch = s.match(/(\d+)\s*h/);
+        const mMatch = s.match(/(\d+)\s*m/);
+        const sMatch = s.match(/(\d+)\s*s/);
+        if (hMatch) total += parseInt(hMatch[1]) * 3600;
+        if (mMatch) total += parseInt(mMatch[1]) * 60;
+        if (sMatch) total += parseInt(sMatch[1]);
+        return total > 0 ? total : null;
+    },
+
+    // "Keith B (u548162492)" → "u548162492"
+    extractFanId(sentToStr) {
+        if (!sentToStr) return null;
+        const m = String(sentToStr).match(/\(([^)]+)\)\s*$/);
+        return m ? m[1] : String(sentToStr).trim();
+    },
+
+    // "Keith B (u548162492)" → "Keith B"
+    extractFanName(sentToStr) {
+        if (!sentToStr) return '';
+        const m = String(sentToStr).match(/^(.+?)\s*\(/);
+        return m ? m[1].trim() : String(sentToStr).trim();
+    },
+
+    // Strip HTML tags, decode basic entities
+    stripHtml(html) {
+        if (!html) return '';
+        return String(html)
+            .replace(/<br\s*\/?>/gi, '\n')
+            .replace(/<[^>]+>/g, '')
+            .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+            .trim();
+    },
+
+    // ── Streaming CSV parser ──────────────────────────────────────────────────
+    // Finds the last newline that is NOT inside a quoted field.
+    // Returns -1 if no safe split point found (need more data).
+    _findLastSafeNewline(text) {
+        let inQuote = false;
+        let lastSafe = -1;
+        for (let i = 0; i < text.length; i++) {
+            if (text[i] === '"') inQuote = !inQuote;
+            if (!inQuote && text[i] === '\n') lastSafe = i;
+        }
+        return lastSafe;
+    },
+
+    // Parse a chunk of CSV text into array-of-arrays. Assumes all rows are complete.
+    _parseCSVChunk(text) {
+        const rows = [];
+        let i = 0;
+        const len = text.length;
+        while (i < len) {
+            const row = [];
+            while (i < len) {
+                if (text[i] === '"') {
+                    i++;
+                    let val = '';
+                    while (i < len) {
+                        if (text[i] === '"') {
+                            if (i + 1 < len && text[i + 1] === '"') { val += '"'; i += 2; }
+                            else { i++; break; }
+                        } else { val += text[i]; i++; }
+                    }
+                    row.push(val);
+                    if (i < len && text[i] === ',') i++;
+                    else if (i < len && (text[i] === '\n' || text[i] === '\r')) { if (text[i] === '\r' && i + 1 < len && text[i + 1] === '\n') i++; i++; break; }
+                } else {
+                    let end = i;
+                    while (end < len && text[end] !== ',' && text[end] !== '\n' && text[end] !== '\r') end++;
+                    row.push(text.substring(i, end));
+                    i = end;
+                    if (i < len && text[i] === ',') i++;
+                    else if (i < len && (text[i] === '\n' || text[i] === '\r')) { if (text[i] === '\r' && i + 1 < len && text[i + 1] === '\n') i++; i++; break; }
+                    else { i++; break; }
+                }
+            }
+            if (row.length > 1 || (row.length === 1 && row[0] !== '')) rows.push(row);
+        }
+        return rows;
+    },
+
+    // ── Main processFile — accepts File object for CSV streaming ────────────
+    async processFile(fileOrBuffer, filename, onProgress) {
+        const isCSV = filename.toLowerCase().endsWith('.csv');
+        const isFile = fileOrBuffer instanceof File || (fileOrBuffer?.stream && fileOrBuffer?.size);
+
+        if (!isCSV) {
+            // Excel: load into memory (xlsx files are typically much smaller)
+            const arrayBuffer = isFile ? await fileOrBuffer.arrayBuffer() : fileOrBuffer;
+            return this._processExcelFile(arrayBuffer, filename, onProgress);
+        }
+
+        // CSV: stream it — never load full file into memory
+        return this._processCSVStream(isFile ? fileOrBuffer : new Blob([fileOrBuffer]), filename, onProgress);
+    },
+
+    async _processExcelFile(arrayBuffer, filename, onProgress) {
+        const fileSize = arrayBuffer.byteLength;
+        onProgress?.({ phase: 'parsing', current: 0, total: 0, label: `Reading Excel file (${(fileSize / 1024 / 1024).toFixed(0)}MB)...` });
+        const XLSX = (await import('xlsx')).default || await import('xlsx');
+
+        // Read with minimal parsing to reduce memory (no formulas, HTML, styles)
+        const wb = XLSX.read(new Uint8Array(arrayBuffer), {
+            type: 'array', cellFormula: false, cellHTML: false, cellStyles: false
+        });
+        // Free ArrayBuffer immediately
+        arrayBuffer = null;
+
+        const sheetName = wb.SheetNames[0];
+        if (!sheetName) throw new Error('No sheets found in file');
+        const ws = wb.Sheets[sheetName];
+        const ref = ws['!ref'];
+        if (!ref) throw new Error('Empty sheet');
+        const range = XLSX.utils.decode_range(ref);
+        const totalRows = range.e.r - range.s.r; // exclude header
+        if (totalRows < 1) throw new Error('No data rows found');
+
+        onProgress?.({ phase: 'parsing', current: 0, total: totalRows, label: `Found ${totalRows.toLocaleString()} rows, converting...` });
+
+        // Convert entire sheet to CSV string — MUCH smaller than sheet_to_json objects
+        // For 500K rows: sheet_to_json = 500K JS objects (~500MB) vs CSV string (~100-150MB)
+        let csvText = XLSX.utils.sheet_to_csv(ws, { blankrows: false });
+
+        // Free the entire workbook — the biggest memory consumer
+        const sheetNames = wb.SheetNames;
+        for (const sn of sheetNames) delete wb.Sheets[sn];
+        wb.Sheets = null;
+        wb.SheetNames = null;
+
+        onProgress?.({ phase: 'parsing', current: 0, total: totalRows, label: 'Preparing stream...' });
+
+        // Create a Blob from the CSV text so we can stream it through our CSV parser
+        const csvBlob = new Blob([csvText], { type: 'text/csv' });
+        // Free the CSV string — Blob holds its own copy
+        csvText = null;
+
+        // Delegate to our memory-efficient streaming CSV parser
+        return this._processCSVStream(csvBlob, filename, onProgress);
+    },
+
+    async _processCSVStream(fileBlob, filename, onProgress) {
+        const fileSize = fileBlob.size;
+        onProgress?.({ phase: 'parsing', current: 0, total: fileSize, label: `Reading CSV (${(fileSize / 1024 / 1024).toFixed(0)}MB)...` });
+
+        const stream = fileBlob.stream().pipeThrough(new TextDecoderStream('utf-8'));
+        const reader = stream.getReader();
+
+        // Phase 1: Stream CSV, parse rows, write messages straight to Dexie
+        // Only keep lightweight per-conversation stats in memory (no message content)
+        let buffer = '';
+        let headerRow = null;
+        let colIdx = {};
+        let bytesRead = 0;
+        let rowCount = 0;
+
+        // Lightweight stats per conversation (NO message content stored in memory)
+        const convStats = new Map(); // convKey → stats object
+        const uniqueChatters = new Set();
+        const uniqueModels = new Set();
+        let firstRowDate = null;
+        let totalMsgCount = 0;
+
+        // Message batch for Dexie — flush every 2000 records
+        const MSG_BATCH = [];
+        const MSG_FLUSH = 2000;
+
+        // Pre-generate convIds so messages go straight to Dexie with correct conversationId
+        const convIdMap = new Map(); // convKey → convId
+
+        // These will be set after header is parsed
+        let senderIdx, creatorIdx, fanMsgIdx, chatterMsgIdx, sentToIdx, sentDateIdx, sentTimeIdx, replayTimeIdx, priceIdx, purchasedIdx, sourceIdx;
+
+        const dateMatch = filename.match(/(\d{4}[-_]\d{2}[-_]\d{2})/);
+        let importDate = dateMatch ? dateMatch[1].replace(/_/g, '-') : null;
+
+        const importId = generateId();
+        await db.aiChatImports.add({
+            id: importId, importDate: importDate || new Date().toISOString().split('T')[0], filename,
+            totalMessages: 0, totalConversations: 0, totalChatters: 0, totalModels: 0,
+            totalRevenue: 0, status: 'processing', createdAt: new Date().toISOString()
+        });
+
+        // We need chatter/model maps but we don't know names upfront when streaming.
+        // Lazily upsert as we encounter new names.
+        const chatterMap = new Map(); // name → id
+        const modelMap = new Map();   // name → id
+
+        const ensureChatter = async (name) => {
+            if (!name || chatterMap.has(name)) return chatterMap.get(name) || null;
+            let existing = await db.aiChatters.where('name').equals(name).first();
+            if (!existing) {
+                const id = generateId();
+                await db.aiChatters.add({ id, name, firstSeen: importDate || '', lastSeen: importDate || '' });
+                existing = { id };
+            } else {
+                await db.aiChatters.update(existing.id, { lastSeen: importDate || '' });
+            }
+            chatterMap.set(name, existing.id);
+            uniqueChatters.add(name);
+            return existing.id;
+        };
+
+        const ensureModel = async (name) => {
+            if (!name || modelMap.has(name)) return modelMap.get(name) || null;
+            let existing = await db.aiChatModels.where('name').equals(name).first();
+            if (!existing) {
+                const id = generateId();
+                await db.aiChatModels.add({ id, name });
+                existing = { id };
+            }
+            modelMap.set(name, existing.id);
+            uniqueModels.add(name);
+            return existing.id;
+        };
+
+        const flushMessages = async () => {
+            if (MSG_BATCH.length > 0) {
+                await db.aiChatMessages.bulkAdd(MSG_BATCH.splice(0));
+            }
+        };
+
+        const processRow = async (fields) => {
+            const chatterName = String(fields[senderIdx] || '').trim();
+            const modelName = String(fields[creatorIdx] || '').trim();
+            const fanMsg = this.stripHtml(fields[fanMsgIdx]);
+            const chatterMsg = this.stripHtml(fields[chatterMsgIdx]);
+            const sentTo = String(fields[sentToIdx] || '').trim();
+            const fanUserId = this.extractFanId(sentTo);
+            const fanName = this.extractFanName(sentTo);
+            const timestamp = this.parseInflowTimestamp(fields[sentDateIdx], fields[sentTimeIdx]);
+            const replyTimeSec = this.parseReplyTime(fields[replayTimeIdx]);
+            const price = parseFloat(String(fields[priceIdx] || '0').replace(/[$,]/g, '')) || 0;
+            const purchased = String(fields[purchasedIdx] || '').toLowerCase() === 'yes';
+            const source = String(fields[sourceIdx] || 'Employee').trim();
+
+            if (!importDate && timestamp) {
+                importDate = timestamp.split('T')[0];
+                await db.aiChatImports.update(importId, { importDate });
+            }
+
+            if (!modelName || !fanUserId) return;
+
+            const convKey = `${modelName}::${fanUserId}`;
+
+            // Lazy entity upsert (only hits DB once per unique name)
+            const chatterId = await ensureChatter(chatterName);
+            const modelId = await ensureModel(modelName);
+
+            // Get or create convId for this conversation
+            if (!convIdMap.has(convKey)) {
+                convIdMap.set(convKey, generateId());
+                convStats.set(convKey, {
+                    chatterId, modelId, fanUserId, fanName,
+                    messageCount: 0, fanMessageCount: 0, chatterMessageCount: 0,
+                    firstMessageTime: null, lastMessageTime: null,
+                    replyTimeSum: 0, replyTimeCount: 0, replyTimeMax: 0,
+                    ppvSent: 0, ppvPurchased: 0, ppvRevenue: 0, ppvPriceSum: 0,
+                    chatterCounts: new Map()
+                });
+            }
+            const convId = convIdMap.get(convKey);
+            const stats = convStats.get(convKey);
+
+            // Helper to add a message to batch + update stats
+            const addMsg = (sender, content, ts, replySec, msgPrice, msgPurchased) => {
+                MSG_BATCH.push({
+                    id: generateId() + totalMsgCount,
+                    conversationId: convId, sender, content, rawHtml: '',
+                    timestamp: ts, replyTimeSec: replySec,
+                    price: msgPrice, purchased: msgPurchased, source,
+                    annotation: null
+                });
+                stats.messageCount++;
+                totalMsgCount++;
+                if (sender === 'fan') stats.fanMessageCount++;
+                else {
+                    stats.chatterMessageCount++;
+                    if (chatterId) stats.chatterCounts.set(chatterId, (stats.chatterCounts.get(chatterId) || 0) + 1);
+                }
+                if (ts) {
+                    if (!stats.firstMessageTime || ts < stats.firstMessageTime) stats.firstMessageTime = ts;
+                    if (!stats.lastMessageTime || ts > stats.lastMessageTime) stats.lastMessageTime = ts;
+                }
+                if (replySec != null && replySec > 0) {
+                    stats.replyTimeSum += replySec;
+                    stats.replyTimeCount++;
+                    if (replySec > stats.replyTimeMax) stats.replyTimeMax = replySec;
+                }
+                if (msgPrice > 0) {
+                    stats.ppvSent++;
+                    stats.ppvPriceSum += msgPrice;
+                    if (msgPurchased) { stats.ppvPurchased++; stats.ppvRevenue += msgPrice; }
+                }
+            };
+
+            if (fanMsg) addMsg('fan', fanMsg, timestamp, null, 0, false);
+            if (chatterMsg) addMsg('chatter', chatterMsg, timestamp, replyTimeSec, price, purchased);
+
+            // Flush message batch to Dexie periodically
+            if (MSG_BATCH.length >= MSG_FLUSH) await flushMessages();
+        };
+
+        // ── Stream loop ──────────────────────────────────────────────────────
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (value) {
+                    buffer += value;
+                    bytesRead += value.length;
+                }
+
+                // Find safe split point (last newline not inside quotes)
+                const splitAt = this._findLastSafeNewline(buffer);
+
+                if (splitAt === -1 && !done) continue; // need more data
+
+                const chunk = done ? buffer : buffer.substring(0, splitAt + 1);
+                buffer = done ? '' : buffer.substring(splitAt + 1);
+
+                if (chunk.length === 0 && done) break;
+
+                const rows = this._parseCSVChunk(chunk);
+
+                for (const row of rows) {
+                    if (!headerRow) {
+                        // First row = headers
+                        headerRow = row;
+                        const required = ['Sender', 'Creator', 'Creator Message', 'Sent time', 'Sent date', 'Sent to'];
+                        const missing = required.filter(c => !headerRow.includes(c));
+                        if (missing.length > 0) {
+                            await db.aiChatImports.delete(importId);
+                            throw new Error(`Missing columns: ${missing.join(', ')}`);
+                        }
+                        // Build column index
+                        for (let c = 0; c < headerRow.length; c++) colIdx[headerRow[c]] = c;
+                        senderIdx = colIdx['Sender'];
+                        creatorIdx = colIdx['Creator'];
+                        fanMsgIdx = colIdx['Fans Message'];
+                        chatterMsgIdx = colIdx['Creator Message'];
+                        sentToIdx = colIdx['Sent to'];
+                        sentDateIdx = colIdx['Sent date'];
+                        sentTimeIdx = colIdx['Sent time'];
+                        replayTimeIdx = colIdx['Replay time'];
+                        priceIdx = colIdx['Price'];
+                        purchasedIdx = colIdx['Purchased'];
+                        sourceIdx = colIdx['Source'];
+                        continue;
+                    }
+
+                    await processRow(row);
+                    rowCount++;
+
+                    // Update progress every 5000 rows and yield to prevent UI freeze
+                    if (rowCount % 5000 === 0) {
+                        onProgress?.({
+                            phase: 'parsing',
+                            current: bytesRead,
+                            total: fileSize,
+                            label: `Parsed ${rowCount.toLocaleString()} rows (${Math.round(bytesRead / fileSize * 100)}%)...`
+                        });
+                        await new Promise(r => setTimeout(r, 0));
+                    }
+                }
+
+                if (done) break;
+            }
+        } finally {
+            reader.releaseLock();
+        }
+
+        // Flush any remaining messages
+        await flushMessages();
+
+        if (!headerRow) throw new Error('No data found in CSV');
+        if (rowCount === 0) throw new Error('No data rows found');
+
+        onProgress?.({ phase: 'storing', current: 0, total: convStats.size, label: 'Creating conversation records...' });
+
+        // Phase 2: Create conversation records from accumulated stats
+        let totalRevenue = 0;
+        let convIdx = 0;
+        const totalConvs = convStats.size;
+
+        for (const [convKey, stats] of convStats) {
+            if (convIdx % 200 === 0) {
+                onProgress?.({ phase: 'storing', current: convIdx, total: totalConvs, label: `Creating conversation ${convIdx.toLocaleString()} / ${totalConvs.toLocaleString()}...` });
+                if (convIdx > 0 && convIdx % 500 === 0) await new Promise(r => setTimeout(r, 0));
+            }
+
+            const convId = convIdMap.get(convKey);
+            totalRevenue += stats.ppvRevenue;
+
+            // Determine primary chatter
+            let primaryChatterId = stats.chatterId;
+            let maxCount = 0;
+            for (const [cid, count] of stats.chatterCounts) {
+                if (count > maxCount) { primaryChatterId = cid; maxCount = count; }
+            }
+
+            await db.aiChatConversations.add({
+                id: convId, importId, chatterId: primaryChatterId, modelId: stats.modelId,
+                fanUserId: stats.fanUserId, fanName: stats.fanName,
+                messageCount: stats.messageCount,
+                fanMessageCount: stats.fanMessageCount,
+                chatterMessageCount: stats.chatterMessageCount,
+                firstMessageTime: stats.firstMessageTime,
+                lastMessageTime: stats.lastMessageTime,
+                avgReplyTimeSec: stats.replyTimeCount > 0 ? Math.round(stats.replyTimeSum / stats.replyTimeCount) : null,
+                maxReplyTimeSec: stats.replyTimeMax > 0 ? stats.replyTimeMax : null,
+                ppvSent: stats.ppvSent, ppvPurchased: stats.ppvPurchased,
+                ppvRevenue: stats.ppvRevenue,
+                ppvAvgPrice: stats.ppvSent > 0 ? Math.round(stats.ppvPriceSum / stats.ppvSent) : 0,
+                stageClassification: null, graded: 0
+            });
+            convIdx++;
+        }
+
+        if (!importDate) importDate = new Date().toISOString().split('T')[0];
+
+        // Update import record with final stats
+        await db.aiChatImports.update(importId, {
+            importDate,
+            totalMessages: totalMsgCount,
+            totalConversations: totalConvs,
+            totalChatters: uniqueChatters.size,
+            totalModels: uniqueModels.size,
+            totalRevenue, status: 'imported'
+        });
+
+        onProgress?.({ phase: 'done', current: totalConvs, total: totalConvs, label: 'Import complete!' });
+
+        return {
+            importId, importDate,
+            totalMessages: totalMsgCount,
+            totalConversations: totalConvs,
+            totalChatters: uniqueChatters.size,
+            totalModels: uniqueModels.size,
+            totalRevenue,
+            errors: []
+        };
+    },
+
+    // _processRows removed — Excel files now convert to CSV and use streaming parser
+
+    async getImportHistory() {
+        return (await db.aiChatImports.orderBy('importDate').reverse().toArray());
+    },
+
+    async deleteImport(importId) {
+        // Delete in dependency order
+        const convos = await db.aiChatConversations.where('importId').equals(importId).toArray();
+        const convIds = convos.map(c => c.id);
+        if (convIds.length > 0) {
+            for (const cid of convIds) {
+                await db.aiChatMessages.where('conversationId').equals(cid).delete();
+            }
+        }
+        await db.aiChatGrades.where('importId').equals(importId).delete();
+        await db.aiChatterReports.where('importId').equals(importId).delete();
+        await db.aiChatConversations.where('importId').equals(importId).delete();
+        await db.aiChatImports.delete(importId);
+    }
+};
+
+export const AIChatGradingService = {
+    buildSystemPrompt() {
+        return `You are a QA analyst for an OnlyFans agency. Your job is to evaluate chatter performance against the agency's Standard Operating Procedures (SOPs). You are reviewing real business conversations to grade employee performance. This is workplace analytics — evaluate objectively and professionally.
+
+The SOPs define a conversation funnel with these stages:
+1. OPENER — Must use Name + Hook + Question (not generic "hey" or "how are you"). Warm, curious, personal.
+2. EARLY/PROFILE — Get to know them: name, location, age, job, interests. ONE question per message. No interview mode.
+3. BUILD_CONNECTION — Build rapport, find common ground, light teasing. Inside jokes, shared experiences. Balanced flirtation + emotional depth.
+4. TRANSITION — Gradually increase flirtiness. Drop hints about content. Let them escalate too. Build anticipation naturally.
+5. SEXT — Scenario-based, descriptive. Build tension with "and then...", "imagine...". Match their pace. Peak moment bridges to PPV.
+6. SELL — Casual pitch ONLY after strong rapport (40+ messages for new fans). "i made smth u might like", "only if u want". NEVER pushy.
+7. AFTERCARE — Warm follow-up post-purchase. Brief, not clingy. Keep connection open for next session.
+
+Critical SOP rules:
+- Messages should be SHORT (1-8 words average), lowercase, casual texting style
+- Abbreviations: u, ur, rn, ngl, tbh, fr, wym
+- Max 1 emoji per message, usually none. Never: 💕 🥰 😘 (fake energy)
+- NEVER sell before building rapport (~40+ messages for new fans)
+- PPV captions MUST include: (1) pressure removal, (2) callback to conversation, (3) fan's name, (4) open-ended question
+- PPV price sweet spot: $15-$25 for new subscribers
+- Objection handling: ignore → intangible value → gamify (NEVER defensive)
+- One pitch attempt per conversation segment; back off if declined
+- NEVER: generic greetings, customer service tone, bio dumps, multiple questions in one message, walls of text
+
+Patterns of WINNING conversations (proven to convert):
+- Warm personalized opener referencing something specific
+- Patient rapport building (40-55+ messages before any selling)
+- Energy matching: mirror the fan's message length and tone
+- Natural stage progression without forced transitions
+- Questions that create emotional connection, not just information gathering
+- Playful teasing that builds tension organically
+
+Patterns of FAILING conversations:
+- Generic "hey" or "how are you" openers
+- Rushing to sell within first 15 messages
+- Multiple unprompted messages without fan response (spamming)
+- Interview-mode rapid-fire questions
+- Ignoring fan's buying signals (interest in content, body compliments)
+- Being defensive when fan objects to price`;
+    },
+
+    buildGradingPrompt(chatterName, conversations) {
+        let prompt = `Analyze these ${conversations.length} conversations by chatter "${chatterName}". For each conversation, return a JSON object.\n\n`;
+
+        conversations.forEach((conv, idx) => {
+            prompt += `### Conversation ${idx + 1} (fan: "${conv.fanName}", model: "${conv.modelName}", ${conv.messages.length} messages)\n`;
+            const msgs = conv.messages;
+            // Truncate long conversations: keep first 20 + last 30
+            let displayMsgs = msgs;
+            if (msgs.length > 60) {
+                const first20 = msgs.slice(0, 20);
+                const last30 = msgs.slice(-30);
+                displayMsgs = [...first20, { sender: 'system', content: `[... ${msgs.length - 50} messages omitted ...]` }, ...last30];
+            }
+            for (const m of displayMsgs) {
+                const label = m.sender === 'fan' ? 'FAN' : m.sender === 'system' ? '---' : 'CHATTER';
+                const ppvTag = m.price > 0 ? ` [PPV $${m.price}${m.purchased ? ' PURCHASED' : ' NOT PURCHASED'}]` : '';
+                const replyTag = m.replyTimeSec ? ` [reply: ${m.replyTimeSec}s]` : '';
+                prompt += `[${label}] ${m.content}${ppvTag}${replyTag}\n`;
+            }
+            prompt += '\n';
+        });
+
+        prompt += `## Instructions
+For each conversation, output a JSON object:
+{
+  "conversationIndex": 0,
+  "sopScore": 72,
+  "stageProgression": ["OPENER", "CONNECT", "TRANSITION"],
+  "events": [
+    {"type": "GOOD_OPENER", "severity": "positive", "messageIndex": 1, "description": "Used casual greeting with question"},
+    {"type": "PREMATURE_PITCH", "severity": "critical", "messageIndex": 12, "description": "Offered PPV before building rapport"}
+  ],
+  "summary": "Good opener but rushed to sell before fan was warmed up."
+}
+
+Event types to detect:
+- POOR_OPENER (critical) — generic greeting, no hook or question
+- PREMATURE_PITCH (critical) — selling before ~40 messages for new fans
+- MISSED_BUY_SIGNAL (critical) — fan shows buying intent but chatter doesn't transition within 2-3 messages
+- SPAMMY_BEHAVIOR (warning) — walls of text, multiple messages without fan response
+- CAPTION_VIOLATION (warning) — PPV caption missing required elements
+- PRICING_VIOLATION (warning) — price below $15 sweet spot for standard content
+- OBJECTION_FAILURE (critical) — defensive response to price/meetup objection
+- SUCCESSFUL_UPSELL (positive) — correct post-purchase follow-up and looping
+- GOOD_OPENER (positive) — warm, personalized, with question
+- GOOD_RAPPORT (positive) — natural connection building, energy matching
+- GOOD_TRANSITION (positive) — smooth escalation from casual to flirty/sexual
+
+sopScore: 0-100 where 80+ = excellent SOP adherence, 60-79 = adequate, below 60 = needs coaching.
+
+Return ONLY a valid JSON array. No markdown fences, no explanation.`;
+
+        return prompt;
+    },
+
+    buildCoachingPrompt(chatterName, metrics, eventCounts, worstConvos) {
+        let prompt = `You are a senior QA coach reviewing chatter "${chatterName}"'s daily performance.\n\n`;
+        prompt += `Metrics:\n`;
+        prompt += `- ${metrics.totalConversations} conversations, ${metrics.totalMessages} messages\n`;
+        prompt += `- Revenue: $${metrics.totalRevenue.toFixed(2)}, Conversion rate: ${(metrics.conversionRate * 100).toFixed(1)}%\n`;
+        prompt += `- Avg reply time: ${metrics.avgReplyTimeSec ?? 'N/A'}s, Avg SOP score: ${metrics.avgSopScore?.toFixed(0) ?? 'N/A'}/100\n\n`;
+
+        prompt += `Detected events:\n`;
+        for (const [type, count] of Object.entries(eventCounts)) {
+            if (count > 0) prompt += `- ${type}: ${count} times\n`;
+        }
+        prompt += '\n';
+
+        if (worstConvos.length > 0) {
+            prompt += `Lowest-scored conversations:\n`;
+            worstConvos.forEach((c, i) => {
+                prompt += `${i + 1}. "${c.summary}" (score: ${c.sopScore}, fan: ${c.fanName})\n`;
+            });
+            prompt += '\n';
+        }
+
+        prompt += `Generate a coaching report as JSON:
+{
+  "strengths": ["strength 1", "strength 2"],
+  "weaknesses": ["weakness 1", "weakness 2"],
+  "coachingFeedback": "3-5 specific actionable sentences about what to improve and how.",
+  "tier": "top" | "average" | "at_risk"
+}
+
+Tier rules:
+- "top" if avgSopScore >= 75 AND conversionRate >= 0.15
+- "at_risk" if avgSopScore < 50 OR conversionRate < 0.05 OR more than 3 critical events
+- "average" otherwise
+
+Return ONLY valid JSON. No markdown fences.`;
+
+        return prompt;
+    },
+
+    async callLLM(model, systemPrompt, userPrompt, temperature = 0.3) {
+        const settings = await SettingsService.getSettings();
+        const proxyUrl = (settings.proxyUrl || '').trim();
+        // Use dedicated AI Chat key, fall back to main OpenRouter key
+        const apiKey = (settings.aiChatApiKey || '').trim() || settings.openRouterApiKey;
+        const aiBaseUrl = (settings.aiBaseUrl || '').trim() || 'https://openrouter.ai/api/v1';
+
+        if (!proxyUrl) throw new Error('No proxy URL configured. Go to Settings → Cloud Engine.');
+        if (!apiKey) throw new Error('No AI Chat API key configured. Go to Settings → AI Chat Grading and enter your OpenRouter API key.');
+
+        const MAX_RETRIES = 3;
+        const TIMEOUT_MS = 90000; // 90 second timeout per call
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+            let response;
+            try {
+                response = await fetch(`${proxyUrl}/api/ai/generate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    signal: controller.signal,
+                    body: JSON.stringify({
+                        aiBaseUrl: aiBaseUrl.replace(/\/$/, ''),
+                        apiKey, model,
+                        messages: [
+                            { role: 'system', content: systemPrompt },
+                            { role: 'user', content: userPrompt }
+                        ],
+                        temperature
+                    })
+                });
+            } catch (fetchErr) {
+                clearTimeout(timeoutId);
+                if (fetchErr.name === 'AbortError') throw new Error(`LLM call timed out after ${TIMEOUT_MS / 1000}s. Check your API key in Settings → AI Chat Grading.`);
+                throw fetchErr;
+            }
+            clearTimeout(timeoutId);
+
+            if (response.ok) {
+                const data = await response.json();
+                return {
+                    content: data.choices?.[0]?.message?.content || '',
+                    usage: data.usage || {}
+                };
+            }
+
+            const errData = await response.json().catch(() => ({}));
+            // Extract error message from nested proxy response: {error, details: {error: {message, code}}}
+            const errMsg = errData.details?.error?.message || errData.details?.message
+                || (typeof errData.details === 'string' ? errData.details : null)
+                || errData.error || `LLM call failed (${response.status})`;
+            const errStr = typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg);
+            const is429 = (response.status === 429) || (response.status === 500 && errStr.includes('429'));
+
+            if (is429 && attempt < MAX_RETRIES) {
+                const waitSec = 8 * Math.pow(2, attempt);
+                await new Promise(r => setTimeout(r, waitSec * 1000));
+                continue;
+            }
+            throw new Error(errStr);
+        }
+    },
+
+    parseJsonResponse(raw) {
+        let text = (raw || '').trim();
+        // Strip markdown fences
+        text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+        try { return JSON.parse(text); } catch {
+            // Try to extract JSON array or object
+            const arrMatch = text.match(/\[[\s\S]*\]/);
+            if (arrMatch) try { return JSON.parse(arrMatch[0]); } catch { /* fall through */ }
+            const objMatch = text.match(/\{[\s\S]*\}/);
+            if (objMatch) try { return JSON.parse(objMatch[0]); } catch { /* fall through */ }
+            return null;
+        }
+    },
+
+    async gradeImport(importId, onProgress) {
+        const settings = await SettingsService.getSettings();
+        const haikuModel = settings.aiChatHaikuModel || 'anthropic/claude-haiku-4.5';
+        const systemPrompt = this.buildSystemPrompt();
+
+        // Clear any prior grades/reports for this import (re-grade from scratch)
+        await db.aiChatGrades.where('importId').equals(importId).delete();
+        await db.aiChatterReports.where('importId').equals(importId).delete();
+        // Reset graded flag on conversations
+        const prevConvos = await db.aiChatConversations.where('importId').equals(importId).toArray();
+        for (const c of prevConvos) {
+            await db.aiChatConversations.update(c.id, { graded: 0, stageClassification: null });
+        }
+
+        // Get all conversations for this import, grouped by chatter
+        const convos = await db.aiChatConversations.where('importId').equals(importId).toArray();
+        const chatterGroups = new Map(); // chatterId → conversations[]
+        for (const c of convos) {
+            if (!chatterGroups.has(c.chatterId)) chatterGroups.set(c.chatterId, []);
+            chatterGroups.get(c.chatterId).push(c);
+        }
+
+        const allChatters = await db.aiChatters.toArray();
+        const chatterNameMap = new Map(allChatters.map(c => [c.id, c.name]));
+        const allModels = await db.aiChatModels.toArray();
+        const modelNameMap = new Map(allModels.map(m => [m.id, m.name]));
+
+        let chatterIdx = 0;
+        const totalChatters = chatterGroups.size;
+        let totalGraded = 0;
+
+        for (const [chatterId, chatterConvos] of chatterGroups) {
+            const chatterName = chatterNameMap.get(chatterId) || 'Unknown';
+            chatterIdx++;
+            onProgress?.({ phase: 'grading', current: chatterIdx, total: totalChatters, label: `Grading chatter ${chatterIdx}/${totalChatters} (${chatterName})...` });
+
+            // Load messages for each conversation
+            const convsWithMsgs = [];
+            for (const conv of chatterConvos) {
+                const msgs = await db.aiChatMessages.where('conversationId').equals(conv.id).toArray();
+                msgs.sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
+                convsWithMsgs.push({
+                    ...conv,
+                    modelName: modelNameMap.get(conv.modelId) || 'Unknown',
+                    messages: msgs
+                });
+            }
+
+            // Batch conversations (max 10 per LLM call to stay under context limits)
+            const BATCH_SIZE = 10;
+            for (let batchStart = 0; batchStart < convsWithMsgs.length; batchStart += BATCH_SIZE) {
+                const batch = convsWithMsgs.slice(batchStart, batchStart + BATCH_SIZE);
+                const userPrompt = this.buildGradingPrompt(chatterName, batch);
+
+                try {
+                    const result = await this.callLLM(haikuModel, systemPrompt, userPrompt);
+                    console.log(`[AI Chat Grade] ${chatterName} batch ${batchStart}: LLM returned ${result.content?.length || 0} chars, tokens: ${result.usage?.total_tokens || 0}`);
+                    const parsed = this.parseJsonResponse(result.content);
+                    console.log(`[AI Chat Grade] Parsed:`, Array.isArray(parsed) ? `${parsed.length} grades` : typeof parsed, parsed ? '' : '(null - parse failed!)');
+                    if (!parsed) console.warn('[AI Chat Grade] RAW RESPONSE:', result.content?.substring(0, 500));
+
+                    if (Array.isArray(parsed)) {
+                        for (const grade of parsed) {
+                            const convIndex = (grade.conversationIndex ?? 0) + batchStart;
+                            const conv = convsWithMsgs[convIndex];
+                            if (!conv) continue;
+
+                            await db.aiChatGrades.add({
+                                id: generateId(),
+                                importId, conversationId: conv.id, chatterId, modelId: conv.modelId,
+                                sopScore: grade.sopScore ?? null,
+                                events: JSON.stringify(grade.events || []),
+                                stageProgression: JSON.stringify(grade.stageProgression || []),
+                                summary: grade.summary || '',
+                                rawResponse: result.content,
+                                model: haikuModel,
+                                tokenCount: (result.usage?.total_tokens || 0),
+                                cost: 0, createdAt: new Date().toISOString()
+                            });
+
+                            // Write annotations back to messages
+                            if (Array.isArray(grade.events)) {
+                                const msgs = await db.aiChatMessages.where('conversationId').equals(conv.id).toArray();
+                                msgs.sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
+                                for (const event of grade.events) {
+                                    const mi = event.messageIndex;
+                                    if (mi != null && mi >= 0 && mi < msgs.length) {
+                                        await db.aiChatMessages.update(msgs[mi].id, {
+                                            annotation: JSON.stringify({
+                                                type: event.type,
+                                                severity: event.severity || 'warning',
+                                                text: event.description || event.type
+                                            })
+                                        });
+                                    }
+                                }
+                            }
+
+                            await db.aiChatConversations.update(conv.id, {
+                                stageClassification: (grade.stageProgression || []).slice(-1)[0] || null,
+                                graded: 1
+                            });
+                            totalGraded++;
+                        }
+                    }
+                } catch (err) {
+                    console.error(`Grading failed for ${chatterName} batch ${batchStart}:`, err);
+                    // Re-throw on first failure so the user sees the error
+                    // Common causes: bad API key, timeout, proxy down, model not found
+                    throw new Error(`Grading failed for ${chatterName}: ${err.message}`);
+                }
+
+                // Rate limit: 2s between calls
+                if (batchStart + BATCH_SIZE < convsWithMsgs.length) {
+                    await new Promise(r => setTimeout(r, 2000));
+                }
+            }
+
+            // Delay between chatters
+            await new Promise(r => setTimeout(r, 2000));
+        }
+
+        return { totalGraded, totalChatters };
+    },
+
+    async generateCoaching(importId, onProgress) {
+        const settings = await SettingsService.getSettings();
+        const sonnetModel = settings.aiChatSonnetModel || 'anthropic/claude-sonnet-4';
+        const systemPrompt = 'You are a senior QA coach for an OnlyFans chatting agency. Generate specific, actionable coaching feedback based on performance data.';
+
+        const convos = await db.aiChatConversations.where('importId').equals(importId).toArray();
+        const grades = await db.aiChatGrades.where('importId').equals(importId).toArray();
+        const allChatters = await db.aiChatters.toArray();
+        const chatterNameMap = new Map(allChatters.map(c => [c.id, c.name]));
+
+        // Group by chatter
+        const chatterData = new Map();
+        for (const conv of convos) {
+            if (!chatterData.has(conv.chatterId)) {
+                chatterData.set(conv.chatterId, {
+                    convos: [], grades: [], totalMessages: 0, totalRevenue: 0,
+                    ppvSent: 0, ppvPurchased: 0, replyTimes: []
+                });
+            }
+            const d = chatterData.get(conv.chatterId);
+            d.convos.push(conv);
+            d.totalMessages += conv.messageCount || 0;
+            d.totalRevenue += conv.ppvRevenue || 0;
+            d.ppvSent += conv.ppvSent || 0;
+            d.ppvPurchased += conv.ppvPurchased || 0;
+            if (conv.avgReplyTimeSec) d.replyTimes.push(conv.avgReplyTimeSec);
+        }
+        for (const g of grades) {
+            const d = chatterData.get(g.chatterId);
+            if (d) d.grades.push(g);
+        }
+
+        let chatterIdx = 0;
+        const totalChatters = chatterData.size;
+
+        for (const [chatterId, data] of chatterData) {
+            const chatterName = chatterNameMap.get(chatterId) || 'Unknown';
+            chatterIdx++;
+            onProgress?.({ phase: 'coaching', current: chatterIdx, total: totalChatters, label: `Coaching ${chatterIdx}/${totalChatters} (${chatterName})...` });
+
+            const scores = data.grades.map(g => g.sopScore).filter(s => s != null);
+            const avgSopScore = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
+            const avgReplyTimeSec = data.replyTimes.length > 0 ? Math.round(data.replyTimes.reduce((a, b) => a + b, 0) / data.replyTimes.length) : null;
+            const conversionRate = data.ppvSent > 0 ? data.ppvPurchased / data.ppvSent : 0;
+
+            // Aggregate events
+            const eventCounts = {};
+            const allEvents = [];
+            for (const g of data.grades) {
+                const events = typeof g.events === 'string' ? JSON.parse(g.events || '[]') : (g.events || []);
+                for (const e of events) {
+                    eventCounts[e.type] = (eventCounts[e.type] || 0) + 1;
+                    allEvents.push(e);
+                }
+            }
+
+            // Get worst convos for context
+            const worstConvos = data.grades
+                .filter(g => g.sopScore != null)
+                .sort((a, b) => a.sopScore - b.sopScore)
+                .slice(0, 3)
+                .map(g => {
+                    const conv = data.convos.find(c => c.id === g.conversationId);
+                    return { sopScore: g.sopScore, summary: g.summary, fanName: conv?.fanName || 'Unknown' };
+                });
+
+            const metrics = {
+                totalConversations: data.convos.length,
+                totalMessages: data.totalMessages,
+                totalRevenue: data.totalRevenue,
+                conversionRate, avgReplyTimeSec, avgSopScore
+            };
+
+            let tier = 'average';
+            let strengths = [];
+            let weaknesses = [];
+            let coachingFeedback = '';
+
+            try {
+                const userPrompt = this.buildCoachingPrompt(chatterName, metrics, eventCounts, worstConvos);
+                const result = await this.callLLM(sonnetModel, systemPrompt, userPrompt, 0.5);
+                const parsed = this.parseJsonResponse(result.content);
+
+                if (parsed) {
+                    tier = parsed.tier || tier;
+                    strengths = parsed.strengths || [];
+                    weaknesses = parsed.weaknesses || [];
+                    coachingFeedback = parsed.coachingFeedback || '';
+                }
+            } catch (err) {
+                console.error(`Coaching failed for ${chatterName}:`, err);
+                coachingFeedback = `Coaching generation failed: ${err.message}`;
+                // Fallback tier logic
+                if (avgSopScore != null) {
+                    if (avgSopScore >= 75 && conversionRate >= 0.15) tier = 'top';
+                    else if (avgSopScore < 50 || conversionRate < 0.05) tier = 'at_risk';
+                }
+            }
+
+            await db.aiChatterReports.add({
+                id: generateId(), importId, chatterId,
+                totalConversations: data.convos.length,
+                totalMessages: data.totalMessages,
+                totalRevenue: data.totalRevenue,
+                totalPPVSent: data.ppvSent,
+                totalPPVPurchased: data.ppvPurchased,
+                conversionRate, avgReplyTimeSec, avgSopScore,
+                eventCounts: JSON.stringify(eventCounts),
+                tier,
+                coachingFeedback,
+                strengths: JSON.stringify(strengths),
+                weaknesses: JSON.stringify(weaknesses),
+                model: sonnetModel,
+                tokenCount: 0, cost: 0,
+                createdAt: new Date().toISOString()
+            });
+
+            // Rate limit between calls
+            await new Promise(r => setTimeout(r, 2000));
+        }
+
+        // Update import status
+        await db.aiChatImports.update(importId, { status: 'complete' });
+
+        return { totalChatters };
+    },
+
+    async processImport(importId, onProgress) {
+        try {
+            await db.aiChatImports.update(importId, { status: 'grading' });
+            const gradeResult = await this.gradeImport(importId, onProgress);
+            const coachResult = await this.generateCoaching(importId, onProgress);
+            return { ...gradeResult, ...coachResult };
+        } catch (err) {
+            await db.aiChatImports.update(importId, { status: 'failed' });
+            throw err;
+        }
+    },
+
+    estimateCost(totalMessages, totalConversations, totalChatters) {
+        // Rough token estimate: ~15 tokens per message
+        const inputTokens = totalMessages * 15;
+        // Haiku: $0.80/M input, $4.00/M output (estimate output = 20% of input)
+        const haikuCost = (inputTokens * 0.8 / 1_000_000) + (inputTokens * 0.2 * 4.0 / 1_000_000);
+        // Sonnet coaching: ~2000 tokens per chatter
+        const sonnetCost = (totalChatters * 2000 * 3.0 / 1_000_000) + (totalChatters * 500 * 15.0 / 1_000_000);
+        return { haikuCost, sonnetCost, totalCost: haikuCost + sonnetCost };
+    }
+};
+
+export const AIChatReportService = {
+    async getLeaderboard(importId) {
+        const reports = await db.aiChatterReports.where('importId').equals(importId).toArray();
+        const imp = await db.aiChatImports.get(importId);
+        const allChatters = await db.aiChatters.toArray();
+        const chatterNameMap = new Map(allChatters.map(c => [c.id, c.name]));
+
+        const chatters = reports.map(r => ({
+            chatterId: r.chatterId,
+            name: chatterNameMap.get(r.chatterId) || 'Unknown',
+            tier: r.tier,
+            revenue: r.totalRevenue || 0,
+            conversationCount: r.totalConversations || 0,
+            messageCount: r.totalMessages || 0,
+            conversionRate: r.conversionRate || 0,
+            avgSopScore: r.avgSopScore,
+            avgReplyTimeSec: r.avgReplyTimeSec,
+            ppvSent: r.totalPPVSent || 0,
+            ppvPurchased: r.totalPPVPurchased || 0,
+            eventCounts: typeof r.eventCounts === 'string' ? JSON.parse(r.eventCounts || '{}') : (r.eventCounts || {})
+        })).sort((a, b) => b.revenue - a.revenue);
+
+        const totalRevenue = chatters.reduce((s, c) => s + c.revenue, 0);
+        const totalConversations = chatters.reduce((s, c) => s + c.conversationCount, 0);
+        const avgConversion = chatters.length > 0 ? chatters.reduce((s, c) => s + c.conversionRate, 0) / chatters.length : 0;
+
+        // Needs attention: median-based flagging
+        const needsAttention = this.computeNeedsAttention(chatters);
+
+        return {
+            importId, importDate: imp?.importDate,
+            globalStats: { totalRevenue, avgConversionRate: avgConversion, totalConversations, totalChatters: chatters.length },
+            chatters,
+            needsAttention
+        };
+    },
+
+    computeNeedsAttention(chatters) {
+        const withScores = chatters.filter(c => c.avgSopScore != null);
+        if (withScores.length < 3) return [];
+        const sorted = [...withScores].sort((a, b) => a.avgSopScore - b.avgSopScore);
+        const median = sorted[Math.floor(sorted.length / 2)].avgSopScore;
+        const threshold = Math.max(Math.floor(median * 0.6), 30);
+        return chatters.filter(c => c.avgSopScore != null && c.avgSopScore < threshold)
+            .map(c => ({ name: c.name, score: c.avgSopScore, reason: `SOP score ${c.avgSopScore?.toFixed(0)} below threshold ${threshold}` }));
+    },
+
+    async getImportDates() {
+        const imports = await db.aiChatImports.orderBy('importDate').reverse().toArray();
+        return imports.map(i => ({ id: i.id, date: i.importDate, filename: i.filename, status: i.status }));
+    },
+
+    async getChatterReport(importId, chatterId) {
+        const report = await db.aiChatterReports.where('importId').equals(importId).filter(r => r.chatterId === chatterId).first();
+        if (!report) return null;
+
+        const chatter = await db.aiChatters.get(chatterId);
+        const convos = await db.aiChatConversations.where('importId').equals(importId).filter(c => c.chatterId === chatterId).toArray();
+        const grades = await db.aiChatGrades.where('importId').equals(importId).filter(g => g.chatterId === chatterId).toArray();
+        const gradeMap = new Map(grades.map(g => [g.conversationId, g]));
+        const allModels = await db.aiChatModels.toArray();
+        const modelNameMap = new Map(allModels.map(m => [m.id, m.name]));
+
+        const conversations = convos.map(c => {
+            const grade = gradeMap.get(c.id);
+            return {
+                id: c.id,
+                fanName: c.fanName, fanUserId: c.fanUserId,
+                modelName: modelNameMap.get(c.modelId) || 'Unknown',
+                messageCount: c.messageCount,
+                ppvRevenue: c.ppvRevenue || 0,
+                ppvSent: c.ppvSent || 0,
+                ppvPurchased: c.ppvPurchased || 0,
+                avgReplyTimeSec: c.avgReplyTimeSec,
+                sopScore: grade?.sopScore ?? null,
+                events: grade ? (typeof grade.events === 'string' ? JSON.parse(grade.events || '[]') : grade.events) : [],
+                stageProgression: grade ? (typeof grade.stageProgression === 'string' ? JSON.parse(grade.stageProgression || '[]') : grade.stageProgression) : [],
+                summary: grade?.summary || ''
+            };
+        }).sort((a, b) => (b.ppvRevenue || 0) - (a.ppvRevenue || 0));
+
+        return {
+            chatterId, chatterName: chatter?.name || 'Unknown',
+            ...report,
+            eventCounts: typeof report.eventCounts === 'string' ? JSON.parse(report.eventCounts || '{}') : report.eventCounts,
+            strengths: typeof report.strengths === 'string' ? JSON.parse(report.strengths || '[]') : report.strengths,
+            weaknesses: typeof report.weaknesses === 'string' ? JSON.parse(report.weaknesses || '[]') : report.weaknesses,
+            conversations
+        };
+    },
+
+    async getConversationReplay(conversationId) {
+        const conv = await db.aiChatConversations.get(conversationId);
+        if (!conv) return null;
+
+        const messages = await db.aiChatMessages.where('conversationId').equals(conversationId).toArray();
+        messages.sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
+
+        const grade = await db.aiChatGrades.where('conversationId').equals(conversationId).first();
+        const chatter = conv.chatterId ? await db.aiChatters.get(conv.chatterId) : null;
+        const model = conv.modelId ? await db.aiChatModels.get(conv.modelId) : null;
+
+        return {
+            conversation: conv,
+            chatterName: chatter?.name || 'Unknown',
+            modelName: model?.name || 'Unknown',
+            messages: messages.map(m => ({
+                ...m,
+                annotation: m.annotation ? (typeof m.annotation === 'string' ? JSON.parse(m.annotation) : m.annotation) : null
+            })),
+            grade: grade ? {
+                sopScore: grade.sopScore,
+                events: typeof grade.events === 'string' ? JSON.parse(grade.events || '[]') : grade.events,
+                stageProgression: typeof grade.stageProgression === 'string' ? JSON.parse(grade.stageProgression || '[]') : grade.stageProgression,
+                summary: grade.summary
+            } : null
+        };
     }
 };
