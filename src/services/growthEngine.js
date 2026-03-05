@@ -5923,20 +5923,35 @@ export const AIChatReportService = {
         const allChatters = await db.aiChatters.toArray();
         const chatterNameMap = new Map(allChatters.map(c => [c.id, c.name]));
 
-        const chatters = reports.map(r => ({
-            chatterId: r.chatterId,
-            name: chatterNameMap.get(r.chatterId) || 'Unknown',
-            tier: r.tier,
-            revenue: r.totalRevenue || 0,
-            conversationCount: r.totalConversations || 0,
-            messageCount: r.totalMessages || 0,
-            conversionRate: r.conversionRate || 0,
-            avgSopScore: r.avgSopScore,
-            avgReplyTimeSec: r.avgReplyTimeSec,
-            ppvSent: r.totalPPVSent || 0,
-            ppvPurchased: r.totalPPVPurchased || 0,
-            eventCounts: typeof r.eventCounts === 'string' ? JSON.parse(r.eventCounts || '{}') : (r.eventCounts || {})
-        })).sort((a, b) => b.revenue - a.revenue);
+        const chatters = reports.map(r => {
+            const ec = typeof r.eventCounts === 'string' ? JSON.parse(r.eventCounts || '{}') : (r.eventCounts || {});
+            // Build topEvents with severity classification
+            const criticalTypes = ['GENERIC_OPENER','NO_LOCATION_MATCH','PREMATURE_PITCH','VISIBLE_TRANSITION','MISSED_BUY_SIGNAL','OBJECTION_FAILURE','GF_EXPERIENCE','SLOW_REPLY_SELLING'];
+            const positiveTypes = ['GOOD_OPENER','GOOD_LOCATION_MATCH','GOOD_HUMANIZING','GOOD_PROFILING','GOOD_CONNECTION','SMOOTH_TRANSITION','GOOD_SCENARIO_SEXT','GOOD_PPV_CAPTION','GOOD_PPV_LOOPING','GOOD_OBJECTION_HANDLING','GOOD_AFTERCARE'];
+            const topEvents = Object.entries(ec).filter(([,v]) => v > 0).map(([type, count]) => ({
+                type, count,
+                severity: criticalTypes.includes(type) ? 'critical' : positiveTypes.includes(type) ? 'positive' : 'warning'
+            })).sort((a, b) => b.count - a.count);
+
+            return {
+                chatterId: r.chatterId,
+                name: chatterNameMap.get(r.chatterId) || 'Unknown',
+                tier: r.tier,
+                revenue: r.totalRevenue || 0,
+                conversationCount: r.totalConversations || 0,
+                messageCount: r.totalMessages || 0,
+                conversionRate: r.conversionRate || 0,
+                avgSopScore: r.avgSopScore,
+                avgReplyTimeSec: r.avgReplyTimeSec,
+                ppvSent: r.totalPPVSent || 0,
+                ppvPurchased: r.totalPPVPurchased || 0,
+                eventCounts: ec,
+                topEvents,
+                strengths: typeof r.strengths === 'string' ? JSON.parse(r.strengths || '[]') : (r.strengths || []),
+                weaknesses: typeof r.weaknesses === 'string' ? JSON.parse(r.weaknesses || '[]') : (r.weaknesses || []),
+                coachingFeedback: r.coachingFeedback || ''
+            };
+        }).sort((a, b) => b.revenue - a.revenue);
 
         const totalRevenue = chatters.reduce((s, c) => s + c.revenue, 0);
         const totalConversations = chatters.reduce((s, c) => s + c.conversationCount, 0);

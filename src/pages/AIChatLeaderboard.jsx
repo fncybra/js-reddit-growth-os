@@ -57,6 +57,50 @@ export function AIChatLeaderboard() {
         </th>
     );
 
+    const buildTextReport = () => {
+        if (!leaderboard) return '';
+        const date = importDates.find(d => d.id === selectedImportId)?.date || '';
+        let report = `DAILY CHATTER REPORT — ${date}\n\n`;
+
+        for (const c of sortedChatters) {
+            const score = c.avgSopScore != null ? c.avgSopScore.toFixed(0) : '--';
+            const tier = c.tier === 'top' ? 'TOP' : c.tier === 'at_risk' ? 'AT RISK' : 'OK';
+            report += `${c.name} — ${tier} | SOP: ${score}/100 | $${c.revenue.toFixed(2)} | Conv: ${(c.conversionRate * 100).toFixed(1)}%\n`;
+
+            // Critical events = needle movers (what to fix)
+            const events = c.topEvents || [];
+            const critical = events.filter(e => e.severity === 'critical');
+            const warnings = events.filter(e => e.severity === 'warning');
+            const fixes = [...critical, ...warnings];
+
+            if (fixes.length > 0) {
+                report += `FIX:\n`;
+                for (const e of fixes) {
+                    const label = e.type.replace(/_/g, ' ');
+                    report += `- ${label} (${e.count}x)\n`;
+                }
+            }
+
+            if (c.coachingFeedback) {
+                report += `COACHING: ${c.coachingFeedback}\n`;
+            }
+
+            report += `\n`;
+        }
+
+        return report.trim();
+    };
+
+    const handleCopyReport = () => {
+        const text = buildTextReport();
+        navigator.clipboard.writeText(text).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        });
+    };
+
+    const [copied, setCopied] = useState(false);
+
     if (!leaderboard && importDates.length === 0) {
         return (
             <>
@@ -77,6 +121,11 @@ export function AIChatLeaderboard() {
         <>
             <header className="page-header">
                 <h1 className="page-title">AI Chat Leaderboard</h1>
+                {leaderboard && (
+                    <button className="btn btn-primary" onClick={handleCopyReport} style={{ marginRight: '12px' }}>
+                        {copied ? 'Copied!' : 'Copy Report'}
+                    </button>
+                )}
                 <select
                     className="input-field"
                     style={{ width: 'auto', minWidth: '200px' }}
