@@ -55,33 +55,30 @@ export function OFConfig() {
         setNewLink({ label: '', ofModelId: '', ofVaId: '', platform: '' });
     };
 
-    const deleteModel = async (id) => {
-        if (!confirm('Delete this model?')) return;
-        await db.ofModels.delete(id);
-        // Also delete from cloud so sync doesn't pull it back
+    const cloudDelete = async (table, id) => {
         try {
             const { getSupabaseClient } = await import('../db/supabase');
             const supabase = await getSupabaseClient();
-            if (supabase) await supabase.from('ofModels').delete().eq('id', id);
+            if (supabase) {
+                const { error } = await supabase.from(table).delete().eq('id', id);
+                if (error) console.warn(`Cloud delete ${table}/${id}:`, error.message);
+            }
         } catch (e) { console.warn('Cloud delete failed:', e); }
+    };
+    const deleteModel = async (id) => {
+        if (!confirm('Delete this model?')) return;
+        await cloudDelete('ofModels', id);
+        await db.ofModels.delete(id);
     };
     const deleteVA = async (id) => {
         if (!confirm('Delete this VA?')) return;
+        await cloudDelete('ofVas', id);
         await db.ofVas.delete(id);
-        try {
-            const { getSupabaseClient } = await import('../db/supabase');
-            const supabase = await getSupabaseClient();
-            if (supabase) await supabase.from('ofVas').delete().eq('id', id);
-        } catch (e) { console.warn('Cloud delete failed:', e); }
     };
     const deleteLink = async (id) => {
         if (!confirm('Delete this link?')) return;
+        await cloudDelete('ofTrackingLinks', id);
         await db.ofTrackingLinks.delete(id);
-        try {
-            const { getSupabaseClient } = await import('../db/supabase');
-            const supabase = await getSupabaseClient();
-            if (supabase) await supabase.from('ofTrackingLinks').delete().eq('id', id);
-        } catch (e) { console.warn('Cloud delete failed:', e); }
     };
 
     const assignVA = async (snap, vaId) => {
@@ -102,6 +99,24 @@ export function OFConfig() {
         setUnmapped(prev => prev.filter(u => u.id !== snap.id));
     };
 
+    const clearAllConfig = async () => {
+        if (!confirm('Clear ALL models, VAs, and tracking links? This cannot be undone.')) return;
+        try {
+            const { getSupabaseClient } = await import('../db/supabase');
+            const supabase = await getSupabaseClient();
+            // Clear local
+            await db.ofModels.clear();
+            await db.ofVas.clear();
+            await db.ofTrackingLinks.clear();
+            // Clear cloud
+            if (supabase) {
+                await supabase.from('ofTrackingLinks').delete().neq('id', 0);
+                await supabase.from('ofVas').delete().neq('id', 0);
+                await supabase.from('ofModels').delete().neq('id', 0);
+            }
+        } catch (e) { console.warn('Cloud clear failed:', e); }
+    };
+
     const modelMap = new Map(models.map(m => [m.id, m.name]));
 
     const tabStyle = (t) => ({
@@ -113,8 +128,9 @@ export function OFConfig() {
 
     return (
         <>
-            <header className="page-header">
+            <header className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h1 className="page-title">OF Configuration</h1>
+                <button className="btn btn-outline" style={{ color: 'var(--status-danger)', fontSize: '0.8rem' }} onClick={clearAllConfig}>Clear All Config</button>
             </header>
             <div className="page-content">
                 {/* Tab buttons */}
