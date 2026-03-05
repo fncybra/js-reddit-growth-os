@@ -76,7 +76,7 @@ export function Settings() {
         for (const [key, value] of Object.entries(settings)) {
             // Handle mixing types: vaPin stays string, others are numbers, api key is string
             let finalValue = value;
-            const textKeys = ['vaPin', 'openRouterApiKey', 'aiBaseUrl', 'openRouterModel', 'supabaseUrl', 'supabaseAnonKey', 'proxyUrl', 'telegramBotToken', 'telegramChatId', 'telegramThreadId', 'lastTelegramReportDate', 'airtableApiKey', 'airtableBaseId', 'airtableTableName', 'lastThreadsPatrol', 'threadsTelegramBotToken', 'threadsTelegramChatId', 'threadsTelegramThreadId', 'lastThreadsDailyReportDate', 'lastVASnapshot', 'threadsManagerPin', 'redditManagerPin', 'ofTelegramBotToken', 'ofTelegramChatId', 'ofTelegramThreadId', 'lastOFDailyReportDate', 'aiChatApiKey', 'aiChatHaikuModel', 'aiChatSonnetModel'];
+            const textKeys = ['vaPin', 'openRouterApiKey', 'aiBaseUrl', 'openRouterModel', 'supabaseUrl', 'supabaseAnonKey', 'proxyUrl', 'telegramBotToken', 'telegramChatId', 'telegramThreadId', 'lastTelegramReportDate', 'airtableApiKey', 'airtableBaseId', 'airtableTableName', 'lastThreadsPatrol', 'threadsTelegramBotToken', 'threadsTelegramChatId', 'threadsTelegramThreadId', 'lastThreadsDailyReportDate', 'lastVASnapshot', 'threadsManagerPin', 'redditManagerPin', 'ofTelegramBotToken', 'ofTelegramChatId', 'ofTelegramThreadId', 'lastOFDailyReportDate', 'aiChatApiKey', 'aiChatGeminiKey', 'aiChatHaikuModel', 'aiChatSonnetModel'];
             if (!textKeys.includes(key) && value !== '') {
                 finalValue = Number(value);
             }
@@ -607,36 +607,29 @@ export function Settings() {
                         <div className="card">
                             <h2 style={{ fontSize: '1.2rem', marginBottom: '20px' }}>AI Chat Grading</h2>
                             <small style={{ color: 'var(--text-secondary)', display: 'block', marginBottom: '16px' }}>
-                                Dedicated API key for AI chatter grading. Get one at openrouter.ai. Haiku grades conversations (~$0.75/day), Sonnet generates coaching (~$0.50/day).
+                                Rule-based event detection is free. AI coaching uses Gemini Flash (~$0.05/day or free tier).
                             </small>
                             <div className="input-group">
-                                <label className="input-label">OpenRouter API Key (AI Chat)</label>
+                                <label className="input-label">Google AI API Key (Gemini — recommended, free tier available)</label>
+                                <input
+                                    type="password"
+                                    className="input-field"
+                                    placeholder="AIza..."
+                                    value={settings.aiChatGeminiKey || ''}
+                                    onChange={e => setSettings({ ...settings, aiChatGeminiKey: e.target.value })}
+                                />
+                                <small style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
+                                    Get free key at aistudio.google.com/apikey — 15 req/min free tier
+                                </small>
+                            </div>
+                            <div className="input-group" style={{ borderTop: '1px solid var(--border-primary)', paddingTop: '12px', marginTop: '8px' }}>
+                                <label className="input-label" style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>OpenRouter API Key (fallback)</label>
                                 <input
                                     type="password"
                                     className="input-field"
                                     placeholder="sk-or-v1-..."
                                     value={settings.aiChatApiKey || ''}
                                     onChange={e => setSettings({ ...settings, aiChatApiKey: e.target.value })}
-                                />
-                            </div>
-                            <div className="input-group">
-                                <label className="input-label">Grading Model (fast/cheap)</label>
-                                <input
-                                    type="text"
-                                    className="input-field"
-                                    placeholder="anthropic/claude-haiku-4-5-20251001"
-                                    value={settings.aiChatHaikuModel || ''}
-                                    onChange={e => setSettings({ ...settings, aiChatHaikuModel: e.target.value })}
-                                />
-                            </div>
-                            <div className="input-group">
-                                <label className="input-label">Coaching Model (smart/detailed)</label>
-                                <input
-                                    type="text"
-                                    className="input-field"
-                                    placeholder="anthropic/claude-sonnet-4-20250514"
-                                    value={settings.aiChatSonnetModel || ''}
-                                    onChange={e => setSettings({ ...settings, aiChatSonnetModel: e.target.value })}
                                 />
                             </div>
                             <button onClick={handleSave} className="btn btn-outline" style={{ width: '100%', marginTop: '8px' }}>Save AI Chat Settings</button>
