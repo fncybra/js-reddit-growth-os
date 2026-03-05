@@ -5404,12 +5404,12 @@ Patterns of FAILING conversations:
         conversations.forEach((conv, idx) => {
             prompt += `### Conversation ${idx + 1} (fan: "${conv.fanName}", model: "${conv.modelName}", ${conv.messages.length} messages)\n`;
             const msgs = conv.messages;
-            // Truncate long conversations: keep first 20 + last 30
+            // Truncate long conversations: keep first 10 + last 15 for speed
             let displayMsgs = msgs;
-            if (msgs.length > 60) {
-                const first20 = msgs.slice(0, 20);
-                const last30 = msgs.slice(-30);
-                displayMsgs = [...first20, { sender: 'system', content: `[... ${msgs.length - 50} messages omitted ...]` }, ...last30];
+            if (msgs.length > 30) {
+                const first10 = msgs.slice(0, 10);
+                const last15 = msgs.slice(-15);
+                displayMsgs = [...first10, { sender: 'system', content: `[... ${msgs.length - 25} messages omitted ...]` }, ...last15];
             }
             for (const m of displayMsgs) {
                 const label = m.sender === 'fan' ? 'FAN' : m.sender === 'system' ? '---' : 'CHATTER';
@@ -5617,22 +5617,34 @@ Return ONLY valid JSON. No markdown fences.`;
                 });
             }
 
-            // Batch conversations (max 3 per LLM call to keep prompt under proxy body limit)
-            const BATCH_SIZE = 3;
-            for (let batchStart = 0; batchStart < convsWithMsgs.length; batchStart += BATCH_SIZE) {
-                const batch = convsWithMsgs.slice(batchStart, batchStart + BATCH_SIZE);
-                const userPrompt = this.buildGradingPrompt(chatterName, batch);
+            // Batch conversations (max 5 per LLM call), fire 3 batches in parallel
+            const BATCH_SIZE = 5;
+            const CONCURRENCY = 3;
+            const batches = [];
+            for (let i = 0; i < convsWithMsgs.length; i += BATCH_SIZE) {
+                batches.push({ start: i, convs: convsWithMsgs.slice(i, i + BATCH_SIZE) });
+            }
 
-                try {
+            // Process batches in parallel chunks of CONCURRENCY
+            for (let ci = 0; ci < batches.length; ci += CONCURRENCY) {
+                const chunk = batches.slice(ci, ci + CONCURRENCY);
+                const results = await Promise.allSettled(chunk.map(async ({ start, convs }) => {
+                    const userPrompt = this.buildGradingPrompt(chatterName, convs);
                     const result = await this.callLLM(haikuModel, systemPrompt, userPrompt);
-                    console.log(`[AI Chat Grade] ${chatterName} batch ${batchStart}: LLM returned ${result.content?.length || 0} chars, tokens: ${result.usage?.total_tokens || 0}`);
+                    return { start, convs, result };
+                }));
+
+                for (const r of results) {
+                    if (r.status === 'rejected') {
+                        throw new Error(`Grading failed for ${chatterName}: ${r.reason?.message || r.reason}`);
+                    }
+                    const { start, convs, result } = r.value;
                     const parsed = this.parseJsonResponse(result.content);
-                    console.log(`[AI Chat Grade] Parsed:`, Array.isArray(parsed) ? `${parsed.length} grades` : typeof parsed, parsed ? '' : '(null - parse failed!)');
-                    if (!parsed) console.warn('[AI Chat Grade] RAW RESPONSE:', result.content?.substring(0, 500));
+                    if (!parsed) { console.warn('[AI Chat Grade] Parse failed, raw:', result.content?.substring(0, 300)); continue; }
 
                     if (Array.isArray(parsed)) {
                         for (const grade of parsed) {
-                            const convIndex = (grade.conversationIndex ?? 0) + batchStart;
+                            const convIndex = (grade.conversationIndex ?? 0) + start;
                             const conv = convsWithMsgs[convIndex];
                             if (!conv) continue;
 
@@ -5649,7 +5661,6 @@ Return ONLY valid JSON. No markdown fences.`;
                                 cost: 0, createdAt: new Date().toISOString()
                             });
 
-                            // Write annotations back to messages
                             if (Array.isArray(grade.events)) {
                                 const msgs = await db.aiChatMessages.where('conversationId').equals(conv.id).toArray();
                                 msgs.sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
@@ -5657,38 +5668,21 @@ Return ONLY valid JSON. No markdown fences.`;
                                     const mi = event.messageIndex;
                                     if (mi != null && mi >= 0 && mi < msgs.length) {
                                         await db.aiChatMessages.update(msgs[mi].id, {
-                                            annotation: JSON.stringify({
-                                                type: event.type,
-                                                severity: event.severity || 'warning',
-                                                text: event.description || event.type
-                                            })
+                                            annotation: JSON.stringify({ type: event.type, severity: event.severity || 'warning', text: event.description || event.type })
                                         });
                                     }
                                 }
                             }
 
-                            await db.aiChatConversations.update(conv.id, {
-                                stageClassification: (grade.stageProgression || []).slice(-1)[0] || null,
-                                graded: 1
-                            });
+                            await db.aiChatConversations.update(conv.id, { stageClassification: (grade.stageProgression || []).slice(-1)[0] || null, graded: 1 });
                             totalGraded++;
                         }
                     }
-                } catch (err) {
-                    console.error(`Grading failed for ${chatterName} batch ${batchStart}:`, err);
-                    // Re-throw on first failure so the user sees the error
-                    // Common causes: bad API key, timeout, proxy down, model not found
-                    throw new Error(`Grading failed for ${chatterName}: ${err.message}`);
                 }
 
-                // Rate limit: 2s between calls
-                if (batchStart + BATCH_SIZE < convsWithMsgs.length) {
-                    await new Promise(r => setTimeout(r, 2000));
-                }
+                // Brief pause between parallel chunks to avoid rate limits
+                if (ci + CONCURRENCY < batches.length) await new Promise(r => setTimeout(r, 500));
             }
-
-            // Delay between chatters
-            await new Promise(r => setTimeout(r, 2000));
         }
 
         return { totalGraded, totalChatters };
