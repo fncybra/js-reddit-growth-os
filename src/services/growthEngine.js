@@ -93,6 +93,7 @@ export const SettingsService = {
             ofDailyReportHour: 20,
             lastOFDailyReportDate: '',
             aiChatApiKey: '',
+            aiChatGeminiKey: '',
             aiChatHaikuModel: 'google/gemini-2.0-flash-001',
             aiChatSonnetModel: 'google/gemini-2.0-flash-001'
         };
@@ -5647,6 +5648,47 @@ Return ONLY valid JSON. No markdown fences.`;
         }
     },
 
+    async callGemini(systemPrompt, userPrompt, temperature = 0.5) {
+        const settings = await SettingsService.getSettings();
+        const apiKey = (settings.aiChatGeminiKey || '').trim();
+        if (!apiKey) throw new Error('No Gemini API key. Go to Settings → AI Chat Grading.');
+
+        const TIMEOUT_MS = 30000;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+        try {
+            const response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    signal: controller.signal,
+                    body: JSON.stringify({
+                        systemInstruction: { parts: [{ text: systemPrompt }] },
+                        contents: [{ parts: [{ text: userPrompt }] }],
+                        generationConfig: {
+                            temperature,
+                            maxOutputTokens: 2000,
+                            responseMimeType: 'application/json'
+                        }
+                    })
+                }
+            );
+            clearTimeout(timeoutId);
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                throw new Error(err.error?.message || `Gemini error (${response.status})`);
+            }
+            const data = await response.json();
+            const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            return { content, usage: {} };
+        } catch (err) {
+            clearTimeout(timeoutId);
+            if (err.name === 'AbortError') throw new Error('Gemini request timed out');
+            throw err;
+        }
+    },
+
     async callOllama(model, systemPrompt, userPrompt, temperature = 0.5) {
         const TIMEOUT_MS = 120000; // 2 min timeout for local models
         const controller = new AbortController();
@@ -6219,13 +6261,13 @@ Return ONLY valid JSON. No markdown fences.`;
             }
         }
 
-        // Generate per-chatter reports with AI coaching via Gemini Flash
+        // Generate per-chatter reports with AI coaching
         const totalChatters = chatterData.size;
         const settings = await SettingsService.getSettings();
+        const geminiKey = (settings.aiChatGeminiKey || '').trim();
+        const hasOpenRouter = !!((settings.aiChatApiKey || settings.openRouterApiKey)?.trim()) && !!(settings.proxyUrl?.trim());
         const coachingModel = settings.aiChatSonnetModel || 'google/gemini-2.0-flash-001';
-        const hasApiKey = !!(settings.aiChatApiKey || settings.openRouterApiKey)?.trim();
-        const hasProxy = !!settings.proxyUrl?.trim();
-        const apiAvailable = hasApiKey && hasProxy;
+        const apiAvailable = geminiKey || hasOpenRouter;
 
         onProgress?.({ phase: 'coaching', current: 0, total: totalChatters, label: `AI coaching 0/${totalChatters} chatters...` });
 
@@ -6275,7 +6317,10 @@ Failed closes: ${ec.FAILED_CLOSE || 0}, No follow-up: ${ec.NO_FOLLOWUP || 0}, Dr
 
 Generate coaching feedback.`;
 
-                    const result = await this.callLLM(coachingModel, coachingSystemPrompt, userPrompt, 0.5);
+                    // Prefer Gemini direct (free/cheap, no proxy), fall back to OpenRouter
+                    const result = geminiKey
+                        ? await this.callGemini(coachingSystemPrompt, userPrompt, 0.5)
+                        : await this.callLLM(coachingModel, coachingSystemPrompt, userPrompt, 0.5);
                     const parsed = this.parseJsonResponse(result.content);
                     if (parsed) {
                         tier = parsed.tier || tier;
