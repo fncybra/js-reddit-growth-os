@@ -1006,7 +1006,7 @@ function parseFollowerCount(str) {
 // Proxy endpoint for AI Generation (Bypasses Browser CORS / Preflight blocks)
 app.post('/api/ai/generate', async (req, res) => {
     try {
-        const { aiBaseUrl, apiKey, model, messages, temperature, presence_penalty } = req.body;
+        const { aiBaseUrl, apiKey, model, messages, temperature, presence_penalty, max_tokens } = req.body;
 
         if (!apiKey) {
             return res.status(400).json({ error: "No API Key provided to proxy." });
@@ -1023,7 +1023,8 @@ app.post('/api/ai/generate', async (req, res) => {
             model: model || "mistralai/mixtral-8x7b-instruct",
             messages: messages,
             ...(temperature !== undefined && { temperature }),
-            ...(presence_penalty !== undefined && { presence_penalty })
+            ...(presence_penalty !== undefined && { presence_penalty }),
+            ...(max_tokens !== undefined && { max_tokens })
         }, {
             headers: {
                 'Authorization': `Bearer ${apiKey}`,

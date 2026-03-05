@@ -5516,6 +5516,7 @@ Return ONLY valid JSON. No markdown fences.`;
                     body: JSON.stringify({
                         aiBaseUrl: aiBaseUrl.replace(/\/$/, ''),
                         apiKey, model,
+                        max_tokens: 4000,
                         messages: [
                             { role: 'system', content: systemPrompt },
                             { role: 'user', content: userPrompt }
