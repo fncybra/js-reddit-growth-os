@@ -5596,20 +5596,21 @@ Return ONLY valid JSON. No markdown fences.`;
         const allModels = await db.aiChatModels.toArray();
         const modelNameMap = new Map(allModels.map(m => [m.id, m.name]));
 
-        let chatterIdx = 0;
         const totalChatters = chatterGroups.size;
         let totalGraded = 0;
+        const BATCH_SIZE = 8;    // convos per LLM call
+        const MAX_PARALLEL = 8;  // concurrent LLM calls across ALL chatters
 
+        // Build ALL batches across all chatters upfront
+        const allBatches = [];
         for (const [chatterId, chatterConvos] of chatterGroups) {
             const chatterName = chatterNameMap.get(chatterId) || 'Unknown';
-            chatterIdx++;
-            onProgress?.({ phase: 'grading', current: chatterIdx, total: totalChatters, label: `Grading chatter ${chatterIdx}/${totalChatters} (${chatterName})...` });
-            console.log(`[AI Chat Grade] Starting chatter ${chatterIdx}/${totalChatters}: ${chatterName} — ${chatterConvos.length} conversations`);
 
-            // Load messages for each conversation
+            // Load messages for each conversation, skip tiny ones (<4 messages)
             const convsWithMsgs = [];
             for (const conv of chatterConvos) {
                 const msgs = await db.aiChatMessages.where('conversationId').equals(conv.id).toArray();
+                if (msgs.length < 4) continue; // skip trivial convos
                 msgs.sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
                 convsWithMsgs.push({
                     ...conv,
@@ -5617,81 +5618,85 @@ Return ONLY valid JSON. No markdown fences.`;
                     messages: msgs
                 });
             }
+            if (convsWithMsgs.length === 0) continue;
 
-            // Batch conversations (max 5 per LLM call), fire 3 batches in parallel
-            const BATCH_SIZE = 5;
-            const CONCURRENCY = 3;
-            const batches = [];
             for (let i = 0; i < convsWithMsgs.length; i += BATCH_SIZE) {
-                batches.push({ start: i, convs: convsWithMsgs.slice(i, i + BATCH_SIZE) });
+                allBatches.push({
+                    chatterId, chatterName,
+                    start: i,
+                    convs: convsWithMsgs.slice(i, i + BATCH_SIZE),
+                    allConvs: convsWithMsgs
+                });
             }
+        }
 
-            // Process batches in parallel chunks of CONCURRENCY
-            for (let ci = 0; ci < batches.length; ci += CONCURRENCY) {
-                const chunk = batches.slice(ci, ci + CONCURRENCY);
-                console.log(`[AI Chat Grade] ${chatterName}: firing ${chunk.length} parallel calls (batches ${ci}-${ci + chunk.length - 1} of ${batches.length})`);
-                const t0 = Date.now();
-                const results = await Promise.allSettled(chunk.map(async ({ start, convs }) => {
-                    const userPrompt = this.buildGradingPrompt(chatterName, convs);
-                    console.log(`[AI Chat Grade] ${chatterName} batch@${start}: prompt ${(userPrompt.length / 1024).toFixed(0)}KB, ${convs.length} convos`);
-                    const result = await this.callLLM(haikuModel, systemPrompt, userPrompt);
-                    return { start, convs, result };
-                }));
-                console.log(`[AI Chat Grade] ${chatterName}: parallel chunk done in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+        console.log(`[AI Chat Grade] Total: ${allBatches.length} batches across ${totalChatters} chatters, ${MAX_PARALLEL} parallel`);
+        onProgress?.({ phase: 'grading', current: 0, total: allBatches.length, label: `Grading 0/${allBatches.length} batches (${MAX_PARALLEL} parallel)...` });
 
-                for (const r of results) {
-                    if (r.status === 'rejected') {
-                        throw new Error(`Grading failed for ${chatterName}: ${r.reason?.message || r.reason}`);
-                    }
-                    const { start, convs, result } = r.value;
-                    const parsed = this.parseJsonResponse(result.content);
-                    if (!parsed) { console.warn('[AI Chat Grade] Parse failed, raw:', result.content?.substring(0, 300)); continue; }
+        // Process all batches with a concurrency pool
+        let batchesDone = 0;
+        for (let ci = 0; ci < allBatches.length; ci += MAX_PARALLEL) {
+            const chunk = allBatches.slice(ci, ci + MAX_PARALLEL);
+            const t0 = Date.now();
 
-                    if (Array.isArray(parsed)) {
-                        for (const grade of parsed) {
-                            const convIndex = (grade.conversationIndex ?? 0) + start;
-                            const conv = convsWithMsgs[convIndex];
-                            if (!conv) continue;
+            const results = await Promise.allSettled(chunk.map(async (batch) => {
+                const userPrompt = this.buildGradingPrompt(batch.chatterName, batch.convs);
+                const result = await this.callLLM(haikuModel, systemPrompt, userPrompt);
+                return { ...batch, result };
+            }));
 
-                            await db.aiChatGrades.add({
-                                id: generateId(),
-                                importId, conversationId: conv.id, chatterId, modelId: conv.modelId,
-                                sopScore: grade.sopScore ?? null,
-                                events: JSON.stringify(grade.events || []),
-                                stageProgression: JSON.stringify(grade.stageProgression || []),
-                                summary: grade.summary || '',
-                                rawResponse: result.content,
-                                model: haikuModel,
-                                tokenCount: (result.usage?.total_tokens || 0),
-                                cost: 0, createdAt: new Date().toISOString()
-                            });
+            // Process results
+            for (const r of results) {
+                if (r.status === 'rejected') {
+                    console.error(`[AI Chat Grade] Batch failed:`, r.reason);
+                    continue; // skip failed batch, don't kill entire run
+                }
+                const { chatterId, chatterName, start, convs, allConvs, result } = r.value;
+                const parsed = this.parseJsonResponse(result.content);
+                if (!parsed) { console.warn(`[AI Chat Grade] ${chatterName} parse failed`); continue; }
 
-                            if (Array.isArray(grade.events)) {
-                                const msgs = await db.aiChatMessages.where('conversationId').equals(conv.id).toArray();
-                                msgs.sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
-                                for (const event of grade.events) {
-                                    const mi = event.messageIndex;
-                                    if (mi != null && mi >= 0 && mi < msgs.length) {
-                                        await db.aiChatMessages.update(msgs[mi].id, {
-                                            annotation: JSON.stringify({ type: event.type, severity: event.severity || 'warning', text: event.description || event.type })
-                                        });
-                                    }
+                if (Array.isArray(parsed)) {
+                    for (const grade of parsed) {
+                        const convIndex = (grade.conversationIndex ?? 0) + start;
+                        const conv = allConvs[convIndex];
+                        if (!conv) continue;
+
+                        await db.aiChatGrades.add({
+                            id: generateId(),
+                            importId, conversationId: conv.id, chatterId, modelId: conv.modelId,
+                            sopScore: grade.sopScore ?? null,
+                            events: JSON.stringify(grade.events || []),
+                            stageProgression: JSON.stringify(grade.stageProgression || []),
+                            summary: grade.summary || '',
+                            rawResponse: result.content,
+                            model: haikuModel,
+                            tokenCount: (result.usage?.total_tokens || 0),
+                            cost: 0, createdAt: new Date().toISOString()
+                        });
+
+                        if (Array.isArray(grade.events)) {
+                            const msgs = await db.aiChatMessages.where('conversationId').equals(conv.id).toArray();
+                            msgs.sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
+                            for (const event of grade.events) {
+                                const mi = event.messageIndex;
+                                if (mi != null && mi >= 0 && mi < msgs.length) {
+                                    await db.aiChatMessages.update(msgs[mi].id, {
+                                        annotation: JSON.stringify({ type: event.type, severity: event.severity || 'warning', text: event.description || event.type })
+                                    });
                                 }
                             }
-
-                            await db.aiChatConversations.update(conv.id, { stageClassification: (grade.stageProgression || []).slice(-1)[0] || null, graded: 1 });
-                            totalGraded++;
                         }
+
+                        await db.aiChatConversations.update(conv.id, { stageClassification: (grade.stageProgression || []).slice(-1)[0] || null, graded: 1 });
+                        totalGraded++;
                     }
                 }
-
-                // Update progress with batch detail
-                const batchesDone = Math.min(ci + CONCURRENCY, batches.length);
-                onProgress?.({ phase: 'grading', current: chatterIdx, total: totalChatters, label: `Grading ${chatterName} (${batchesDone}/${batches.length} batches)...` });
-
-                // Brief pause between parallel chunks to avoid rate limits
-                if (ci + CONCURRENCY < batches.length) await new Promise(r => setTimeout(r, 500));
             }
+
+            batchesDone += chunk.length;
+            const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+            console.log(`[AI Chat Grade] ${batchesDone}/${allBatches.length} batches done (${elapsed}s)`);
+            onProgress?.({ phase: 'grading', current: batchesDone, total: allBatches.length, label: `Grading ${batchesDone}/${allBatches.length} batches...` });
         }
 
         return { totalGraded, totalChatters };
