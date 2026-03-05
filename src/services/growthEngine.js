@@ -93,8 +93,8 @@ export const SettingsService = {
             ofDailyReportHour: 20,
             lastOFDailyReportDate: '',
             aiChatApiKey: '',
-            aiChatHaikuModel: 'anthropic/claude-haiku-4.5',
-            aiChatSonnetModel: 'anthropic/claude-sonnet-4'
+            aiChatHaikuModel: 'google/gemini-2.0-flash-001',
+            aiChatSonnetModel: 'google/gemini-2.0-flash-001'
         };
         const settingsArr = await db.settings.toArray();
         const settings = { ...defaultSettings };
@@ -103,14 +103,15 @@ export const SettingsService = {
                 settings[s.key] = s.value;
             }
         });
-        // Auto-fix wrong AI model IDs in Dexie
-        if (settings.aiChatHaikuModel !== 'anthropic/claude-haiku-4.5') {
-            settings.aiChatHaikuModel = 'anthropic/claude-haiku-4.5';
-            this.updateSetting('aiChatHaikuModel', 'anthropic/claude-haiku-4.5');
+        // Auto-migrate old model IDs to Gemini Flash
+        const geminiModel = 'google/gemini-2.0-flash-001';
+        if (settings.aiChatHaikuModel.includes('anthropic/') || settings.aiChatHaikuModel.includes('claude')) {
+            settings.aiChatHaikuModel = geminiModel;
+            this.updateSetting('aiChatHaikuModel', geminiModel);
         }
-        if (settings.aiChatSonnetModel !== 'anthropic/claude-sonnet-4') {
-            settings.aiChatSonnetModel = 'anthropic/claude-sonnet-4';
-            this.updateSetting('aiChatSonnetModel', 'anthropic/claude-sonnet-4');
+        if (settings.aiChatSonnetModel.includes('anthropic/') || settings.aiChatSonnetModel.includes('claude')) {
+            settings.aiChatSonnetModel = geminiModel;
+            this.updateSetting('aiChatSonnetModel', geminiModel);
         }
         return settings;
     },
@@ -6218,16 +6219,15 @@ Return ONLY valid JSON. No markdown fences.`;
             }
         }
 
-        // Generate per-chatter reports with AI coaching via Ollama
+        // Generate per-chatter reports with AI coaching via Gemini Flash
         const totalChatters = chatterData.size;
-        onProgress?.({ phase: 'coaching', current: 0, total: totalChatters, label: `AI coaching 0/${totalChatters} chatters...` });
+        const settings = await SettingsService.getSettings();
+        const coachingModel = settings.aiChatSonnetModel || 'google/gemini-2.0-flash-001';
+        const hasApiKey = !!(settings.aiChatApiKey || settings.openRouterApiKey)?.trim();
+        const hasProxy = !!settings.proxyUrl?.trim();
+        const apiAvailable = hasApiKey && hasProxy;
 
-        // Check if Ollama is reachable
-        let ollamaAvailable = false;
-        try {
-            const ping = await fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(3000) });
-            ollamaAvailable = ping.ok;
-        } catch { ollamaAvailable = false; }
+        onProgress?.({ phase: 'coaching', current: 0, total: totalChatters, label: `AI coaching 0/${totalChatters} chatters...` });
 
         const coachingSystemPrompt = `You are a senior QA coach for an OnlyFans chatting agency. Based on the chatter's metrics and detected issues, give specific, actionable coaching.
 
@@ -6261,10 +6261,9 @@ Return ONLY valid JSON.`;
             let coachingFeedback = '';
             const ec = data.eventCounts;
 
-            if (ollamaAvailable) {
+            if (apiAvailable) {
                 onProgress?.({ phase: 'coaching', current: chatterIdx, total: totalChatters, label: `AI coaching ${chatterIdx}/${totalChatters} (${chatterName})...` });
                 try {
-                    // Build concise coaching prompt from rule-based results
                     const topCritical = Object.entries(ec).filter(([t]) => ['GENERIC_OPENER','PREMATURE_PITCH','MISSED_BUY_SIGNAL','OBJECTION_FAILURE','SLOW_REPLY_SELLING'].includes(t)).map(([t, c]) => `${t}: ${c}`).join(', ');
                     const topPositive = Object.entries(ec).filter(([t]) => t.startsWith('GOOD_') || t === 'SUCCESSFUL_SALE' || t === 'FAST_RESPONSE').map(([t, c]) => `${t}: ${c}`).join(', ');
 
@@ -6276,7 +6275,7 @@ Failed closes: ${ec.FAILED_CLOSE || 0}, No follow-up: ${ec.NO_FOLLOWUP || 0}, Dr
 
 Generate coaching feedback.`;
 
-                    const result = await this.callOllama('qwen2.5:7b', coachingSystemPrompt, userPrompt);
+                    const result = await this.callLLM(coachingModel, coachingSystemPrompt, userPrompt, 0.5);
                     const parsed = this.parseJsonResponse(result.content);
                     if (parsed) {
                         tier = parsed.tier || tier;
@@ -6285,8 +6284,7 @@ Generate coaching feedback.`;
                         coachingFeedback = parsed.coachingFeedback || '';
                     }
                 } catch (err) {
-                    console.warn(`[AI Coach] Ollama failed for ${chatterName}:`, err.message);
-                    // Fall through to rule-based coaching
+                    console.warn(`[AI Coach] API failed for ${chatterName}:`, err.message);
                 }
             }
 
@@ -6325,7 +6323,7 @@ Generate coaching feedback.`;
                 tier, coachingFeedback,
                 strengths: JSON.stringify(strengths),
                 weaknesses: JSON.stringify(weaknesses),
-                model: ollamaAvailable ? 'ollama/qwen2.5:7b' : 'rule-based',
+                model: apiAvailable ? coachingModel : 'rule-based',
                 tokenCount: 0, cost: 0,
                 createdAt: new Date().toISOString()
             });
