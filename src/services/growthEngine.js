@@ -5674,7 +5674,7 @@ Return ONLY valid JSON. No markdown fences.`;
             const convsWithMsgs = [];
             for (const conv of chatterConvos) {
                 const msgs = await db.aiChatMessages.where('conversationId').equals(conv.id).toArray();
-                if (msgs.length < 4) continue; // skip trivial convos
+                if (msgs.length < 2) continue; // only skip single-message convos
                 msgs.sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
                 convsWithMsgs.push({
                     ...conv,
