@@ -63,6 +63,13 @@ const navSections = [
     ],
   },
   {
+    label: 'AI CHAT',
+    items: [
+      { path: '/of/ai-chat-import', label: 'Chat Import', icon: Upload },
+      { path: '/of/ai-chat-leaderboard', label: 'Leaderboard', icon: BarChart3 },
+    ],
+  },
+  {
     label: 'SYSTEM',
     items: [
       { path: '/sop', label: 'Training SOP', icon: BookOpen },

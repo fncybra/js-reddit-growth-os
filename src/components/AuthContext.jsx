@@ -7,15 +7,15 @@ const AuthContext = createContext(null);
 
 // Section visibility per role
 const SECTION_ACCESS = {
-  admin: ['AGENCY', 'REDDIT', 'THREADS', 'OF TRACKER', 'SYSTEM'],
-  threadsManager: ['AGENCY', 'THREADS', 'OF TRACKER', 'SYSTEM'],
+  admin: ['AGENCY', 'REDDIT', 'THREADS', 'OF TRACKER', 'AI CHAT', 'SYSTEM'],
+  threadsManager: ['AGENCY', 'THREADS', 'OF TRACKER', 'AI CHAT', 'SYSTEM'],
   redditManager: ['AGENCY', 'REDDIT', 'SYSTEM'],
 };
 
 // Route whitelist per role (admin = null = all routes allowed)
 const ROUTE_ACCESS = {
   admin: null,
-  threadsManager: ['/', '/threads', '/threads/settings', '/of', '/of/import', '/of/reports', '/of/config', '/settings', '/sop'],
+  threadsManager: ['/', '/threads', '/threads/settings', '/of', '/of/import', '/of/reports', '/of/config', '/of/ai-chat-import', '/of/ai-chat-leaderboard', '/of/ai-chat-report', '/of/ai-chat-replay', '/settings', '/sop'],
   redditManager: ['/', '/reddit', '/discovery', '/models', '/model', '/account',
     '/accounts', '/subreddits', '/library', '/repurpose', '/tasks', '/links', '/settings', '/sop'],
 };
