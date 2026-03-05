@@ -67,22 +67,53 @@ export function AIChatLeaderboard() {
             const tier = c.tier === 'top' ? 'TOP' : c.tier === 'at_risk' ? 'AT RISK' : 'OK';
             report += `${c.name} — ${tier} | SOP: ${score}/100 | $${c.revenue.toFixed(2)} | Conv: ${(c.conversionRate * 100).toFixed(1)}%\n`;
 
-            // Critical events = needle movers (what to fix)
-            const events = c.topEvents || [];
-            const critical = events.filter(e => e.severity === 'critical');
-            const warnings = events.filter(e => e.severity === 'warning');
-            const fixes = [...critical, ...warnings];
+            // Real examples from conversations (needle movers)
+            const examples = c.realExamples || [];
+            const critExamples = examples.filter(e => e.severity === 'critical');
+            const warnExamples = examples.filter(e => e.severity === 'warning');
+            const goodExamples = examples.filter(e => e.severity === 'positive');
+            const fixExamples = [...critExamples, ...warnExamples];
 
-            if (fixes.length > 0) {
-                report += `FIX:\n`;
-                for (const e of fixes) {
+            if (fixExamples.length > 0) {
+                report += `WHAT TO FIX:\n`;
+                // Dedupe by type, show top 5 with real descriptions
+                const seen = new Set();
+                let count = 0;
+                for (const e of fixExamples) {
+                    if (count >= 5) break;
+                    const key = e.type;
+                    if (seen.has(key)) continue;
+                    seen.add(key);
                     const label = e.type.replace(/_/g, ' ');
-                    report += `- ${label} (${e.count}x)\n`;
+                    const desc = e.description ? ` — ${e.description}` : '';
+                    const fan = e.fanName ? ` (fan: ${e.fanName})` : '';
+                    report += `- ${label}${desc}${fan}\n`;
+                    count++;
+                }
+            }
+
+            if (goodExamples.length > 0) {
+                report += `WHAT WENT WELL:\n`;
+                const seen = new Set();
+                let count = 0;
+                for (const e of goodExamples) {
+                    if (count >= 3) break;
+                    if (seen.has(e.type)) continue;
+                    seen.add(e.type);
+                    const label = e.type.replace(/_/g, ' ');
+                    const desc = e.description ? ` — ${e.description}` : '';
+                    report += `- ${label}${desc}\n`;
+                    count++;
                 }
             }
 
             if (c.coachingFeedback) {
                 report += `COACHING: ${c.coachingFeedback}\n`;
+            }
+
+            // Module recommendations
+            if (c.reviewModules?.length > 0) {
+                report += `REVIEW: ${c.reviewModules.join(', ')}\n`;
             }
 
             report += `\n`;

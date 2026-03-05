@@ -5923,17 +5923,60 @@ export const AIChatReportService = {
         const allChatters = await db.aiChatters.toArray();
         const chatterNameMap = new Map(allChatters.map(c => [c.id, c.name]));
 
-        const chatters = reports.map(r => {
+        // Load all grades for this import to get real examples
+        const allGrades = await db.aiChatGrades.where('importId').equals(importId).toArray();
+        const allConvos = await db.aiChatConversations.where('importId').equals(importId).toArray();
+        const convoMap = new Map(allConvos.map(c => [c.id, c]));
+
+        const criticalTypes = ['GENERIC_OPENER','NO_LOCATION_MATCH','PREMATURE_PITCH','VISIBLE_TRANSITION','MISSED_BUY_SIGNAL','OBJECTION_FAILURE','GF_EXPERIENCE','SLOW_REPLY_SELLING'];
+        const positiveTypes = ['GOOD_OPENER','GOOD_LOCATION_MATCH','GOOD_HUMANIZING','GOOD_PROFILING','GOOD_CONNECTION','SMOOTH_TRANSITION','GOOD_SCENARIO_SEXT','GOOD_PPV_CAPTION','GOOD_PPV_LOOPING','GOOD_OBJECTION_HANDLING','GOOD_AFTERCARE'];
+
+        const chatters = [];
+        for (const r of reports) {
             const ec = typeof r.eventCounts === 'string' ? JSON.parse(r.eventCounts || '{}') : (r.eventCounts || {});
-            // Build topEvents with severity classification
-            const criticalTypes = ['GENERIC_OPENER','NO_LOCATION_MATCH','PREMATURE_PITCH','VISIBLE_TRANSITION','MISSED_BUY_SIGNAL','OBJECTION_FAILURE','GF_EXPERIENCE','SLOW_REPLY_SELLING'];
-            const positiveTypes = ['GOOD_OPENER','GOOD_LOCATION_MATCH','GOOD_HUMANIZING','GOOD_PROFILING','GOOD_CONNECTION','SMOOTH_TRANSITION','GOOD_SCENARIO_SEXT','GOOD_PPV_CAPTION','GOOD_PPV_LOOPING','GOOD_OBJECTION_HANDLING','GOOD_AFTERCARE'];
             const topEvents = Object.entries(ec).filter(([,v]) => v > 0).map(([type, count]) => ({
                 type, count,
                 severity: criticalTypes.includes(type) ? 'critical' : positiveTypes.includes(type) ? 'positive' : 'warning'
             })).sort((a, b) => b.count - a.count);
 
-            return {
+            // Pull real examples: find grades for this chatter with events
+            const chatterGrades = allGrades.filter(g => g.chatterId === r.chatterId);
+            const realExamples = [];
+            for (const g of chatterGrades) {
+                const events = typeof g.events === 'string' ? JSON.parse(g.events || '[]') : (g.events || []);
+                const conv = convoMap.get(g.conversationId);
+                const fanName = conv?.fanName || 'Unknown';
+                for (const evt of events) {
+                    if (realExamples.length >= 8) break;
+                    realExamples.push({
+                        type: evt.type,
+                        severity: criticalTypes.includes(evt.type) ? 'critical' : positiveTypes.includes(evt.type) ? 'positive' : 'warning',
+                        description: evt.description || '',
+                        fanName,
+                        messageIndex: evt.messageIndex
+                    });
+                }
+                if (realExamples.length >= 8) break;
+            }
+
+            // Map event types to SOP modules for review recommendations
+            const moduleMap = {
+                GENERIC_OPENER: 'Module 1: Openers', NO_LOCATION_MATCH: 'Module 1: Location Match',
+                NO_HUMANIZING: 'Module 1: Humanizing', INTERVIEW_MODE: 'Module 1: Profiling',
+                DRY_REPLIES: 'Module 3: Conversation Mastery', NO_FOLLOWUP: 'Module 3: Following Up',
+                SPAMMING: 'Module 3: Forbidden Behaviors', PREMATURE_PITCH: 'Module 5: Transitions',
+                VISIBLE_TRANSITION: 'Module 5: Transitions', REAL_TIME_SEXTING: 'Module 6: Sexting',
+                WEAK_PPV_CAPTION: 'Module 7: PPV Captions', BAD_PRICING: 'Module 9: Pricing',
+                OBJECTION_FAILURE: 'Module 8: Objection Handling', GF_EXPERIENCE: 'Module 2: Connection',
+                MISSED_BUY_SIGNAL: 'Module 4: Finding Opportunities', NO_AFTERCARE: 'Module 7: Aftercare',
+                SLOW_REPLY_SELLING: 'Module 12: Reply Speed'
+            };
+            const reviewModules = [...new Set(
+                topEvents.filter(e => e.severity !== 'positive' && moduleMap[e.type])
+                    .map(e => moduleMap[e.type])
+            )].slice(0, 3);
+
+            chatters.push({
                 chatterId: r.chatterId,
                 name: chatterNameMap.get(r.chatterId) || 'Unknown',
                 tier: r.tier,
@@ -5947,11 +5990,14 @@ export const AIChatReportService = {
                 ppvPurchased: r.totalPPVPurchased || 0,
                 eventCounts: ec,
                 topEvents,
+                realExamples,
+                reviewModules,
                 strengths: typeof r.strengths === 'string' ? JSON.parse(r.strengths || '[]') : (r.strengths || []),
                 weaknesses: typeof r.weaknesses === 'string' ? JSON.parse(r.weaknesses || '[]') : (r.weaknesses || []),
                 coachingFeedback: r.coachingFeedback || ''
-            };
-        }).sort((a, b) => b.revenue - a.revenue);
+            });
+        }
+        chatters.sort((a, b) => b.revenue - a.revenue);
 
         const totalRevenue = chatters.reduce((s, c) => s + c.revenue, 0);
         const totalConversations = chatters.reduce((s, c) => s + c.conversationCount, 0);
