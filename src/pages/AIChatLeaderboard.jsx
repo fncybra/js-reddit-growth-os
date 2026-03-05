@@ -60,60 +60,41 @@ export function AIChatLeaderboard() {
     const buildTextReport = () => {
         if (!leaderboard) return '';
         const date = importDates.find(d => d.id === selectedImportId)?.date || '';
-        let report = `DAILY CHATTER REPORT — ${date}\n\n`;
+        const g = leaderboard.globalStats;
+
+        let report = `CHATTER REPORT ${date}\n`;
+        report += `$${g.totalRevenue.toFixed(0)} total | ${g.totalConversations} convos | ${g.totalChatters} chatters\n`;
+        report += `─────────────────────────\n\n`;
+
+        // MVP: best $ per conversation
+        const withConvos = sortedChatters.filter(c => c.conversationCount > 0);
+        const byEfficiency = [...withConvos].sort((a, b) => (b.revenue / b.conversationCount) - (a.revenue / a.conversationCount));
+        if (byEfficiency.length > 0) {
+            const mvp = byEfficiency[0];
+            report += `MVP: ${mvp.name} — $${(mvp.revenue / mvp.conversationCount).toFixed(2)}/convo (${mvp.conversationCount} convos, $${mvp.revenue.toFixed(0)})\n\n`;
+        }
 
         for (const c of sortedChatters) {
             const score = c.avgSopScore != null ? c.avgSopScore.toFixed(0) : '--';
-            const tier = c.tier === 'top' ? 'TOP' : c.tier === 'at_risk' ? 'AT RISK' : 'OK';
-            report += `${c.name} — ${tier} | SOP: ${score}/100 | $${c.revenue.toFixed(2)} | Conv: ${(c.conversionRate * 100).toFixed(1)}%\n`;
+            const perConvo = c.conversationCount > 0 ? (c.revenue / c.conversationCount).toFixed(2) : '0';
+            report += `${c.name} | $${c.revenue.toFixed(0)} | ${(c.conversionRate * 100).toFixed(0)}% conv | SOP ${score} | $${perConvo}/convo\n`;
 
-            // Real examples from conversations (needle movers)
-            const examples = c.realExamples || [];
-            const critExamples = examples.filter(e => e.severity === 'critical');
-            const warnExamples = examples.filter(e => e.severity === 'warning');
-            const goodExamples = examples.filter(e => e.severity === 'positive');
-            const fixExamples = [...critExamples, ...warnExamples];
-
-            if (fixExamples.length > 0) {
-                report += `WHAT TO FIX:\n`;
-                // Dedupe by type, show top 5 with real descriptions
-                const seen = new Set();
-                let count = 0;
-                for (const e of fixExamples) {
-                    if (count >= 5) break;
-                    const key = e.type;
-                    if (seen.has(key)) continue;
-                    seen.add(key);
-                    const label = e.type.replace(/_/g, ' ');
-                    const desc = e.description ? ` — ${e.description}` : '';
-                    const fan = e.fanName ? ` (fan: ${e.fanName})` : '';
-                    report += `- ${label}${desc}${fan}\n`;
-                    count++;
-                }
+            // Missed sales only (critical events with descriptions) — max 2
+            const examples = (c.realExamples || []).filter(e => e.severity === 'critical');
+            const seen = new Set();
+            let count = 0;
+            for (const e of examples) {
+                if (count >= 2) break;
+                if (seen.has(e.type)) continue;
+                seen.add(e.type);
+                if (e.description) report += `  > ${e.description}\n`;
+                count++;
             }
 
-            if (goodExamples.length > 0) {
-                report += `WHAT WENT WELL:\n`;
-                const seen = new Set();
-                let count = 0;
-                for (const e of goodExamples) {
-                    if (count >= 3) break;
-                    if (seen.has(e.type)) continue;
-                    seen.add(e.type);
-                    const label = e.type.replace(/_/g, ' ');
-                    const desc = e.description ? ` — ${e.description}` : '';
-                    report += `- ${label}${desc}\n`;
-                    count++;
-                }
-            }
-
+            // One-line coaching (first sentence only)
             if (c.coachingFeedback) {
-                report += `COACHING: ${c.coachingFeedback}\n`;
-            }
-
-            // Module recommendations
-            if (c.reviewModules?.length > 0) {
-                report += `REVIEW: ${c.reviewModules.join(', ')}\n`;
+                const firstSentence = c.coachingFeedback.split(/\.\s/)[0];
+                report += `  Fix: ${firstSentence}.\n`;
             }
 
             report += `\n`;
