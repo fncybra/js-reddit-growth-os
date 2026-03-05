@@ -2080,8 +2080,8 @@ export const CloudSyncService = {
             }
         }
 
-        // OF config tables: sync deletions to cloud (local is authoritative)
-        const ofConfigTables = ['ofModels', 'ofVas', 'ofTrackingLinks'];
+        // Tables where local is authoritative for deletions — sync deletions to cloud
+        const ofConfigTables = ['ofModels', 'ofVas', 'ofTrackingLinks', 'accounts'];
         for (const table of ofConfigTables) {
             if (!tables.includes(table)) continue;
             try {
@@ -2244,10 +2244,10 @@ export const CloudSyncService = {
         // Phase 2: MERGE cloud data into local (never clear — prevents data loss)
         for (const table of tables) {
             let cloudData = fetched[table] || [];
-            const ofConfigTables = ['ofModels', 'ofVas', 'ofTrackingLinks'];
+            const localAuthTables = ['ofModels', 'ofVas', 'ofTrackingLinks', 'accounts'];
             if (cloudData.length === 0) {
-                // OF config tables: if cloud is empty, clear local too (cloud is authoritative)
-                if (ofConfigTables.includes(table)) {
+                // Local-authoritative tables: if cloud is empty, clear local too
+                if (localAuthTables.includes(table)) {
                     const localCount = await db[table].count();
                     if (localCount > 0) {
                         await db[table].clear();
@@ -2386,9 +2386,9 @@ export const CloudSyncService = {
             await db[table].bulkPut(cloudData);
             console.log(`[CloudSync] Merged ${cloudData.length} cloud rows into ${table}`);
 
-            // For OF config tables: remove local records that no longer exist in cloud
-            // This ensures deletions propagate properly (cloud is authoritative for these tables)
-            if (ofConfigTables.includes(table)) {
+            // For local-authoritative tables: remove local records that no longer exist in cloud
+            // This ensures deletions propagate properly
+            if (localAuthTables.includes(table)) {
                 const cloudIds = new Set(cloudData.map(r => r.id));
                 const localRecords = await db[table].toArray();
                 const orphanIds = localRecords.filter(r => !cloudIds.has(r.id)).map(r => r.id);
