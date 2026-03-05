@@ -5604,6 +5604,7 @@ Return ONLY valid JSON. No markdown fences.`;
             const chatterName = chatterNameMap.get(chatterId) || 'Unknown';
             chatterIdx++;
             onProgress?.({ phase: 'grading', current: chatterIdx, total: totalChatters, label: `Grading chatter ${chatterIdx}/${totalChatters} (${chatterName})...` });
+            console.log(`[AI Chat Grade] Starting chatter ${chatterIdx}/${totalChatters}: ${chatterName} — ${chatterConvos.length} conversations`);
 
             // Load messages for each conversation
             const convsWithMsgs = [];
@@ -5628,11 +5629,15 @@ Return ONLY valid JSON. No markdown fences.`;
             // Process batches in parallel chunks of CONCURRENCY
             for (let ci = 0; ci < batches.length; ci += CONCURRENCY) {
                 const chunk = batches.slice(ci, ci + CONCURRENCY);
+                console.log(`[AI Chat Grade] ${chatterName}: firing ${chunk.length} parallel calls (batches ${ci}-${ci + chunk.length - 1} of ${batches.length})`);
+                const t0 = Date.now();
                 const results = await Promise.allSettled(chunk.map(async ({ start, convs }) => {
                     const userPrompt = this.buildGradingPrompt(chatterName, convs);
+                    console.log(`[AI Chat Grade] ${chatterName} batch@${start}: prompt ${(userPrompt.length / 1024).toFixed(0)}KB, ${convs.length} convos`);
                     const result = await this.callLLM(haikuModel, systemPrompt, userPrompt);
                     return { start, convs, result };
                 }));
+                console.log(`[AI Chat Grade] ${chatterName}: parallel chunk done in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 
                 for (const r of results) {
                     if (r.status === 'rejected') {
@@ -5679,6 +5684,10 @@ Return ONLY valid JSON. No markdown fences.`;
                         }
                     }
                 }
+
+                // Update progress with batch detail
+                const batchesDone = Math.min(ci + CONCURRENCY, batches.length);
+                onProgress?.({ phase: 'grading', current: chatterIdx, total: totalChatters, label: `Grading ${chatterName} (${batchesDone}/${batches.length} batches)...` });
 
                 // Brief pause between parallel chunks to avoid rate limits
                 if (ci + CONCURRENCY < batches.length) await new Promise(r => setTimeout(r, 500));
