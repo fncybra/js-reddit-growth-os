@@ -30,7 +30,6 @@ export function AIChatImport() {
         setImporting(true);
         setResult(null);
         setError(null);
-        setCostEstimate(null);
         try {
             // Pass File object directly — streaming CSV parser reads in chunks, never loads full file
             const res = await AIChatImportService.processFile(file, file.name, setProgress);
@@ -53,7 +52,6 @@ export function AIChatImport() {
         AIChatImportService.getImportHistory().then(setHistory);
         if (result?.importId === importId) {
             setResult(null);
-            setCostEstimate(null);
         }
     }, [result]);
 
