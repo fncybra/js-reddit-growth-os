@@ -161,7 +161,7 @@ function getRequestProxyInfo(req) {
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-app.use(express.json()); // Allow JSON body for POST requests
+app.use(express.json({ limit: '5mb' })); // Allow large AI grading prompts
 app.use(cors());
 
 app.post('/api/proxy/rotate', (req, res) => {

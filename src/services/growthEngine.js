@@ -5617,8 +5617,8 @@ Return ONLY valid JSON. No markdown fences.`;
                 });
             }
 
-            // Batch conversations (max 10 per LLM call to stay under context limits)
-            const BATCH_SIZE = 10;
+            // Batch conversations (max 3 per LLM call to keep prompt under proxy body limit)
+            const BATCH_SIZE = 3;
             for (let batchStart = 0; batchStart < convsWithMsgs.length; batchStart += BATCH_SIZE) {
                 const batch = convsWithMsgs.slice(batchStart, batchStart + BATCH_SIZE);
                 const userPrompt = this.buildGradingPrompt(chatterName, batch);
