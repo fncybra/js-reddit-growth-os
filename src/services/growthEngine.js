@@ -5396,206 +5396,369 @@ export const AIChatImportService = {
 };
 
 export const AIChatGradingService = {
-    buildSystemPrompt() {
-        return `You are a QA analyst for an OnlyFans chatting agency. Grade chatter performance against the agency SOPs. This is workplace analytics — evaluate objectively.
+    // ═══════════════════════════════════════════════════════════
+    // AI SYSTEM PROMPT — condensed SOP for quality grading
+    // ═══════════════════════════════════════════════════════════
+    buildAISystemPrompt() {
+        return `You are a senior QA analyst for an OnlyFans chatting agency. Grade chatter quality by reading actual conversation text. This is workplace performance analytics — evaluate objectively.
 
-CONVERSATION FUNNEL (required stages in order):
-1. OPENER — Personalized: Name + Location Question + Playful comment about their name. NEVER "hey how are you" or "what are you up to". Must feel like a real message, not automated.
-   Example: "Hey Jake! Where are you from? Btw my ex's name was Jake... should I be scared? 😂"
-2. LOCATION_MATCH — ALWAYS pretend you're from the same area. Use local weather, landmarks, slang. Update notes with their location. This is STEP 1 of every conversation.
-3. HUMANIZE — Tell a relatable funny story about your day. Setup: "I did something so stupid just then, can I tell you? 😅" then share specific mundane details. Creates connection beyond sex.
-4. PROFILE — Gather: location (first!), real name, job, age. Use 3-step method: ask → respond to their answer → answer it yourself. NEVER interview-style rapid-fire.
-5. BUILD_CONNECTION — Find 2-3 commonalities WITH EVIDENCE (not just "me too"). Create inside jokes & nicknames. Friends-with-benefits vibe (NOT girlfriend experience). Banter and humor.
-6. TRANSITION — NEVER let them see the sale coming. 4-step framework: (1) Send non-sexual teaser photo (watching TV, in bed, about to shower), (2) Talk about what they're doing 5-10 mins, (3) Ask "if you were here" question (still not sexual), (4) Start flirty/teasing. NEVER: "can I show you something?", "want to have some fun?", "I'm so horny right now".
-7. SEXT — SCENARIO-BASED only (NOT real-time). Tell a vivid story: beginning→middle→end. Pick a believable scenario (Netflix, shower, car). Use LOTS of detail and expanding. Send PPV at end of each stage. Personalize for dominant (questions, "what do you want me to do?") vs submissive (commands, "you will watch this").
-8. SELL — Sequences: series of photos/videos getting progressively more explicit and expensive. Start LOW (<$20), increase gradually. Get to triple digits by 4th PPV. PPV captions MUST include: (1) pressure removal "here's an idea but up to you", (2) link to conversation topic, (3) question they can only answer by watching, (4) their REAL name. Speed up PPV frequency as they buy more (10 replies → 5 → 2 → 1). Instant follow-up when they buy for looping.
-9. AFTERCARE — Warm follow-up post-purchase. Don't disappear after they buy. Keep connection open.
+## SOP RULES (how chatters SHOULD text)
 
-CRITICAL RULES:
-- Carry the conversation at all times, never let chats die
-- Reply within 1 minute when selling or handling objections
-- Send multiple messages (shows enthusiasm), use tasteful emojis (😏😊😂💦 only)
-- Open-ended questions, not yes/no. "This or That" format is best
-- Talk about yourself too — don't just interrogate
-- NEVER: dry replies (okay, cool, haha, wow), generic greetings, customer service tone, walls of text, multiple questions in one message
-- Follow up on read messages: "Tom? 👀" or "You still there?"
-- After goodnight, wait 5 min then send: "I can't sleep, still thinking about you 😏"
+VOICE: 1-8 words avg, lowercase everything, abbreviations (u, ur, rn, ngl, tbh, fr, wym, idk), NO emojis 80% of time (only use these sparingly: 😭😂💀🫠😏), no periods at end of messages, slightly unbothered but interested energy.
 
-OBJECTION HANDLING:
-- "Too expensive": (1) Ignore once, (2) Offer intangibles (dick rating, voice note), (3) Gamify "if you can watch without finishing, next one free 😏", (4) Add 3-5 extra pics, (5) Renegotiate (different content for lower price, NEVER just discount)
-- "Can we meet/go off platform": Playful dodge, never agree, never say no definitively. "I'm open-minded but it's only been [time]". Use stories about friends who had bad experiences.
-- "Is this pre-recorded/agency?": Ignore once, use humor "am I a robot? (the funniest robot ever) 😂", don't get defensive, stall with conversation, get voice note
-- "Want something else": Ignore once, divert with "what if" to content you DO have, resend original PPV
-- NEVER: guilt trip, get angry, over-negotiate, get defensive
+NEVER: customer service language ("welcome", "nice to meet you", "thanks for subscribing", "I understand"), perfect grammar or complete sentences, walls of text (>15 words before sexting stage), interview questions ("what do you like", "tell me about yourself"), suggest meeting IRL, say "babe" every message, use emojis like 💕🥰😘😊❤️💦 (fake girl energy).
 
-PRICING:
-- Tier 1 ($20-60): Boobs, teasing
-- Tier 2 ($60-100): Masturbation solo, reveal
-- Tier 3 ($100-150): Masturbation with toys
-- Tier 4 ($150-200): Most explicit content
-- Sequences: $15→$35→$60→$100→$150→$200 progression
-- FOMO: "I'm probably going to unsend this", "get it before I change my mind"
-- Whales: push price up 10-20% each time, move to single high payments
-- Dummy customs: sell existing long videos as custom "just for them" ($400-$800)
+STAGE PROGRESSION (required order):
+1. OPENER — Personalized: name + location question + playful hook. NOT "hey how are you" or generic greetings.
+2. LOCATION_MATCH — Pretend same area, use local references, weather, landmarks.
+3. HUMANIZE — Relatable funny story about your day with specific details. Creates connection beyond the sexual.
+4. PROFILE — Get name/location/job/age using 3-step method (ask → respond to their answer → answer it yourself). NOT rapid-fire interview.
+5. CONNECTION — Find 2-3 commonalities WITH evidence, create inside jokes. Friends-with-benefits vibe, NOT girlfriend experience.
+6. TRANSITION — 4-step invisible: non-sexual teaser photo → activity talk → "if you were here" → flirty. NEVER "can I show you something?" or "I'm so horny".
+7. SEXT — Scenario-based story (NOT real-time generic). Beginning → middle → end. PPV at each escalation.
+8. SELL — Start low (<$20), sequences: $15→$35→$60→$100+. Captions need: pressure removal + convo link + question + real name. 40+ messages before first PPV with new fans.
+9. AFTERCARE — Warm follow-up, don't ghost after purchase.
 
-WINNING PATTERNS:
-- Personalized opener + location match + humanizing story in first interaction
-- Patient rapport: 2-3 commonalities before any selling, 40+ messages for new fans
-- Invisible transitions: non-sexual teaser → activity talk → "if you were here" → flirty
-- Scenario sexting with lots of detail, proper pacing, PPV at each escalation stage
-- Good PPV captions with all 4 elements
-- Fast replies when selling, instant follow-up on purchases for looping
-- Energy matching: mirror fan's message length and tone
+OBJECTION HANDLING: Ignore once → offer intangibles → gamify → add content → renegotiate. NEVER guilt trip, get defensive, or just discount.
 
-FAILING PATTERNS:
-- Generic openers ("hey how are you")
-- No location match attempt
-- Interview-mode rapid-fire questions without sharing about yourself
-- Visible transitions ("can I show you something?", "I'm so horny")
-- Real-time sexting instead of scenario-based
-- Premature selling before rapport (under 40 messages for new fans)
-- Slow replies during active selling
-- Guilt tripping or getting defensive on objections
-- Disappearing after purchase (no aftercare)
-- GF experience instead of friends-with-benefits
-- Multiple messages with no fan response (spamming)
-- Dry one-word replies`;
-    },
+## WINNING EXAMPLE (opener + rapport)
+FAN: hey whats up
+CHATTER: heyyy jake! where r u from? btw my ex was named jake should i be scared 😂
+FAN: haha im from miami
+CHATTER: wait no way i literally just got back from south beach last week
+FAN: oh nice what were you doing there
+CHATTER: ok so dont judge me but i tried paddleboarding and fell in like 3 times lmao
+(Good: personalized opener, location match, humanizing story, natural flow, correct voice)
 
-    buildGradingPrompt(chatterName, conversations) {
-        let prompt = `Analyze these ${conversations.length} conversations by chatter "${chatterName}". For each conversation, return a JSON object.\n\n`;
+## FAILING EXAMPLE (opener + rushing)
+FAN: hey
+CHATTER: Hey babe! How are you doing today? 😘
+FAN: good u
+CHATTER: I'm great! Thanks for asking! Want to see something special I made just for you? 💕
+(Bad: customer service voice, fake emojis, visible transition, no rapport building, formal grammar)
 
-        conversations.forEach((conv, idx) => {
-            prompt += `### Conversation ${idx + 1} (fan: "${conv.fanName}", model: "${conv.modelName}", ${conv.messages.length} messages)\n`;
-            const msgs = conv.messages;
-            // Truncate long conversations: keep first 10 + last 15 for speed
-            let displayMsgs = msgs;
-            if (msgs.length > 30) {
-                const first10 = msgs.slice(0, 10);
-                const last15 = msgs.slice(-15);
-                displayMsgs = [...first10, { sender: 'system', content: `[... ${msgs.length - 25} messages omitted ...]` }, ...last15];
-            }
-            for (const m of displayMsgs) {
-                const label = m.sender === 'fan' ? 'FAN' : m.sender === 'system' ? '---' : 'CHATTER';
-                const ppvTag = m.price > 0 ? ` [PPV $${m.price}${m.purchased ? ' PURCHASED' : ' NOT PURCHASED'}]` : '';
-                const replyTag = m.replyTimeSec ? ` [reply: ${m.replyTimeSec}s]` : '';
-                prompt += `[${label}] ${m.content}${ppvTag}${replyTag}\n`;
-            }
-            prompt += '\n';
-        });
+## WINNING EXAMPLE (selling)
+CHATTER: i made smth earlier and i literally cant stop thinking about it
+FAN: what is it
+CHATTER: ok so picture this... we just got back from the beach right? and im still in my bikini
+FAN: go on
+CHATTER: and i start taking it off real slow while looking at u... jake i think ud really like this one. totally up to u tho
+(Good: natural sell, scenario-based, uses name, pressure removal, links to conversation)
 
-        prompt += `## Instructions
-For each conversation, output a JSON object:
-{
-  "conversationIndex": 0,
-  "sopScore": 72,
-  "stageProgression": ["OPENER", "LOCATION_MATCH", "HUMANIZE", "PROFILE", "BUILD_CONNECTION", "TRANSITION", "SEXT", "SELL", "AFTERCARE"],
-  "events": [
-    {"type": "GOOD_OPENER", "severity": "positive", "messageIndex": 1, "description": "Personalized opener with name + location question + playful comment"},
-    {"type": "PREMATURE_PITCH", "severity": "critical", "messageIndex": 12, "description": "Sent PPV before building rapport — only 12 messages in"}
-  ],
-  "summary": "Good opener but rushed to sell. No location match or humanizing story."
-}
+## FAILING EXAMPLE (selling)
+CHATTER: I have an exclusive PPV for you! Only $50! Limited time offer! 🔥
+FAN: idk thats a lot
+CHATTER: Come on babe you won't regret it! I made it just for you! Don't you want to see me? 😘
+(Bad: sales pitch voice, guilt trip, defensive, no scenario, bad pricing for first PPV)
 
-CRITICAL events (major SOP violations):
-- GENERIC_OPENER — "hey how are you", "what are you up to", no name/hook/location question
-- NO_LOCATION_MATCH — didn't ask where they're from or pretend to be from same area
-- PREMATURE_PITCH — selling before ~40 messages for new fans, or before 2-3 commonalities
-- VISIBLE_TRANSITION — obvious transition: "can I show you something?", "want to have some fun?", "I'm so horny"
-- MISSED_BUY_SIGNAL — fan shows buying intent but chatter doesn't capitalize within 2-3 messages
-- OBJECTION_FAILURE — got defensive, guilt tripped, or over-negotiated on objections
-- GF_EXPERIENCE — acting like girlfriend instead of friends-with-benefits
-- SLOW_REPLY_SELLING — slow replies during active selling (should be <1 min)
-
-WARNING events (needs improvement):
-- INTERVIEW_MODE — rapid-fire questions without sharing about yourself, no 3-step method
-- NO_HUMANIZING — didn't share relatable story to seem like a real person
-- DRY_REPLIES — "okay", "cool", "haha", "wow", one-word responses
-- SPAMMING — walls of text or 3+ messages without fan response
-- WEAK_PPV_CAPTION — missing elements: pressure removal, convo link, question, name
-- BAD_PRICING — first PPV too expensive (>$25 for new fans) or bad sequence progression
-- REAL_TIME_SEXTING — generic "I'm so horny" instead of scenario-based with story/detail
-- NO_AFTERCARE — disappeared after purchase, no warm follow-up
-- NO_FOLLOWUP — let conversation die, didn't check unread/delivered messages
-
-POSITIVE events (good SOP adherence):
-- GOOD_OPENER — personalized with name + location question + playful comment
-- GOOD_LOCATION_MATCH — matched their location, used local references
-- GOOD_HUMANIZING — shared relatable funny story with specific details
-- GOOD_PROFILING — gathered info naturally using 3-step method (ask→respond→answer yourself)
-- GOOD_CONNECTION — built commonalities with evidence, created inside jokes/nicknames
-- SMOOTH_TRANSITION — invisible 4-step: non-sexual teaser → activity talk → "if you were here" → flirty
-- GOOD_SCENARIO_SEXT — scenario-based sexting with story structure, detail, proper pacing
-- GOOD_PPV_CAPTION — includes all 4 elements (pressure removal, convo link, question, name)
-- GOOD_PPV_LOOPING — instant follow-up after purchase, upsell, increasing price
-- GOOD_OBJECTION_HANDLING — ignore → intangibles → gamify → add content → renegotiate
-- GOOD_AFTERCARE — warm follow-up post-purchase
-
-sopScore: 0-100 rubric:
-- 90-100: All stages followed perfectly, invisible transitions, scenario sexting, great captions, fast replies
-- 75-89: Most stages followed, minor issues (e.g. could humanize more, slight pricing issue)
-- 60-74: Some stages skipped, visible transition OR weak sexting OR missing PPV elements
-- 40-59: Multiple SOP violations — premature pitch, interview mode, generic opener, etc.
-- 0-39: Major failures — guilt tripping, defensive objection handling, GF experience, spamming
-
-Return ONLY a valid JSON array. No markdown fences, no explanation.`;
-
-        return prompt;
-    },
-
-    buildCoachingPrompt(chatterName, metrics, eventCounts, worstConvos) {
-        let prompt = `You are a senior QA coach for an OF chatting agency. Review chatter "${chatterName}"'s daily shift.\n\n`;
-        prompt += `Metrics:\n`;
-        prompt += `- ${metrics.totalConversations} conversations, ${metrics.totalMessages} messages\n`;
-        prompt += `- Revenue: $${metrics.totalRevenue.toFixed(2)}, Conversion rate: ${(metrics.conversionRate * 100).toFixed(1)}%\n`;
-        prompt += `- Avg reply time: ${metrics.avgReplyTimeSec ?? 'N/A'}s, Avg SOP score: ${metrics.avgSopScore?.toFixed(0) ?? 'N/A'}/100\n\n`;
-
-        prompt += `Detected events:\n`;
-        for (const [type, count] of Object.entries(eventCounts)) {
-            if (count > 0) prompt += `- ${type}: ${count} times\n`;
-        }
-        prompt += '\n';
-
-        if (worstConvos.length > 0) {
-            prompt += `Lowest-scored conversations:\n`;
-            worstConvos.forEach((c, i) => {
-                prompt += `${i + 1}. "${c.summary}" (score: ${c.sopScore}, fan: ${c.fanName})\n`;
-            });
-            prompt += '\n';
-        }
-
-        prompt += `Agency SOP priorities: (1) Personalized opener + location match, (2) Humanizing story, (3) Natural profiling with 3-step method, (4) 2-3 commonalities before selling, (5) Invisible 4-step transitions, (6) Scenario-based sexting with detail, (7) PPV captions with all 4 elements, (8) Fast replies when selling, (9) Proper objection handling (ignore→intangibles→gamify), (10) Aftercare post-purchase.
-
-Generate a coaching report as JSON:
-{
-  "strengths": ["specific strength referencing SOP module, e.g. 'Good location matching — matched fan's city in 3/5 conversations'"],
-  "weaknesses": ["specific weakness with fix, e.g. 'Visible transitions in 4 conversations — used \"want to see my content?\" instead of the 4-step framework (teaser→activity→if you were here→flirty)'"],
-  "coachingFeedback": "2-4 sentences. Be specific: quote what they did wrong and what the SOP says to do instead. Reference module numbers when relevant. Focus on the ONE biggest improvement that would increase their revenue.",
-  "tier": "top" | "average" | "at_risk"
-}
-
-Tier rules:
-- "top" if avgSopScore >= 75 AND conversionRate >= 0.15
-- "at_risk" if avgSopScore < 50 OR conversionRate < 0.05 OR more than 3 critical events
-- "average" otherwise
+## YOUR JOB
+For each conversation, evaluate QUALITY dimensions that require reading the actual text:
+- Opener quality (personalized vs generic)
+- Tone/voice (natural girl texting vs customer service)
+- Stage progression (did they follow the funnel or skip stages)
+- Rapport quality (genuine connection vs interview mode)
+- Transition smoothness (invisible vs obvious)
+- Buy signal recognition (did they notice and act on fan interest)
+- Sexting quality (scenario-based vs real-time/generic)
+- Overall conversation energy and engagement
 
 Return ONLY valid JSON. No markdown fences.`;
+    },
+
+    // ═══════════════════════════════════════════════════════════
+    // AI USER PROMPT — batches all conversations for one chatter
+    // ═══════════════════════════════════════════════════════════
+    buildAIUserPrompt(chatterName, conversations) {
+        let prompt = `Grade these ${conversations.length} conversations by chatter "${chatterName}".\n\n`;
+
+        for (let i = 0; i < conversations.length; i++) {
+            const conv = conversations[i];
+            prompt += `### CONV ${i} | fan: "${conv.fanName}" | model: "${conv.modelName}" | ${conv.messageCount} msgs | PPV: ${conv.ppvSent} sent, ${conv.ppvPurchased} bought, $${(conv.ppvRevenue || 0).toFixed(0)}\n`;
+            prompt += conv.compressedText;
+            prompt += '\n\n';
+        }
+
+        prompt += `## OUTPUT FORMAT
+Return JSON with this EXACT structure:
+{
+  "conversations": [
+    {
+      "idx": 0,
+      "aiScore": 65,
+      "events": [
+        {"type": "GENERIC_OPENER", "severity": "critical", "messageIndex": 0, "description": "Used 'hey how are you' — no name, no hook, no location question"},
+        {"type": "GOOD_RAPPORT", "severity": "positive", "messageIndex": 8, "description": "Built genuine connection around shared interest in cooking"}
+      ],
+      "stageProgression": ["OPENER", "PROFILE", "SELL"],
+      "verdict": "Skipped location match and humanizing. Jumped to selling at message 15."
+    }
+  ],
+  "chatterSummary": {
+    "tier": "average",
+    "strengths": ["Fast replies during selling sequences", "Good at scenario-based sexting"],
+    "weaknesses": ["Generic openers in 4/7 conversations — needs to personalize with name + location question", "Skips humanizing stage — never shares relatable stories"],
+    "coachingFeedback": "Your biggest revenue leak is generic openers. When you open with 'hey how are you', fans don't feel special and engagement drops. Try: use their name + ask where they're from + add a playful comment. This alone could increase your conversion by 15-20%.",
+    "priorityFix": "Personalize every opener with fan's name and a location question"
+  }
+}
+
+AI EVENT TYPES to detect (quality-based, require reading text):
+CRITICAL: GENERIC_OPENER (generic/formal greeting), BAD_TONE (customer service voice, formal emojis, perfect grammar), MISSED_BUY_SIGNAL (fan showed buying intent, chatter didn't capitalize), VISIBLE_TRANSITION (obvious shift to selling)
+WARNING: DRY_CONVERSATION (robotic, low-effort messages), INTERVIEW_MODE (rapid-fire questions without reacting)
+POSITIVE: GOOD_OPENER (warm, natural, personalized), GOOD_RAPPORT (genuine connection, callbacks, inside jokes), GOOD_TRANSITION (smooth, invisible stage progression), GOOD_TONE (natural voice, correct abbreviations)
+
+aiScore: 0-100 based ONLY on conversation quality (tone, rapport, progression, technique). NOT on outcomes like sales.
+
+Tier rules:
+- "top": Most conversations show good technique, natural voice, proper stage progression
+- "at_risk": Majority of conversations have critical issues (generic openers, bad tone, visible transitions)
+- "average": Mix of good and bad
+
+Be specific in descriptions — quote actual message snippets as evidence. Keep descriptions under 20 words.
+Coaching feedback should be professional and constructive (managers and chatters read these reports).
+Return ONLY valid JSON.`;
 
         return prompt;
     },
 
+    // ═══════════════════════════════════════════════════════════
+    // CONVERSATION COMPRESSION — smart truncation for AI input
+    // ═══════════════════════════════════════════════════════════
+    formatMessagesForAI(msgs) {
+        return msgs.map(m => {
+            const label = m.sender === 'fan' ? 'FAN' : 'CHATTER';
+            const ppvTag = m.price > 0 ? ` [PPV $${m.price}${m.purchased ? ' PURCHASED' : ' NOT PURCHASED'}]` : '';
+            const replyTag = m.replyTimeSec && m.sender === 'chatter' ? ` [reply: ${m.replyTimeSec}s]` : '';
+            return `[${label}] ${(m.content || '').slice(0, 300)}${ppvTag}${replyTag}`;
+        }).join('\n');
+    },
+
+    compressConversation(msgs, conv) {
+        if (!msgs || msgs.length === 0) return '(empty conversation)';
+        // Short conversations: send full text
+        if (msgs.length <= 30) {
+            return this.formatMessagesForAI(msgs);
+        }
+        // Long conversations: first 10 + PPV context (±3 around each PPV) + last 10
+        const first10 = msgs.slice(0, 10);
+        const last10 = msgs.slice(-10);
+
+        const usedIndices = new Set([
+            ...Array.from({ length: Math.min(10, msgs.length) }, (_, i) => i),
+            ...Array.from({ length: Math.min(10, msgs.length) }, (_, i) => msgs.length - 10 + i)
+        ]);
+
+        const ppvContextMsgs = [];
+        msgs.forEach((m, i) => {
+            if (m.price > 0) {
+                const start = Math.max(0, i - 3);
+                const end = Math.min(msgs.length, i + 4);
+                for (let j = start; j < end; j++) {
+                    if (!usedIndices.has(j)) {
+                        usedIndices.add(j);
+                        ppvContextMsgs.push({ idx: j, msg: msgs[j] });
+                    }
+                }
+            }
+        });
+        ppvContextMsgs.sort((a, b) => a.idx - b.idx);
+
+        let result = this.formatMessagesForAI(first10);
+        if (ppvContextMsgs.length > 0) {
+            const firstPPVIdx = ppvContextMsgs[0].idx;
+            const omittedBefore = firstPPVIdx - 10;
+            if (omittedBefore > 0) result += `\n[... ${omittedBefore} messages omitted ...]\n`;
+            result += this.formatMessagesForAI(ppvContextMsgs.map(p => p.msg));
+        }
+        const lastOmitted = msgs.length - 10 - (ppvContextMsgs.length > 0 ? ppvContextMsgs[ppvContextMsgs.length - 1].idx + 1 : 10);
+        if (lastOmitted > 0) result += `\n[... ${lastOmitted} messages omitted ...]\n`;
+        result += this.formatMessagesForAI(last10);
+
+        return result;
+    },
+
+    // ═══════════════════════════════════════════════════════════
+    // QUANTITATIVE RULES — 100% certain, from structured data only
+    // ═══════════════════════════════════════════════════════════
+    detectQuantitativeEvents(msgs, conv) {
+        const events = [];
+        if (!msgs || msgs.length < 2) return { events, ruleScore: 50 };
+
+        const chatterMsgs = msgs.filter(m => m.sender === 'chatter');
+        const fanMsgs = msgs.filter(m => m.sender === 'fan');
+        if (chatterMsgs.length === 0) return { events, ruleScore: 50 };
+
+        // --- PPV ANALYSIS (structured fields: price, purchased, message index) ---
+        const ppvMsgs = msgs.filter(m => m.price > 0);
+        const ppvPurchased = ppvMsgs.filter(m => m.purchased);
+        const ppvNotPurchased = ppvMsgs.filter(m => !m.purchased);
+
+        // PREMATURE_PITCH: First PPV before message #20 in a longer conversation
+        if (ppvMsgs.length > 0) {
+            const firstPPVIdx = msgs.indexOf(ppvMsgs[0]);
+            if (firstPPVIdx < 20 && msgs.length > 25) {
+                events.push({
+                    type: 'PREMATURE_PITCH', severity: 'critical',
+                    messageIndex: firstPPVIdx,
+                    description: `PPV at msg #${firstPPVIdx + 1} of ${msgs.length} — too early`
+                });
+            }
+        }
+
+        // BAD_PRICING: First PPV > $30
+        if (ppvMsgs.length > 0 && ppvMsgs[0].price > 30) {
+            events.push({
+                type: 'BAD_PRICING', severity: 'warning',
+                messageIndex: msgs.indexOf(ppvMsgs[0]),
+                description: `First PPV $${ppvMsgs[0].price} — start under $25`
+            });
+        }
+
+        // SUCCESSFUL_SALE / FAILED_CLOSE
+        for (const pm of ppvPurchased) {
+            events.push({
+                type: 'SUCCESSFUL_SALE', severity: 'positive',
+                messageIndex: msgs.indexOf(pm),
+                description: `PPV purchased: $${pm.price}`
+            });
+        }
+        for (const pm of ppvNotPurchased) {
+            events.push({
+                type: 'FAILED_CLOSE', severity: 'warning',
+                messageIndex: msgs.indexOf(pm),
+                description: `PPV not purchased: $${pm.price}`
+            });
+        }
+
+        // NO_AFTERCARE / GOOD_PPV_LOOPING
+        for (const pm of ppvPurchased) {
+            const pmIdx = msgs.indexOf(pm);
+            const followUp = msgs.slice(pmIdx + 1, pmIdx + 4).find(m => m.sender === 'chatter');
+            if (followUp) {
+                events.push({
+                    type: 'GOOD_PPV_LOOPING', severity: 'positive',
+                    messageIndex: pmIdx,
+                    description: `Follow-up after $${pm.price} sale`
+                });
+            } else {
+                events.push({
+                    type: 'NO_AFTERCARE', severity: 'warning',
+                    messageIndex: pmIdx,
+                    description: `No follow-up after $${pm.price} purchase`
+                });
+            }
+        }
+
+        // --- REPLY SPEED (structured: replyTimeSec field) ---
+        const replyTimes = [];
+        for (let i = 1; i < msgs.length; i++) {
+            if (msgs[i].sender === 'chatter' && msgs[i - 1].sender === 'fan') {
+                const rt = msgs[i].replyTimeSec || 0;
+                if (rt > 0) replyTimes.push({ idx: i, time: rt });
+            }
+        }
+
+        const fastReplies = replyTimes.filter(r => r.time < 60);
+        if (fastReplies.length > replyTimes.length * 0.6 && replyTimes.length >= 3) {
+            events.push({
+                type: 'FAST_RESPONSE', severity: 'positive',
+                messageIndex: 0,
+                description: `${fastReplies.length}/${replyTimes.length} replies under 1 min`
+            });
+        }
+
+        // SLOW_REPLY_SELLING: >120s reply during PPV sequence
+        for (const pm of ppvMsgs) {
+            const pmIdx = msgs.indexOf(pm);
+            const nearbySlowReplies = replyTimes.filter(r => Math.abs(r.idx - pmIdx) < 5 && r.time > 120);
+            if (nearbySlowReplies.length > 0) {
+                events.push({
+                    type: 'SLOW_REPLY_SELLING', severity: 'critical',
+                    messageIndex: nearbySlowReplies[0].idx,
+                    description: `${Math.round(nearbySlowReplies[0].time / 60)}min reply during PPV sequence`
+                });
+                break;
+            }
+        }
+
+        // IDLE_TIME: Gap > 600s
+        const idleCount = replyTimes.filter(r => r.time > 600).length;
+        if (idleCount > 0) {
+            events.push({
+                type: 'IDLE_TIME', severity: 'warning',
+                messageIndex: 0,
+                description: `${idleCount} gap${idleCount > 1 ? 's' : ''} over 10 minutes`
+            });
+        }
+
+        // SPAMMING: 4+ consecutive chatter messages
+        let maxConsecutive = 0, curConsecutive = 0, spamIdx = 0;
+        for (let i = 0; i < msgs.length; i++) {
+            if (msgs[i].sender === 'chatter') {
+                curConsecutive++;
+                if (curConsecutive > maxConsecutive) { maxConsecutive = curConsecutive; spamIdx = i; }
+            } else { curConsecutive = 0; }
+        }
+        if (maxConsecutive >= 4) {
+            events.push({
+                type: 'SPAMMING', severity: 'warning',
+                messageIndex: spamIdx,
+                description: `${maxConsecutive} consecutive msgs without fan reply`
+            });
+        }
+
+        // NO_FOLLOWUP: Last message from fan (left on read)
+        if (msgs[msgs.length - 1].sender === 'fan' && msgs.length > 5) {
+            events.push({
+                type: 'NO_FOLLOWUP', severity: 'warning',
+                messageIndex: msgs.length - 1,
+                description: 'Last message from fan — left on read'
+            });
+        }
+
+        // --- COMPUTE RULE SCORE ---
+        let score = 60;
+        const criticalCount = events.filter(e => e.severity === 'critical').length;
+        const warningCount = events.filter(e => e.severity === 'warning').length;
+        const positiveCount = events.filter(e => e.severity === 'positive').length;
+        score -= criticalCount * 12;
+        score -= warningCount * 4;
+        score += positiveCount * 5;
+        if (ppvPurchased.length > 0) score += 10;
+        if (ppvPurchased.length >= 3) score += 5;
+        if (chatterMsgs.length < 3 && msgs.length > 5) score -= 10;
+        score = Math.max(0, Math.min(100, score));
+
+        return { events, ruleScore: score };
+    },
+
+    // ═══════════════════════════════════════════════════════════
+    // SCORE BLENDING — 40% rules + 60% AI with hard caps
+    // ═══════════════════════════════════════════════════════════
+    computeFinalScore(ruleScore, aiScore, mergedEvents) {
+        if (aiScore == null) return ruleScore;
+        const blended = Math.round(ruleScore * 0.4 + aiScore * 0.6);
+        let final = blended;
+        // Critical events cap at 65
+        if (mergedEvents.some(e => e.severity === 'critical') && final > 65) final = 65;
+        // 3+ positives guarantee minimum 30
+        if (mergedEvents.filter(e => e.severity === 'positive').length >= 3 && final < 30) final = 30;
+        return Math.max(0, Math.min(100, final));
+    },
+
+    // ═══════════════════════════════════════════════════════════
+    // API CALLS — Gemini direct, OpenRouter fallback, Ollama local
+    // ═══════════════════════════════════════════════════════════
     async callLLM(model, systemPrompt, userPrompt, temperature = 0.3) {
         const settings = await SettingsService.getSettings();
         const proxyUrl = (settings.proxyUrl || '').trim();
-        // Use dedicated AI Chat key, fall back to main OpenRouter key
         const apiKey = (settings.aiChatApiKey || '').trim() || settings.openRouterApiKey;
         const aiBaseUrl = (settings.aiBaseUrl || '').trim() || 'https://openrouter.ai/api/v1';
-
-        if (!proxyUrl) throw new Error('No proxy URL configured. Go to Settings → Cloud Engine.');
-        if (!apiKey) throw new Error('No AI Chat API key configured. Go to Settings → AI Chat Grading and enter your OpenRouter API key.');
+        if (!proxyUrl) throw new Error('No proxy URL configured.');
+        if (!apiKey) throw new Error('No OpenRouter API key configured.');
 
         const MAX_RETRIES = 3;
-        const TIMEOUT_MS = 90000; // 90 second timeout per call
+        const TIMEOUT_MS = 90000;
         for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -5607,8 +5770,7 @@ Return ONLY valid JSON. No markdown fences.`;
                     signal: controller.signal,
                     body: JSON.stringify({
                         aiBaseUrl: aiBaseUrl.replace(/\/$/, ''),
-                        apiKey, model,
-                        max_tokens: 4000,
+                        apiKey, model, max_tokens: 4096,
                         messages: [
                             { role: 'system', content: systemPrompt },
                             { role: 'user', content: userPrompt }
@@ -5618,42 +5780,34 @@ Return ONLY valid JSON. No markdown fences.`;
                 });
             } catch (fetchErr) {
                 clearTimeout(timeoutId);
-                if (fetchErr.name === 'AbortError') throw new Error(`LLM call timed out after ${TIMEOUT_MS / 1000}s. Check your API key in Settings → AI Chat Grading.`);
+                if (fetchErr.name === 'AbortError') throw new Error('LLM call timed out');
                 throw fetchErr;
             }
             clearTimeout(timeoutId);
-
             if (response.ok) {
                 const data = await response.json();
-                return {
-                    content: data.choices?.[0]?.message?.content || '',
-                    usage: data.usage || {}
-                };
+                return { content: data.choices?.[0]?.message?.content || '', usage: data.usage || {} };
             }
-
             const errData = await response.json().catch(() => ({}));
-            // Extract error message from nested proxy response: {error, details: {error: {message, code}}}
             const errMsg = errData.details?.error?.message || errData.details?.message
                 || (typeof errData.details === 'string' ? errData.details : null)
                 || errData.error || `LLM call failed (${response.status})`;
             const errStr = typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg);
             const is429 = (response.status === 429) || (response.status === 500 && errStr.includes('429'));
-
             if (is429 && attempt < MAX_RETRIES) {
-                const waitSec = 8 * Math.pow(2, attempt);
-                await new Promise(r => setTimeout(r, waitSec * 1000));
+                await new Promise(r => setTimeout(r, 8000 * Math.pow(2, attempt)));
                 continue;
             }
             throw new Error(errStr);
         }
     },
 
-    async callGemini(systemPrompt, userPrompt, temperature = 0.5) {
+    async callGemini(systemPrompt, userPrompt, temperature = 0.3) {
         const settings = await SettingsService.getSettings();
         const apiKey = (settings.aiChatGeminiKey || '').trim();
-        if (!apiKey) throw new Error('No Gemini API key. Go to Settings → AI Chat Grading.');
+        if (!apiKey) throw new Error('No Gemini API key.');
 
-        const TIMEOUT_MS = 30000;
+        const TIMEOUT_MS = 60000;
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
         try {
@@ -5668,7 +5822,7 @@ Return ONLY valid JSON. No markdown fences.`;
                         contents: [{ parts: [{ text: userPrompt }] }],
                         generationConfig: {
                             temperature,
-                            maxOutputTokens: 2000,
+                            maxOutputTokens: 4096,
                             responseMimeType: 'application/json'
                         }
                     })
@@ -5680,8 +5834,7 @@ Return ONLY valid JSON. No markdown fences.`;
                 throw new Error(err.error?.message || `Gemini error (${response.status})`);
             }
             const data = await response.json();
-            const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-            return { content, usage: {} };
+            return { content: data.candidates?.[0]?.content?.parts?.[0]?.text || '', usage: {} };
         } catch (err) {
             clearTimeout(timeoutId);
             if (err.name === 'AbortError') throw new Error('Gemini request timed out');
@@ -5689,47 +5842,37 @@ Return ONLY valid JSON. No markdown fences.`;
         }
     },
 
-    async callOllama(model, systemPrompt, userPrompt, temperature = 0.5) {
-        const TIMEOUT_MS = 120000; // 2 min timeout for local models
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
-        try {
-            const response = await fetch('http://localhost:11434/api/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                signal: controller.signal,
-                body: JSON.stringify({
-                    model: model || 'qwen2.5:7b',
-                    messages: [
-                        { role: 'system', content: systemPrompt },
-                        { role: 'user', content: userPrompt }
-                    ],
-                    stream: false,
-                    format: 'json',
-                    options: { temperature, num_predict: 2000 }
-                })
-            });
-            clearTimeout(timeoutId);
-            if (!response.ok) {
-                const err = await response.text().catch(() => '');
-                throw new Error(`Ollama error (${response.status}): ${err.slice(0, 200)}`);
+    async callGeminiWithFallback(systemPrompt, userPrompt, temperature = 0.3) {
+        const settings = await SettingsService.getSettings();
+
+        // 1. Try Gemini direct (free/cheap)
+        const geminiKey = (settings.aiChatGeminiKey || '').trim();
+        if (geminiKey) {
+            try {
+                return await this.callGemini(systemPrompt, userPrompt, temperature);
+            } catch (err) {
+                console.warn('[AI Grade] Gemini failed, trying fallback:', err.message);
             }
-            const data = await response.json();
-            return { content: data.message?.content || '', usage: {} };
-        } catch (err) {
-            clearTimeout(timeoutId);
-            if (err.name === 'AbortError') throw new Error('Ollama timed out — is the model loaded? Run: ollama pull qwen2.5:7b');
-            if (err.message?.includes('Failed to fetch')) throw new Error('Cannot reach Ollama at localhost:11434 — make sure Ollama is running');
-            throw err;
         }
+
+        // 2. Try OpenRouter
+        const hasOpenRouter = !!((settings.aiChatApiKey || settings.openRouterApiKey)?.trim()) && !!(settings.proxyUrl?.trim());
+        if (hasOpenRouter) {
+            try {
+                return await this.callLLM('google/gemini-2.0-flash-001', systemPrompt, userPrompt, temperature);
+            } catch (err) {
+                console.warn('[AI Grade] OpenRouter failed:', err.message);
+            }
+        }
+
+        // 3. No AI available
+        throw new Error('NO_AI_AVAILABLE');
     },
 
     parseJsonResponse(raw) {
         let text = (raw || '').trim();
-        // Strip markdown fences
         text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
         try { return JSON.parse(text); } catch {
-            // Try to extract JSON array or object
             const arrMatch = text.match(/\[[\s\S]*\]/);
             if (arrMatch) try { return JSON.parse(arrMatch[0]); } catch { /* fall through */ }
             const objMatch = text.match(/\{[\s\S]*\}/);
@@ -5738,472 +5881,47 @@ Return ONLY valid JSON. No markdown fences.`;
         }
     },
 
-    async gradeImport(importId, onProgress) {
-        const settings = await SettingsService.getSettings();
-        const haikuModel = settings.aiChatHaikuModel || 'anthropic/claude-haiku-4.5';
-        const systemPrompt = this.buildSystemPrompt();
-
-        // Clear any prior grades/reports for this import (re-grade from scratch)
-        await db.aiChatGrades.where('importId').equals(importId).delete();
-        await db.aiChatterReports.where('importId').equals(importId).delete();
-        // Reset graded flag on conversations
-        const prevConvos = await db.aiChatConversations.where('importId').equals(importId).toArray();
-        for (const c of prevConvos) {
-            await db.aiChatConversations.update(c.id, { graded: 0, stageClassification: null });
-        }
-
-        // Get all conversations for this import, grouped by chatter
-        const convos = await db.aiChatConversations.where('importId').equals(importId).toArray();
-        const chatterGroups = new Map(); // chatterId → conversations[]
-        for (const c of convos) {
-            if (!chatterGroups.has(c.chatterId)) chatterGroups.set(c.chatterId, []);
-            chatterGroups.get(c.chatterId).push(c);
-        }
-
-        const allChatters = await db.aiChatters.toArray();
-        const chatterNameMap = new Map(allChatters.map(c => [c.id, c.name]));
-        const allModels = await db.aiChatModels.toArray();
-        const modelNameMap = new Map(allModels.map(m => [m.id, m.name]));
-
-        const totalChatters = chatterGroups.size;
-        let totalGraded = 0;
-        const BATCH_SIZE = 8;    // convos per LLM call
-        const MAX_PARALLEL = 8;  // concurrent LLM calls across ALL chatters
-
-        // Build ALL batches across all chatters upfront
-        const allBatches = [];
-        for (const [chatterId, chatterConvos] of chatterGroups) {
-            const chatterName = chatterNameMap.get(chatterId) || 'Unknown';
-
-            // Load messages for each conversation, skip tiny ones (<4 messages)
-            const convsWithMsgs = [];
-            for (const conv of chatterConvos) {
-                const msgs = await db.aiChatMessages.where('conversationId').equals(conv.id).toArray();
-                if (msgs.length < 2) continue; // only skip single-message convos
-                msgs.sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
-                convsWithMsgs.push({
-                    ...conv,
-                    modelName: modelNameMap.get(conv.modelId) || 'Unknown',
-                    messages: msgs
-                });
-            }
-            if (convsWithMsgs.length === 0) continue;
-
-            for (let i = 0; i < convsWithMsgs.length; i += BATCH_SIZE) {
-                allBatches.push({
-                    chatterId, chatterName,
-                    start: i,
-                    convs: convsWithMsgs.slice(i, i + BATCH_SIZE),
-                    allConvs: convsWithMsgs
-                });
-            }
-        }
-
-        console.log(`[AI Chat Grade] Total: ${allBatches.length} batches across ${totalChatters} chatters, ${MAX_PARALLEL} parallel`);
-        onProgress?.({ phase: 'grading', current: 0, total: allBatches.length, label: `Grading 0/${allBatches.length} batches (${MAX_PARALLEL} parallel)...` });
-
-        // Process all batches with a concurrency pool
-        let batchesDone = 0;
-        for (let ci = 0; ci < allBatches.length; ci += MAX_PARALLEL) {
-            const chunk = allBatches.slice(ci, ci + MAX_PARALLEL);
-            const t0 = Date.now();
-
-            const results = await Promise.allSettled(chunk.map(async (batch) => {
-                const userPrompt = this.buildGradingPrompt(batch.chatterName, batch.convs);
-                const result = await this.callLLM(haikuModel, systemPrompt, userPrompt);
-                return { ...batch, result };
-            }));
-
-            // Process results
-            for (const r of results) {
-                if (r.status === 'rejected') {
-                    console.error(`[AI Chat Grade] Batch failed:`, r.reason);
-                    continue; // skip failed batch, don't kill entire run
-                }
-                const { chatterId, chatterName, start, convs, allConvs, result } = r.value;
-                const parsed = this.parseJsonResponse(result.content);
-                if (!parsed) { console.warn(`[AI Chat Grade] ${chatterName} parse failed`); continue; }
-
-                if (Array.isArray(parsed)) {
-                    for (const grade of parsed) {
-                        const convIndex = (grade.conversationIndex ?? 0) + start;
-                        const conv = allConvs[convIndex];
-                        if (!conv) continue;
-
-                        await db.aiChatGrades.add({
-                            id: generateId(),
-                            importId, conversationId: conv.id, chatterId, modelId: conv.modelId,
-                            sopScore: grade.sopScore ?? null,
-                            events: JSON.stringify(grade.events || []),
-                            stageProgression: JSON.stringify(grade.stageProgression || []),
-                            summary: grade.summary || '',
-                            rawResponse: result.content,
-                            model: haikuModel,
-                            tokenCount: (result.usage?.total_tokens || 0),
-                            cost: 0, createdAt: new Date().toISOString()
-                        });
-
-                        if (Array.isArray(grade.events)) {
-                            const msgs = await db.aiChatMessages.where('conversationId').equals(conv.id).toArray();
-                            msgs.sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
-                            for (const event of grade.events) {
-                                const mi = event.messageIndex;
-                                if (mi != null && mi >= 0 && mi < msgs.length) {
-                                    await db.aiChatMessages.update(msgs[mi].id, {
-                                        annotation: JSON.stringify({ type: event.type, severity: event.severity || 'warning', text: event.description || event.type })
-                                    });
-                                }
-                            }
-                        }
-
-                        await db.aiChatConversations.update(conv.id, { stageClassification: (grade.stageProgression || []).slice(-1)[0] || null, graded: 1 });
-                        totalGraded++;
-                    }
-                }
-            }
-
-            batchesDone += chunk.length;
-            const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-            console.log(`[AI Chat Grade] ${batchesDone}/${allBatches.length} batches done (${elapsed}s)`);
-            onProgress?.({ phase: 'grading', current: batchesDone, total: allBatches.length, label: `Grading ${batchesDone}/${allBatches.length} batches...` });
-        }
-
-        return { totalGraded, totalChatters };
-    },
-
-    async generateCoaching(importId, onProgress) {
-        const settings = await SettingsService.getSettings();
-        const sonnetModel = settings.aiChatSonnetModel || 'anthropic/claude-sonnet-4';
-        const systemPrompt = 'You are a senior QA coach for an OnlyFans chatting agency. Generate specific, actionable coaching feedback based on performance data.';
-
-        const convos = await db.aiChatConversations.where('importId').equals(importId).toArray();
-        const grades = await db.aiChatGrades.where('importId').equals(importId).toArray();
-        const allChatters = await db.aiChatters.toArray();
-        const chatterNameMap = new Map(allChatters.map(c => [c.id, c.name]));
-
-        // Group by chatter
-        const chatterData = new Map();
-        for (const conv of convos) {
-            if (!chatterData.has(conv.chatterId)) {
-                chatterData.set(conv.chatterId, {
-                    convos: [], grades: [], totalMessages: 0, totalRevenue: 0,
-                    ppvSent: 0, ppvPurchased: 0, replyTimes: []
-                });
-            }
-            const d = chatterData.get(conv.chatterId);
-            d.convos.push(conv);
-            d.totalMessages += conv.messageCount || 0;
-            d.totalRevenue += conv.ppvRevenue || 0;
-            d.ppvSent += conv.ppvSent || 0;
-            d.ppvPurchased += conv.ppvPurchased || 0;
-            if (conv.avgReplyTimeSec) d.replyTimes.push(conv.avgReplyTimeSec);
-        }
-        for (const g of grades) {
-            const d = chatterData.get(g.chatterId);
-            if (d) d.grades.push(g);
-        }
-
-        let chatterIdx = 0;
-        const totalChatters = chatterData.size;
-
-        for (const [chatterId, data] of chatterData) {
-            const chatterName = chatterNameMap.get(chatterId) || 'Unknown';
-            chatterIdx++;
-            onProgress?.({ phase: 'coaching', current: chatterIdx, total: totalChatters, label: `Coaching ${chatterIdx}/${totalChatters} (${chatterName})...` });
-
-            const scores = data.grades.map(g => g.sopScore).filter(s => s != null);
-            const avgSopScore = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
-            const avgReplyTimeSec = data.replyTimes.length > 0 ? Math.round(data.replyTimes.reduce((a, b) => a + b, 0) / data.replyTimes.length) : null;
-            const conversionRate = data.ppvSent > 0 ? data.ppvPurchased / data.ppvSent : 0;
-
-            // Aggregate events
-            const eventCounts = {};
-            const allEvents = [];
-            for (const g of data.grades) {
-                const events = typeof g.events === 'string' ? JSON.parse(g.events || '[]') : (g.events || []);
-                for (const e of events) {
-                    eventCounts[e.type] = (eventCounts[e.type] || 0) + 1;
-                    allEvents.push(e);
-                }
-            }
-
-            // Get worst convos for context
-            const worstConvos = data.grades
-                .filter(g => g.sopScore != null)
-                .sort((a, b) => a.sopScore - b.sopScore)
-                .slice(0, 3)
-                .map(g => {
-                    const conv = data.convos.find(c => c.id === g.conversationId);
-                    return { sopScore: g.sopScore, summary: g.summary, fanName: conv?.fanName || 'Unknown' };
-                });
-
-            const metrics = {
-                totalConversations: data.convos.length,
-                totalMessages: data.totalMessages,
-                totalRevenue: data.totalRevenue,
-                conversionRate, avgReplyTimeSec, avgSopScore
+    // ═══════════════════════════════════════════════════════════
+    // AI GRADING — one call per chatter, all their conversations
+    // ═══════════════════════════════════════════════════════════
+    async aiGradeChatter(chatterId, chatterName, conversations, allMsgsMap) {
+        const convsForAI = conversations.map(conv => {
+            const msgs = allMsgsMap.get(conv.id) || [];
+            return {
+                ...conv,
+                compressedText: this.compressConversation(msgs, conv)
             };
+        });
 
-            let tier = 'average';
-            let strengths = [];
-            let weaknesses = [];
-            let coachingFeedback = '';
+        const systemPrompt = this.buildAISystemPrompt();
+        const userPrompt = this.buildAIUserPrompt(chatterName, convsForAI);
 
-            try {
-                const userPrompt = this.buildCoachingPrompt(chatterName, metrics, eventCounts, worstConvos);
-                const result = await this.callLLM(sonnetModel, systemPrompt, userPrompt, 0.5);
-                const parsed = this.parseJsonResponse(result.content);
-
-                if (parsed) {
-                    tier = parsed.tier || tier;
-                    strengths = parsed.strengths || [];
-                    weaknesses = parsed.weaknesses || [];
-                    coachingFeedback = parsed.coachingFeedback || '';
-                }
-            } catch (err) {
-                console.error(`Coaching failed for ${chatterName}:`, err);
-                coachingFeedback = `Coaching generation failed: ${err.message}`;
-                // Fallback tier logic
-                if (avgSopScore != null) {
-                    if (avgSopScore >= 75 && conversionRate >= 0.15) tier = 'top';
-                    else if (avgSopScore < 50 || conversionRate < 0.05) tier = 'at_risk';
-                }
-            }
-
-            await db.aiChatterReports.add({
-                id: generateId(), importId, chatterId,
-                totalConversations: data.convos.length,
-                totalMessages: data.totalMessages,
-                totalRevenue: data.totalRevenue,
-                totalPPVSent: data.ppvSent,
-                totalPPVPurchased: data.ppvPurchased,
-                conversionRate, avgReplyTimeSec, avgSopScore,
-                eventCounts: JSON.stringify(eventCounts),
-                tier,
-                coachingFeedback,
-                strengths: JSON.stringify(strengths),
-                weaknesses: JSON.stringify(weaknesses),
-                model: sonnetModel,
-                tokenCount: 0, cost: 0,
-                createdAt: new Date().toISOString()
-            });
-
-            // Rate limit between calls
-            await new Promise(r => setTimeout(r, 2000));
+        // Skip AI if prompt is too large (>800K chars ≈ 200K tokens)
+        if (systemPrompt.length + userPrompt.length > 800000) {
+            console.warn(`[AI Grade] Prompt too large for ${chatterName}, using rules only`);
+            return null;
         }
 
-        // Update import status
-        await db.aiChatImports.update(importId, { status: 'complete' });
+        const result = await this.callGeminiWithFallback(systemPrompt, userPrompt, 0.3);
+        const parsed = this.parseJsonResponse(result.content);
 
-        return { totalChatters };
+        if (!parsed || !parsed.conversations) {
+            console.warn(`[AI Grade] Failed to parse response for ${chatterName}`);
+            return null;
+        }
+
+        return {
+            conversations: parsed.conversations,
+            chatterSummary: parsed.chatterSummary,
+            rawResponse: result.content
+        };
     },
 
-    async processImport(importId, onProgress) {
-        try {
-            await db.aiChatImports.update(importId, { status: 'grading' });
-            const gradeResult = await this.gradeImport(importId, onProgress);
-            const coachResult = await this.generateCoaching(importId, onProgress);
-            return { ...gradeResult, ...coachResult };
-        } catch (err) {
-            await db.aiChatImports.update(importId, { status: 'failed' });
-            throw err;
-        }
-    },
-
-    estimateCost(totalMessages, totalConversations, totalChatters) {
-        // Rough token estimate: ~15 tokens per message
-        const inputTokens = totalMessages * 15;
-        // Haiku: $0.80/M input, $4.00/M output (estimate output = 20% of input)
-        const haikuCost = (inputTokens * 0.8 / 1_000_000) + (inputTokens * 0.2 * 4.0 / 1_000_000);
-        // Sonnet coaching: ~2000 tokens per chatter
-        const sonnetCost = (totalChatters * 2000 * 3.0 / 1_000_000) + (totalChatters * 500 * 15.0 / 1_000_000);
-        return { haikuCost, sonnetCost, totalCost: haikuCost + sonnetCost };
-    },
-
-    // ═══════════════════════════════════════════════════
-    // RULE-BASED GRADING — instant, free, all conversations
-    // ═══════════════════════════════════════════════════
-
-    BUY_SIGNAL_PATTERNS: /\b(how much|price|pric|send me|send it|i want|show me|can i see|let me see|i('d|'ll| will| would) (buy|pay|get)|take my money|shut up and take|worth it|i('m| am) interested|where do i|sign me up|i need (this|that|it)|buying|purchase)\b/i,
-
-    GENERIC_OPENER_PATTERNS: /^(hey|hi|hello|hii+|heyy+|what'?s up|sup|how are you|how('s| is) it going|what are you (doing|up to)|good (morning|afternoon|evening)|howdy)\b/i,
-
-    detectConversationEvents(msgs, conv) {
-        const events = [];
-        if (!msgs || msgs.length < 2) return { events, sopScore: 50 };
-
-        const chatterMsgs = msgs.filter(m => m.sender === 'chatter');
-        const fanMsgs = msgs.filter(m => m.sender === 'fan');
-        if (chatterMsgs.length === 0) return { events, sopScore: 50 };
-
-        // --- OPENER ANALYSIS ---
-        const firstChatter = chatterMsgs[0];
-        const firstContent = (firstChatter?.content || '').trim();
-        const wordCount = firstContent.split(/\s+/).length;
-        const hasQuestion = firstContent.includes('?');
-
-        if (wordCount <= 8 && !hasQuestion && this.GENERIC_OPENER_PATTERNS.test(firstContent)) {
-            events.push({ type: 'GENERIC_OPENER', severity: 'critical', messageIndex: msgs.indexOf(firstChatter), description: `Generic opener: "${firstContent.slice(0, 80)}"` });
-        } else if (hasQuestion && wordCount > 5) {
-            events.push({ type: 'GOOD_OPENER', severity: 'positive', messageIndex: msgs.indexOf(firstChatter), description: `Personalized opener with question` });
-        }
-
-        // --- PPV ANALYSIS ---
-        const ppvMsgs = msgs.filter(m => m.price > 0);
-        const ppvPurchased = ppvMsgs.filter(m => m.purchased);
-        const ppvNotPurchased = ppvMsgs.filter(m => !m.purchased);
-
-        // Premature pitch: PPV sent before message #20
-        if (ppvMsgs.length > 0) {
-            const firstPPVIdx = msgs.indexOf(ppvMsgs[0]);
-            if (firstPPVIdx < 20 && msgs.length > 25) {
-                events.push({ type: 'PREMATURE_PITCH', severity: 'critical', messageIndex: firstPPVIdx, description: `PPV sent at message #${firstPPVIdx + 1} of ${msgs.length} — too early, need rapport first` });
-            }
-        }
-
-        // Bad pricing: first PPV outside sweet spot
-        if (ppvMsgs.length > 0) {
-            const firstPrice = ppvMsgs[0].price;
-            if (firstPrice > 30) {
-                events.push({ type: 'BAD_PRICING', severity: 'warning', messageIndex: msgs.indexOf(ppvMsgs[0]), description: `First PPV priced at $${firstPrice} — start lower (<$25) to build buying habit` });
-            }
-        }
-
-        // Successful sales
-        for (const pm of ppvPurchased) {
-            events.push({ type: 'SUCCESSFUL_SALE', severity: 'positive', messageIndex: msgs.indexOf(pm), description: `PPV purchased: $${pm.price}` });
-        }
-
-        // Failed closes
-        for (const pm of ppvNotPurchased) {
-            events.push({ type: 'FAILED_CLOSE', severity: 'warning', messageIndex: msgs.indexOf(pm), description: `PPV not purchased: $${pm.price}` });
-        }
-
-        // PPV looping: check if chatter follows up after purchase
-        for (const pm of ppvPurchased) {
-            const pmIdx = msgs.indexOf(pm);
-            const nextChatterMsg = msgs.slice(pmIdx + 1, pmIdx + 4).find(m => m.sender === 'chatter');
-            if (nextChatterMsg) {
-                events.push({ type: 'GOOD_PPV_LOOPING', severity: 'positive', messageIndex: pmIdx, description: `Follow-up after sale — good looping` });
-            } else {
-                events.push({ type: 'NO_AFTERCARE', severity: 'warning', messageIndex: pmIdx, description: `No follow-up after $${pm.price} purchase — lost upsell opportunity` });
-            }
-        }
-
-        // --- MISSED BUY SIGNALS ---
-        for (let i = 0; i < msgs.length; i++) {
-            if (msgs[i].sender !== 'fan') continue;
-            const content = msgs[i].content || '';
-            if (!this.BUY_SIGNAL_PATTERNS.test(content)) continue;
-
-            // Check if chatter sent PPV within next 5 messages
-            const nextMsgs = msgs.slice(i + 1, i + 6);
-            const hasPPV = nextMsgs.some(m => m.sender === 'chatter' && m.price > 0);
-            if (!hasPPV && ppvMsgs.length === 0) {
-                // Only flag if there were no PPVs at all (clear miss)
-                events.push({ type: 'MISSED_BUY_SIGNAL', severity: 'critical', messageIndex: i, description: `Fan said: "${content.slice(0, 80)}" — no PPV followed` });
-            } else if (!hasPPV && i > msgs.length * 0.5) {
-                // In second half of convo, should definitely capitalize
-                events.push({ type: 'MISSED_BUY_SIGNAL', severity: 'critical', messageIndex: i, description: `Fan showed interest: "${content.slice(0, 60)}" — PPV not sent soon enough` });
-            }
-        }
-
-        // --- REPLY SPEED ---
-        const replyTimes = [];
-        for (let i = 1; i < msgs.length; i++) {
-            if (msgs[i].sender === 'chatter' && msgs[i - 1].sender === 'fan') {
-                const rt = msgs[i].replyTimeSec || 0;
-                if (rt > 0) replyTimes.push({ idx: i, time: rt });
-            }
-        }
-
-        const fastReplies = replyTimes.filter(r => r.time < 60);
-        const slowReplies = replyTimes.filter(r => r.time > 300);
-
-        if (fastReplies.length > replyTimes.length * 0.6 && replyTimes.length >= 3) {
-            events.push({ type: 'FAST_RESPONSE', severity: 'positive', messageIndex: 0, description: `${fastReplies.length}/${replyTimes.length} replies under 1 min` });
-        }
-
-        // Slow replies near PPV = critical
-        for (const pm of ppvMsgs) {
-            const pmIdx = msgs.indexOf(pm);
-            const nearbySlowReplies = replyTimes.filter(r => Math.abs(r.idx - pmIdx) < 5 && r.time > 120);
-            if (nearbySlowReplies.length > 0) {
-                events.push({ type: 'SLOW_REPLY_SELLING', severity: 'critical', messageIndex: nearbySlowReplies[0].idx, description: `${Math.round(nearbySlowReplies[0].time / 60)}min reply during PPV sequence — should be <1min` });
-                break; // One flag per convo
-            }
-        }
-
-        // Idle time: gap > 10min between messages
-        let idleCount = 0;
-        for (const r of replyTimes) {
-            if (r.time > 600) idleCount++;
-        }
-        if (idleCount > 0) {
-            events.push({ type: 'IDLE_TIME', severity: 'warning', messageIndex: 0, description: `${idleCount} gaps over 10 minutes` });
-        }
-
-        // --- SPAMMING ---
-        let maxConsecutive = 0, curConsecutive = 0;
-        let spamIdx = 0;
-        for (let i = 0; i < msgs.length; i++) {
-            if (msgs[i].sender === 'chatter') {
-                curConsecutive++;
-                if (curConsecutive > maxConsecutive) { maxConsecutive = curConsecutive; spamIdx = i; }
-            } else { curConsecutive = 0; }
-        }
-        if (maxConsecutive >= 4) {
-            events.push({ type: 'SPAMMING', severity: 'warning', messageIndex: spamIdx, description: `${maxConsecutive} consecutive messages without fan reply` });
-        }
-
-        // --- DRY REPLIES ---
-        const dryReplies = chatterMsgs.filter(m => (m.content || '').trim().split(/\s+/).length <= 3 && !(m.price > 0));
-        if (dryReplies.length > chatterMsgs.length * 0.3 && chatterMsgs.length >= 5) {
-            events.push({ type: 'DRY_REPLIES', severity: 'warning', messageIndex: msgs.indexOf(dryReplies[0]), description: `${dryReplies.length}/${chatterMsgs.length} messages are 3 words or less` });
-        }
-
-        // --- LEFT ON READ ---
-        const lastMsg = msgs[msgs.length - 1];
-        if (lastMsg.sender === 'fan' && msgs.length > 5) {
-            events.push({ type: 'NO_FOLLOWUP', severity: 'warning', messageIndex: msgs.length - 1, description: `Last message from fan — conversation left on read` });
-        }
-
-        // --- INTEREST SIGNAL (fan engagement) ---
-        let interestSignals = 0;
-        for (const m of fanMsgs) {
-            const c = (m.content || '').toLowerCase();
-            if (/(\b(love|amazing|hot|perfect|omg|wow|damn|sexy|beautiful|gorgeous)\b|❤|🔥|😍|💦|🥵)/.test(c)) {
-                interestSignals++;
-            }
-        }
-        if (interestSignals >= 3) {
-            events.push({ type: 'INTEREST_SIGNAL', severity: 'positive', messageIndex: 0, description: `${interestSignals} high-interest fan messages detected` });
-        }
-
-        // --- COMPUTE SOP SCORE ---
-        let score = 60; // baseline
-        const criticalCount = events.filter(e => e.severity === 'critical').length;
-        const warningCount = events.filter(e => e.severity === 'warning').length;
-        const positiveCount = events.filter(e => e.severity === 'positive').length;
-
-        score -= criticalCount * 12;
-        score -= warningCount * 4;
-        score += positiveCount * 5;
-
-        // Bonus for conversions
-        if (ppvPurchased.length > 0) score += 10;
-        if (ppvPurchased.length >= 3) score += 5;
-
-        // Penalty for no engagement
-        if (chatterMsgs.length < 3 && msgs.length > 5) score -= 10;
-
-        score = Math.max(0, Math.min(100, score));
-
-        return { events, sopScore: score };
-    },
-
-    async ruleBasedGradeImport(importId, onProgress) {
-        // Clear any prior grades/reports
+    // ═══════════════════════════════════════════════════════════
+    // MAIN ORCHESTRATOR — 3-phase grading pipeline
+    // ═══════════════════════════════════════════════════════════
+    async gradeImport(importId, onProgress) {
+        // Clear prior grades/reports
         await db.aiChatGrades.where('importId').equals(importId).delete();
         await db.aiChatterReports.where('importId').equals(importId).delete();
         await db.aiChatImports.update(importId, { status: 'grading' });
@@ -6211,148 +5929,223 @@ Return ONLY valid JSON. No markdown fences.`;
         const convos = await db.aiChatConversations.where('importId').equals(importId).toArray();
         const allChatters = await db.aiChatters.toArray();
         const chatterNameMap = new Map(allChatters.map(c => [c.id, c.name]));
+        const allModels = await db.aiChatModels.toArray();
+        const modelNameMap = new Map(allModels.map(m => [m.id, m.name]));
 
+        // ═══════════════════════════════════════════════
+        // PHASE 1: Quantitative Rules (instant, free, ALL conversations)
+        // ═══════════════════════════════════════════════
         const totalConvos = convos.length;
-        onProgress?.({ phase: 'grading', current: 0, total: totalConvos, label: `Analyzing 0/${totalConvos} conversations...` });
+        onProgress?.({ phase: 'rules', current: 0, total: totalConvos,
+            label: `Computing metrics 0/${totalConvos}...` });
 
-        // Group by chatter for reports
-        const chatterData = new Map();
+        const allMsgsMap = new Map();
+        const chatterConvoMap = new Map();
 
         for (let i = 0; i < convos.length; i++) {
             const conv = convos[i];
             const msgs = await db.aiChatMessages.where('conversationId').equals(conv.id).toArray();
             msgs.sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
+            allMsgsMap.set(conv.id, msgs);
 
-            const { events, sopScore } = this.detectConversationEvents(msgs, conv);
+            const { events: ruleEvents, ruleScore } = this.detectQuantitativeEvents(msgs, conv);
 
-            // Store grade
-            await db.aiChatGrades.add({
-                id: generateId(), importId,
-                conversationId: conv.id, chatterId: conv.chatterId, modelId: conv.modelId,
-                sopScore, events: JSON.stringify(events),
-                stageProgression: JSON.stringify([]),
-                summary: events.filter(e => e.severity === 'critical').map(e => e.description).join('; ') || 'No critical issues',
-                rawResponse: '', model: 'rule-based',
-                tokenCount: 0, cost: 0, createdAt: new Date().toISOString()
-            });
-
-            // Accumulate chatter data
-            if (!chatterData.has(conv.chatterId)) {
-                chatterData.set(conv.chatterId, {
-                    convos: [], scores: [], totalMessages: 0, totalRevenue: 0,
-                    ppvSent: 0, ppvPurchased: 0, replyTimes: [], allEvents: [], eventCounts: {}
+            if (!chatterConvoMap.has(conv.chatterId)) {
+                chatterConvoMap.set(conv.chatterId, {
+                    convos: [], ruleResults: new Map(),
+                    totalMessages: 0, totalRevenue: 0,
+                    ppvSent: 0, ppvPurchased: 0, replyTimes: []
                 });
             }
-            const d = chatterData.get(conv.chatterId);
-            d.convos.push(conv);
-            d.scores.push(sopScore);
-            d.totalMessages += conv.messageCount || 0;
-            d.totalRevenue += conv.ppvRevenue || 0;
-            d.ppvSent += conv.ppvSent || 0;
-            d.ppvPurchased += conv.ppvPurchased || 0;
-            if (conv.avgReplyTimeSec) d.replyTimes.push(conv.avgReplyTimeSec);
-            for (const e of events) {
-                d.eventCounts[e.type] = (d.eventCounts[e.type] || 0) + 1;
-                d.allEvents.push(e);
-            }
+            const cd = chatterConvoMap.get(conv.chatterId);
+            cd.convos.push(conv);
+            cd.ruleResults.set(conv.id, { events: ruleEvents, ruleScore });
+            cd.totalMessages += conv.messageCount || 0;
+            cd.totalRevenue += conv.ppvRevenue || 0;
+            cd.ppvSent += conv.ppvSent || 0;
+            cd.ppvPurchased += conv.ppvPurchased || 0;
+            if (conv.avgReplyTimeSec) cd.replyTimes.push(conv.avgReplyTimeSec);
 
-            if ((i + 1) % 50 === 0 || i === convos.length - 1) {
-                onProgress?.({ phase: 'grading', current: i + 1, total: totalConvos, label: `Analyzing ${i + 1}/${totalConvos} conversations...` });
+            if ((i + 1) % 100 === 0 || i === convos.length - 1) {
+                onProgress?.({ phase: 'rules', current: i + 1, total: totalConvos,
+                    label: `Computing metrics ${i + 1}/${totalConvos}...` });
             }
         }
 
-        // Generate per-chatter reports with AI coaching
-        const totalChatters = chatterData.size;
+        // ═══════════════════════════════════════════════
+        // PHASE 2: AI Quality Grading (1 call per chatter)
+        // ═══════════════════════════════════════════════
+        const totalChatters = chatterConvoMap.size;
+        let aiAvailable = true;
+
         const settings = await SettingsService.getSettings();
         const geminiKey = (settings.aiChatGeminiKey || '').trim();
         const hasOpenRouter = !!((settings.aiChatApiKey || settings.openRouterApiKey)?.trim()) && !!(settings.proxyUrl?.trim());
-        const coachingModel = settings.aiChatSonnetModel || 'google/gemini-2.0-flash-001';
-        const apiAvailable = geminiKey || hasOpenRouter;
 
-        onProgress?.({ phase: 'coaching', current: 0, total: totalChatters, label: `AI coaching 0/${totalChatters} chatters...` });
-
-        const coachingSystemPrompt = `You are a senior QA coach for an OnlyFans chatting agency. Based on the chatter's metrics and detected issues, give specific, actionable coaching.
-
-Return JSON:
-{
-  "strengths": ["specific strength with evidence"],
-  "weaknesses": ["specific weakness with fix from SOP"],
-  "coachingFeedback": "2-3 sentences. Be specific: what they did wrong, what the SOP says to do instead. Focus on the ONE fix that would increase revenue most.",
-  "tier": "top" | "average" | "at_risk"
-}
-
-Tier rules: "top" if score >= 70 AND conversion >= 15%. "at_risk" if score < 45 OR conversion < 5%. Otherwise "average".
-Return ONLY valid JSON.`;
+        if (!geminiKey && !hasOpenRouter) {
+            aiAvailable = false;
+            onProgress?.({ phase: 'ai', current: 0, total: totalChatters,
+                label: 'No AI API key — using rules only (add Gemini key in Settings for quality grading)' });
+        }
 
         let chatterIdx = 0;
-        for (const [chatterId, data] of chatterData) {
-            chatterIdx++;
-            const chatterName = chatterNameMap.get(chatterId) || 'Unknown';
-            const avgSopScore = data.scores.length > 0 ? data.scores.reduce((a, b) => a + b, 0) / data.scores.length : null;
-            const avgReplyTimeSec = data.replyTimes.length > 0 ? Math.round(data.replyTimes.reduce((a, b) => a + b, 0) / data.replyTimes.length) : null;
-            const conversionRate = data.ppvSent > 0 ? data.ppvPurchased / data.ppvSent : 0;
+        const aiResults = new Map();
 
-            // Rule-based fallback tier
-            let tier = 'average';
-            const criticals = data.allEvents.filter(e => e.severity === 'critical').length;
-            if (avgSopScore >= 70 && conversionRate >= 0.15) tier = 'top';
-            else if (avgSopScore < 45 || conversionRate < 0.05 || criticals > data.convos.length * 0.5) tier = 'at_risk';
+        if (aiAvailable) {
+            for (const [chatterId, data] of chatterConvoMap) {
+                chatterIdx++;
+                const chatterName = chatterNameMap.get(chatterId) || 'Unknown';
+                onProgress?.({ phase: 'ai', current: chatterIdx, total: totalChatters,
+                    label: `AI grading ${chatterIdx}/${totalChatters} (${chatterName})...` });
 
-            let strengths = [];
-            let weaknesses = [];
-            let coachingFeedback = '';
-            const ec = data.eventCounts;
-
-            if (apiAvailable) {
-                onProgress?.({ phase: 'coaching', current: chatterIdx, total: totalChatters, label: `AI coaching ${chatterIdx}/${totalChatters} (${chatterName})...` });
                 try {
-                    const topCritical = Object.entries(ec).filter(([t]) => ['GENERIC_OPENER','PREMATURE_PITCH','MISSED_BUY_SIGNAL','OBJECTION_FAILURE','SLOW_REPLY_SELLING'].includes(t)).map(([t, c]) => `${t}: ${c}`).join(', ');
-                    const topPositive = Object.entries(ec).filter(([t]) => t.startsWith('GOOD_') || t === 'SUCCESSFUL_SALE' || t === 'FAST_RESPONSE').map(([t, c]) => `${t}: ${c}`).join(', ');
-
-                    const userPrompt = `Chatter: ${chatterName}
-Metrics: ${data.convos.length} conversations, ${data.totalMessages} messages, $${data.totalRevenue.toFixed(0)} revenue, ${(conversionRate * 100).toFixed(0)}% conversion, ${avgReplyTimeSec || '--'}s avg reply, score ${avgSopScore?.toFixed(0) || '--'}/100
-Critical issues: ${topCritical || 'none'}
-Positive: ${topPositive || 'none'}
-Failed closes: ${ec.FAILED_CLOSE || 0}, No follow-up: ${ec.NO_FOLLOWUP || 0}, Dry replies: ${ec.DRY_REPLIES || 0}
-
-Generate coaching feedback.`;
-
-                    // Prefer Gemini direct (free/cheap, no proxy), fall back to OpenRouter
-                    const result = geminiKey
-                        ? await this.callGemini(coachingSystemPrompt, userPrompt, 0.5)
-                        : await this.callLLM(coachingModel, coachingSystemPrompt, userPrompt, 0.5);
-                    const parsed = this.parseJsonResponse(result.content);
-                    if (parsed) {
-                        tier = parsed.tier || tier;
-                        strengths = parsed.strengths || [];
-                        weaknesses = parsed.weaknesses || [];
-                        coachingFeedback = parsed.coachingFeedback || '';
-                    }
+                    const convsWithMeta = data.convos.map(c => ({
+                        ...c,
+                        modelName: modelNameMap.get(c.modelId) || 'Unknown'
+                    }));
+                    const aiResult = await this.aiGradeChatter(
+                        chatterId, chatterName, convsWithMeta, allMsgsMap
+                    );
+                    if (aiResult) aiResults.set(chatterId, aiResult);
                 } catch (err) {
-                    console.warn(`[AI Coach] API failed for ${chatterName}:`, err.message);
+                    if (err.message === 'NO_AI_AVAILABLE') {
+                        aiAvailable = false;
+                        console.warn('[AI Grade] AI became unavailable, switching to rules-only');
+                        break;
+                    }
+                    console.warn(`[AI Grade] Failed for ${chatterName}:`, err.message);
+                }
+
+                // Rate limiting: 15 RPM on free tier → 4.5s between calls
+                if (chatterIdx < totalChatters) {
+                    await new Promise(r => setTimeout(r, 4500));
+                }
+            }
+        }
+
+        // ═══════════════════════════════════════════════
+        // PHASE 3: Merge rule + AI events, store grades & reports
+        // ═══════════════════════════════════════════════
+        onProgress?.({ phase: 'merge', current: 0, total: totalChatters,
+            label: 'Building reports...' });
+
+        for (const [chatterId, data] of chatterConvoMap) {
+            const aiResult = aiResults.get(chatterId);
+            const aiConvMap = new Map();
+            if (aiResult) {
+                for (const aiConv of (aiResult.conversations || [])) {
+                    aiConvMap.set(aiConv.idx, aiConv);
                 }
             }
 
-            // Fallback: rule-based coaching if Ollama failed or unavailable
+            const allEvents = [];
+            const allScores = [];
+            const eventCounts = {};
+
+            for (let ci = 0; ci < data.convos.length; ci++) {
+                const conv = data.convos[ci];
+                const ruleResult = data.ruleResults.get(conv.id);
+                const aiConv = aiConvMap.get(ci);
+
+                // Merge events from both tiers
+                const mergedEvents = [...(ruleResult?.events || [])];
+                if (aiConv?.events) mergedEvents.push(...aiConv.events);
+
+                const finalScore = this.computeFinalScore(
+                    ruleResult?.ruleScore || 50,
+                    aiConv?.aiScore ?? null,
+                    mergedEvents
+                );
+
+                const stageProgression = aiConv?.stageProgression || [];
+                const summary = aiConv?.verdict
+                    || mergedEvents.filter(e => e.severity === 'critical').map(e => e.description).join('; ')
+                    || 'No critical issues';
+
+                // Store grade
+                await db.aiChatGrades.add({
+                    id: generateId(), importId,
+                    conversationId: conv.id, chatterId, modelId: conv.modelId,
+                    sopScore: finalScore,
+                    events: JSON.stringify(mergedEvents),
+                    stageProgression: JSON.stringify(stageProgression),
+                    summary,
+                    rawResponse: '',
+                    model: aiResult ? 'gemini-2.0-flash' : 'rule-based',
+                    tokenCount: 0, cost: 0,
+                    createdAt: new Date().toISOString()
+                });
+
+                // Annotate messages with events
+                const msgs = allMsgsMap.get(conv.id) || [];
+                for (const evt of mergedEvents) {
+                    const mi = evt.messageIndex;
+                    if (mi != null && mi >= 0 && mi < msgs.length && msgs[mi].id) {
+                        await db.aiChatMessages.update(msgs[mi].id, {
+                            annotation: JSON.stringify({
+                                type: evt.type,
+                                severity: evt.severity || 'warning',
+                                text: evt.description || evt.type
+                            })
+                        });
+                    }
+                }
+
+                await db.aiChatConversations.update(conv.id, {
+                    stageClassification: stageProgression.slice(-1)[0] || null,
+                    graded: 1
+                });
+
+                allScores.push(finalScore);
+                for (const e of mergedEvents) {
+                    eventCounts[e.type] = (eventCounts[e.type] || 0) + 1;
+                    allEvents.push(e);
+                }
+            }
+
+            // Build chatter report
+            const avgSopScore = allScores.length > 0
+                ? allScores.reduce((a, b) => a + b, 0) / allScores.length : null;
+            const avgReplyTimeSec = data.replyTimes.length > 0
+                ? Math.round(data.replyTimes.reduce((a, b) => a + b, 0) / data.replyTimes.length) : null;
+            const conversionRate = data.ppvSent > 0 ? data.ppvPurchased / data.ppvSent : 0;
+
+            // Tier, strengths, weaknesses, coaching — from AI or fallback
+            let tier = 'average';
+            let strengths = [];
+            let weaknesses = [];
+            let coachingFeedback = '';
+
+            if (aiResult?.chatterSummary) {
+                const cs = aiResult.chatterSummary;
+                tier = cs.tier || tier;
+                strengths = cs.strengths || [];
+                weaknesses = cs.weaknesses || [];
+                coachingFeedback = cs.coachingFeedback || '';
+            }
+
+            // Override tier with quantitative check
+            const criticals = allEvents.filter(e => e.severity === 'critical').length;
+            if (avgSopScore >= 70 && conversionRate >= 0.15) tier = 'top';
+            else if (avgSopScore < 45 || conversionRate < 0.05
+                     || criticals > data.convos.length * 0.5) tier = 'at_risk';
+
+            // Fallback coaching if no AI
             if (!coachingFeedback) {
-                if (ec.GOOD_OPENER > 0) strengths.push(`Good openers in ${ec.GOOD_OPENER} conversations`);
-                if (ec.FAST_RESPONSE > 0) strengths.push(`Fast response times`);
+                const ec = eventCounts;
+                if (ec.GOOD_PPV_LOOPING > 0) strengths.push('Good PPV looping — follows up after purchases');
+                if (ec.FAST_RESPONSE > 0) strengths.push('Fast response times');
                 if (ec.SUCCESSFUL_SALE > 0) strengths.push(`${ec.SUCCESSFUL_SALE} successful sales`);
-                if (ec.GOOD_PPV_LOOPING > 0) strengths.push(`Good PPV looping — follows up after purchases`);
-                if (conversionRate >= 0.2) strengths.push(`Strong ${(conversionRate * 100).toFixed(0)}% conversion rate`);
-
-                if (ec.GENERIC_OPENER > 0) weaknesses.push(`Generic openers in ${ec.GENERIC_OPENER} conversations — use name + location question + playful comment`);
-                if (ec.PREMATURE_PITCH > 0) weaknesses.push(`Premature pitching in ${ec.PREMATURE_PITCH} conversations — build rapport before selling`);
-                if (ec.MISSED_BUY_SIGNAL > 0) weaknesses.push(`Missed ${ec.MISSED_BUY_SIGNAL} buy signals — capitalize when fans show interest`);
-                if (ec.SLOW_REPLY_SELLING > 0) weaknesses.push(`Slow replies during selling — keep under 1 minute when money is on the table`);
-                if (ec.DRY_REPLIES > 0) weaknesses.push(`Too many dry replies — expand messages, show enthusiasm`);
-                if (ec.NO_AFTERCARE > 0) weaknesses.push(`No aftercare after ${ec.NO_AFTERCARE} purchases — follow up to keep connection open`);
-                if (ec.NO_FOLLOWUP > 0) weaknesses.push(`${ec.NO_FOLLOWUP} conversations left on read — always follow up`);
-                if (ec.BAD_PRICING > 0) weaknesses.push(`Pricing issues in ${ec.BAD_PRICING} PPVs — start lower to build buying habit`);
-
+                if (conversionRate >= 0.2) strengths.push(`Strong ${(conversionRate * 100).toFixed(0)}% conversion`);
+                if (ec.PREMATURE_PITCH > 0) weaknesses.push(`Premature pitching in ${ec.PREMATURE_PITCH} conversations`);
+                if (ec.SLOW_REPLY_SELLING > 0) weaknesses.push('Slow replies during selling');
+                if (ec.NO_AFTERCARE > 0) weaknesses.push(`No aftercare after ${ec.NO_AFTERCARE} purchases`);
+                if (ec.NO_FOLLOWUP > 0) weaknesses.push(`${ec.NO_FOLLOWUP} conversations left on read`);
+                if (ec.BAD_PRICING > 0) weaknesses.push(`Pricing issues in ${ec.BAD_PRICING} PPVs`);
+                if (ec.SPAMMING > 0) weaknesses.push(`Spamming in ${ec.SPAMMING} conversations`);
                 const topIssue = weaknesses[0] || 'Keep up the good work';
                 coachingFeedback = weaknesses.length > 0
-                    ? `Priority fix: ${topIssue}. ${weaknesses.length > 1 ? `Also work on: ${weaknesses.slice(1, 3).join('; ')}.` : ''}`
+                    ? `Priority fix: ${topIssue}.${weaknesses.length > 1 ? ` Also work on: ${weaknesses.slice(1, 3).join('; ')}.` : ''}`
                     : `Strong performance. ${strengths.slice(0, 2).join('. ')}.`;
             }
 
@@ -6364,11 +6157,11 @@ Generate coaching feedback.`;
                 totalPPVSent: data.ppvSent,
                 totalPPVPurchased: data.ppvPurchased,
                 conversionRate, avgReplyTimeSec, avgSopScore,
-                eventCounts: JSON.stringify(data.eventCounts),
+                eventCounts: JSON.stringify(eventCounts),
                 tier, coachingFeedback,
                 strengths: JSON.stringify(strengths),
                 weaknesses: JSON.stringify(weaknesses),
-                model: apiAvailable ? coachingModel : 'rule-based',
+                model: aiResult ? 'gemini-2.0-flash' : 'rule-based',
                 tokenCount: 0, cost: 0,
                 createdAt: new Date().toISOString()
             });
@@ -6379,6 +6172,7 @@ Generate coaching feedback.`;
         return { totalChatters, totalConversations: totalConvos };
     }
 };
+
 
 export const AIChatReportService = {
     async getLeaderboard(importId) {
@@ -6392,8 +6186,8 @@ export const AIChatReportService = {
         const allConvos = await db.aiChatConversations.where('importId').equals(importId).toArray();
         const convoMap = new Map(allConvos.map(c => [c.id, c]));
 
-        const criticalTypes = ['GENERIC_OPENER','NO_LOCATION_MATCH','PREMATURE_PITCH','VISIBLE_TRANSITION','MISSED_BUY_SIGNAL','OBJECTION_FAILURE','GF_EXPERIENCE','SLOW_REPLY_SELLING'];
-        const positiveTypes = ['GOOD_OPENER','GOOD_LOCATION_MATCH','GOOD_HUMANIZING','GOOD_PROFILING','GOOD_CONNECTION','SMOOTH_TRANSITION','GOOD_SCENARIO_SEXT','GOOD_PPV_CAPTION','GOOD_PPV_LOOPING','GOOD_OBJECTION_HANDLING','GOOD_AFTERCARE'];
+        const criticalTypes = ['GENERIC_OPENER','BAD_TONE','MISSED_BUY_SIGNAL','VISIBLE_TRANSITION','PREMATURE_PITCH','SLOW_REPLY_SELLING'];
+        const positiveTypes = ['GOOD_OPENER','GOOD_RAPPORT','GOOD_TRANSITION','GOOD_TONE','GOOD_PPV_LOOPING','FAST_RESPONSE','SUCCESSFUL_SALE'];
 
         const chatters = [];
         for (const r of reports) {
@@ -6425,15 +6219,12 @@ export const AIChatReportService = {
 
             // Map event types to SOP modules for review recommendations
             const moduleMap = {
-                GENERIC_OPENER: 'Module 1: Openers', NO_LOCATION_MATCH: 'Module 1: Location Match',
-                NO_HUMANIZING: 'Module 1: Humanizing', INTERVIEW_MODE: 'Module 1: Profiling',
-                DRY_REPLIES: 'Module 3: Conversation Mastery', NO_FOLLOWUP: 'Module 3: Following Up',
-                SPAMMING: 'Module 3: Forbidden Behaviors', PREMATURE_PITCH: 'Module 5: Transitions',
-                VISIBLE_TRANSITION: 'Module 5: Transitions', REAL_TIME_SEXTING: 'Module 6: Sexting',
-                WEAK_PPV_CAPTION: 'Module 7: PPV Captions', BAD_PRICING: 'Module 9: Pricing',
-                OBJECTION_FAILURE: 'Module 8: Objection Handling', GF_EXPERIENCE: 'Module 2: Connection',
-                MISSED_BUY_SIGNAL: 'Module 4: Finding Opportunities', NO_AFTERCARE: 'Module 7: Aftercare',
-                SLOW_REPLY_SELLING: 'Module 12: Reply Speed'
+                GENERIC_OPENER: 'Module 1: Openers', BAD_TONE: 'Module 3: Voice & Tone',
+                INTERVIEW_MODE: 'Module 1: Profiling', DRY_CONVERSATION: 'Module 3: Conversation Energy',
+                PREMATURE_PITCH: 'Module 5: Transitions', VISIBLE_TRANSITION: 'Module 5: Transitions',
+                MISSED_BUY_SIGNAL: 'Module 4: Finding Opportunities', BAD_PRICING: 'Module 9: Pricing',
+                SLOW_REPLY_SELLING: 'Module 12: Reply Speed', NO_AFTERCARE: 'Module 7: Aftercare',
+                NO_FOLLOWUP: 'Module 3: Following Up', SPAMMING: 'Module 3: Forbidden Behaviors'
             };
             const reviewModules = [...new Set(
                 topEvents.filter(e => e.severity !== 'positive' && moduleMap[e.type])

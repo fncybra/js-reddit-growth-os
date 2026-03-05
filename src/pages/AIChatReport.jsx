@@ -2,22 +2,26 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { AIChatReportService } from '../services/growthEngine';
 
-const CRITICAL_TYPES = ['GENERIC_OPENER','NO_LOCATION_MATCH','PREMATURE_PITCH','VISIBLE_TRANSITION','MISSED_BUY_SIGNAL','OBJECTION_FAILURE','GF_EXPERIENCE','SLOW_REPLY_SELLING'];
-const POSITIVE_TYPES = ['GOOD_OPENER','GOOD_LOCATION_MATCH','GOOD_HUMANIZING','GOOD_PROFILING','GOOD_CONNECTION','SMOOTH_TRANSITION','GOOD_SCENARIO_SEXT','GOOD_PPV_CAPTION','GOOD_PPV_LOOPING','GOOD_OBJECTION_HANDLING','GOOD_AFTERCARE'];
+// Tier 1 (rules) + Tier 2 (AI) event types
+const CRITICAL_TYPES = ['GENERIC_OPENER','BAD_TONE','MISSED_BUY_SIGNAL','VISIBLE_TRANSITION','PREMATURE_PITCH','SLOW_REPLY_SELLING'];
+const POSITIVE_TYPES = ['GOOD_OPENER','GOOD_RAPPORT','GOOD_TRANSITION','GOOD_TONE','GOOD_PPV_LOOPING','FAST_RESPONSE','SUCCESSFUL_SALE'];
 
 const EVENT_COLOR = (type) => CRITICAL_TYPES.includes(type) ? 'danger' : POSITIVE_TYPES.includes(type) ? 'success' : 'warning';
 
 const EVENT_LABELS = {
-    GENERIC_OPENER: 'Generic Opener', NO_LOCATION_MATCH: 'No Location Match', PREMATURE_PITCH: 'Premature Pitch',
-    VISIBLE_TRANSITION: 'Visible Transition', MISSED_BUY_SIGNAL: 'Missed Buy Signal', OBJECTION_FAILURE: 'Objection Failure',
-    GF_EXPERIENCE: 'GF Experience', SLOW_REPLY_SELLING: 'Slow Reply (Selling)',
-    INTERVIEW_MODE: 'Interview Mode', NO_HUMANIZING: 'No Humanizing', DRY_REPLIES: 'Dry Replies',
-    SPAMMING: 'Spamming', WEAK_PPV_CAPTION: 'Weak PPV Caption', BAD_PRICING: 'Bad Pricing',
-    REAL_TIME_SEXTING: 'Real-Time Sexting', NO_AFTERCARE: 'No Aftercare', NO_FOLLOWUP: 'No Follow-Up',
-    GOOD_OPENER: 'Good Opener', GOOD_LOCATION_MATCH: 'Good Location Match', GOOD_HUMANIZING: 'Good Humanizing',
-    GOOD_PROFILING: 'Good Profiling', GOOD_CONNECTION: 'Good Connection', SMOOTH_TRANSITION: 'Smooth Transition',
-    GOOD_SCENARIO_SEXT: 'Good Scenario Sext', GOOD_PPV_CAPTION: 'Good PPV Caption', GOOD_PPV_LOOPING: 'Good PPV Looping',
-    GOOD_OBJECTION_HANDLING: 'Good Objection Handling', GOOD_AFTERCARE: 'Good Aftercare'
+    // AI-detected (qualitative)
+    GENERIC_OPENER: 'Generic Opener', GOOD_OPENER: 'Good Opener',
+    BAD_TONE: 'Bad Tone', GOOD_TONE: 'Good Tone',
+    MISSED_BUY_SIGNAL: 'Missed Buy Signal', VISIBLE_TRANSITION: 'Visible Transition',
+    GOOD_RAPPORT: 'Good Rapport', GOOD_TRANSITION: 'Smooth Transition',
+    DRY_CONVERSATION: 'Dry Conversation', INTERVIEW_MODE: 'Interview Mode',
+    // Rule-detected (quantitative)
+    PREMATURE_PITCH: 'Premature Pitch', BAD_PRICING: 'Bad Pricing',
+    SLOW_REPLY_SELLING: 'Slow Reply (Selling)', FAST_RESPONSE: 'Fast Response',
+    SPAMMING: 'Spamming', NO_AFTERCARE: 'No Aftercare',
+    NO_FOLLOWUP: 'No Follow-Up', IDLE_TIME: 'Idle Gap',
+    SUCCESSFUL_SALE: 'Successful Sale', FAILED_CLOSE: 'Failed Close',
+    GOOD_PPV_LOOPING: 'Good PPV Looping'
 };
 
 export function AIChatReport() {

@@ -34,10 +34,9 @@ export function AIChatImport() {
             // Pass File object directly — streaming CSV parser reads in chunks, never loads full file
             const res = await AIChatImportService.processFile(file, file.name, setProgress);
             setResult(res);
-            // Auto-grade with rules (instant, free)
-            setProgress({ phase: 'grading', current: 0, total: res.totalConversations, label: 'Analyzing conversations...' });
-            await AIChatGradingService.ruleBasedGradeImport(res.importId, setProgress);
-            setProgress({ phase: 'done', label: 'Import & analysis complete! View the leaderboard.' });
+            // Two-phase grading: rules (instant) → AI quality (1-2 min)
+            setProgress({ phase: 'rules', current: 0, total: res.totalConversations, label: 'Computing metrics...' });
+            await AIChatGradingService.gradeImport(res.importId, setProgress);
             AIChatImportService.getImportHistory().then(setHistory);
         } catch (e) {
             setError(e.message);
