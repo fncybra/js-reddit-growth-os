@@ -103,6 +103,15 @@ export const SettingsService = {
                 settings[s.key] = s.value;
             }
         });
+        // Auto-fix wrong AI model IDs in Dexie
+        if (settings.aiChatHaikuModel !== 'anthropic/claude-haiku-4.5') {
+            settings.aiChatHaikuModel = 'anthropic/claude-haiku-4.5';
+            this.updateSetting('aiChatHaikuModel', 'anthropic/claude-haiku-4.5');
+        }
+        if (settings.aiChatSonnetModel !== 'anthropic/claude-sonnet-4') {
+            settings.aiChatSonnetModel = 'anthropic/claude-sonnet-4';
+            this.updateSetting('aiChatSonnetModel', 'anthropic/claude-sonnet-4');
+        }
         return settings;
     },
     async updateSetting(key, value) {
