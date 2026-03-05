@@ -141,6 +141,20 @@ export function Accounts() {
 
         if (!window.confirm(confirmMsg)) return;
 
+        // Delete from cloud FIRST so sync doesn't pull it back
+        try {
+            const { getSupabaseClient } = await import('../db/supabase');
+            const supabase = await getSupabaseClient();
+            if (supabase) {
+                if (relatedPerformances.length > 0) await supabase.from('performances').delete().in('id', relatedPerformances.map(p => p.id));
+                if (relatedTaskIds.length > 0) await supabase.from('tasks').delete().in('id', relatedTaskIds);
+                await supabase.from('accounts').delete().eq('id', acc.id);
+            }
+        } catch (e) {
+            console.error('Cloud delete failed:', e);
+        }
+
+        // Then delete local
         if (relatedPerformances.length > 0) {
             await db.performances.bulkDelete(relatedPerformances.map(p => p.id));
         }
@@ -148,20 +162,6 @@ export function Accounts() {
             await db.tasks.bulkDelete(relatedTaskIds);
         }
         await db.accounts.delete(acc.id);
-
-        // Delete from cloud so sync doesn't pull it back
-        try {
-            const { getSupabaseClient } = await import('../db/supabase');
-            const supabase = await getSupabaseClient();
-            if (supabase) {
-                if (relatedPerformances.length > 0) await supabase.from('performances').delete().in('id', relatedPerformances.map(p => p.id));
-                if (relatedTaskIds.length > 0) await supabase.from('tasks').delete().in('id', relatedTaskIds);
-                const { error } = await supabase.from('accounts').delete().eq('id', acc.id);
-                if (error) console.error('Cloud account delete error:', error.message);
-            }
-        } catch (e) {
-            console.error('Cloud delete failed:', e);
-        }
     }
 
     if (models === undefined) {
