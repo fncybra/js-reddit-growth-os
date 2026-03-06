@@ -3749,7 +3749,7 @@ export const ThreadsPatrolService = {
 
         const CONCURRENCY = 5;
 
-        await parallelWithLimit(toCheck, CONCURRENCY, async (acc) => {
+        await parallelWithLimit(toCheck, CONCURRENCY, async acc => {
             try {
                 const res = await fetch(`${proxyUrl}/api/scrape/threads/user/stats/${acc.username}`, { signal: AbortSignal.timeout(30000) });
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -3820,8 +3820,12 @@ export const ThreadsPatrolService = {
         const todaySnaps = await db.threadsSnapshots.where('date').equals(today).toArray();
         if (todaySnaps.length === 0) return {};
 
-        // Find previous day's snapshots (most recent before today per username)
-        const allPrev = await db.threadsSnapshots.where('date').below(today).reverse().toArray();
+        // Find previous snapshots (limit to last 7 days for performance)
+        const weekAgo = new Date();
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        const allPrev = await db.threadsSnapshots
+            .where('date').between(weekAgo.toISOString().slice(0, 10), today)
+            .reverse().toArray();
         const prevMap = {};
         for (const s of allPrev) {
             if (!prevMap[s.username]) prevMap[s.username] = s;

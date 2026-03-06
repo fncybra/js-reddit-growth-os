@@ -144,8 +144,6 @@ export function ThreadsDashboard() {
         const staleAccounts = vaAccounts.filter(a => (a.status === 'Active' || a.status === 'Warm Up') && a.daysSinceLogin >= 3);
         const idleAccounts = vaActive.filter(a => a.threadCount === 0 || (a.lastPostDate && daysSincePost(a) >= 1));
         const vaErrors = vaAccounts.filter(a => a.status === 'Login Errors').length;
-        const vaDevice = devices.find(d => (d.handler || d.fullName) === v.handler);
-        const accsPerPhone = vaDevice?.numberOfAccounts || v.total;
         const vaThreads = vaActive.reduce((sum, a) => sum + (a.threadCount || 0), 0);
         const vaPosting = vaActive.filter(a => a.threadCount > 0 && (!a.lastPostDate || daysSincePost(a) < 1));
         const postingPct = vaActive.length > 0 ? Math.round(vaPosting.length / vaActive.length * 100) : 0;
@@ -159,7 +157,7 @@ export function ThreadsDashboard() {
             active: vaActive.length, warmUp: vaWarmUp.length,
             idle: idleAccounts.length, idleAccounts,
             stale: staleAccounts.length, staleAccounts,
-            errors: vaErrors, accsPerPhone, threads: vaThreads, postingPct,
+            errors: vaErrors, threads: vaThreads, postingPct,
             followerDelta: vaFollowerDelta,
         };
     })
