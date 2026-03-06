@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { AirtableService, ThreadsGrowthService } from '../services/growthEngine';
-import { RefreshCw, AlertTriangle, Shield } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { AirtableService, ThreadsGrowthService, ThreadsPatrolService } from '../services/growthEngine';
+import { RefreshCw, AlertTriangle, Shield, Activity, X } from 'lucide-react';
 
 const COLORS = { success: '#10b981', warning: '#f59e0b', danger: '#f43f5e', accent: '#3b82f6', muted: '#6b7280' };
 const ThreadsLink = ({ username, style }) => (
@@ -21,6 +21,40 @@ export function ThreadsDashboard() {
     const [actionItems, setActionItems] = useState([]);
     const [recommendations, setRecommendations] = useState([]);
     const [expandedVA, setExpandedVA] = useState(null);
+    const [patrolRunning, setPatrolRunning] = useState(false);
+    const [patrolProgress, setPatrolProgress] = useState(null);
+    const [patrolResults, setPatrolResults] = useState(null);
+    const [patrolError, setPatrolError] = useState(null);
+    const [growthDeltas, setGrowthDeltas] = useState({});
+    const autoPatrolDone = useRef(false);
+
+    async function handleRunPatrol() {
+        if (!ThreadsPatrolService.canRunToday()) {
+            setPatrolError('Already ran patrol today.');
+            setTimeout(() => setPatrolError(null), 5000);
+            return;
+        }
+        setPatrolRunning(true);
+        setPatrolResults(null);
+        setPatrolError(null);
+        try {
+            const results = await ThreadsPatrolService.runPatrol((progress) => {
+                setPatrolProgress(progress);
+            });
+            setPatrolResults(results);
+            await loadData(true);
+        } catch (e) {
+            if (e.message === 'DAILY_LIMIT') {
+                setPatrolError('Already ran patrol today.');
+                setTimeout(() => setPatrolError(null), 5000);
+            } else {
+                setPatrolError('Patrol failed: ' + e.message);
+            }
+        } finally {
+            setPatrolRunning(false);
+            setPatrolProgress(null);
+        }
+    }
 
     async function loadData(forceRefresh = false) {
         try {
@@ -29,14 +63,16 @@ export function ThreadsDashboard() {
             const devs = await AirtableService.fetchDevices(forceRefresh);
             setAccounts(accs);
             setDevices(devs);
-            const [va, ai, recs] = await Promise.allSettled([
+            const [va, ai, recs, deltas] = await Promise.allSettled([
                 AirtableService.getVAScorecard(accs, devs),
                 AirtableService.getActionItems(accs),
                 ThreadsGrowthService.getRecommendations(accs),
+                ThreadsPatrolService.getGrowthDeltas(),
             ]);
             if (va.status === 'fulfilled') setVAScorecard(va.value);
             if (ai.status === 'fulfilled') setActionItems(ai.value);
             if (recs.status === 'fulfilled') setRecommendations(recs.value);
+            if (deltas.status === 'fulfilled') setGrowthDeltas(deltas.value);
         } catch (e) {
             setError(e.message);
         } finally {
@@ -45,7 +81,15 @@ export function ThreadsDashboard() {
         }
     }
 
-    useEffect(() => { loadData(); }, []);
+    // Auto-run patrol on mount if it hasn't run today
+    useEffect(() => {
+        loadData().then(() => {
+            if (!autoPatrolDone.current && ThreadsPatrolService.canRunToday()) {
+                autoPatrolDone.current = true;
+                handleRunPatrol();
+            }
+        });
+    }, []);
 
     function handleSync() { setSyncing(true); loadData(true); }
 
@@ -68,27 +112,33 @@ export function ThreadsDashboard() {
 
     // Days since last post for an account
     const daysSincePost = (a) => {
-        if (!a.lastPostDate) return a.threadCount > 0 ? 999 : -1; // has posts but no date tracked yet = unknown, 0 posts = never
+        if (!a.lastPostDate) return a.threadCount > 0 ? 999 : -1;
         const diff = Math.floor((Date.now() - new Date(a.lastPostDate).getTime()) / 86400000);
         return diff;
     };
 
-    // Active fleet only — this is what matters
+    // Active fleet only
     const activeAccs = accounts.filter(a => a.status === 'Active');
     const warmUpAccs = accounts.filter(a => a.status === 'Warm Up');
     const errorAccs = accounts.filter(a => a.status === 'Login Errors');
-    // Idle = never posted OR hasn't posted in 1+ days (once we have lastPostDate data)
     const idleAccs = activeAccs.filter(a => a.threadCount === 0 || (a.lastPostDate && daysSincePost(a) >= 1));
     const postingAccs = activeAccs.filter(a => a.threadCount > 0 && (!a.lastPostDate || daysSincePost(a) < 1));
     const totalThreads = activeAccs.reduce((sum, a) => sum + (a.threadCount || 0), 0);
 
-    // VA scorecard — active fleet focus
+    // Growth deltas
+    const totalFollowerDelta = Object.values(growthDeltas).reduce((sum, d) => sum + (d.followerDelta || 0), 0);
+    const hasDeltas = Object.keys(growthDeltas).length > 0;
+
+    // Helper to get VA accounts
+    const getVAAccounts = (handler) => accounts.filter(a => {
+        const devId = Array.isArray(a.device) && a.device[0];
+        const dev = devId ? deviceMap[devId] : null;
+        return (dev?.handler || dev?.fullName || 'Unassigned') === handler;
+    });
+
+    // VA scorecard
     const enhancedVA = vaScorecard.map(v => {
-        const vaAccounts = accounts.filter(a => {
-            const devId = Array.isArray(a.device) && a.device[0];
-            const dev = devId ? deviceMap[devId] : null;
-            return (dev?.handler || dev?.fullName || 'Unassigned') === v.handler;
-        });
+        const vaAccounts = getVAAccounts(v.handler);
         const vaActive = vaAccounts.filter(a => a.status === 'Active');
         const vaWarmUp = vaAccounts.filter(a => a.status === 'Warm Up');
         const staleAccounts = vaAccounts.filter(a => (a.status === 'Active' || a.status === 'Warm Up') && a.daysSinceLogin >= 3);
@@ -97,22 +147,27 @@ export function ThreadsDashboard() {
         const vaDevice = devices.find(d => (d.handler || d.fullName) === v.handler);
         const accsPerPhone = vaDevice?.numberOfAccounts || v.total;
         const vaThreads = vaActive.reduce((sum, a) => sum + (a.threadCount || 0), 0);
-        // Posting % = what % of their active accounts are actually posting
         const vaPosting = vaActive.filter(a => a.threadCount > 0 && (!a.lastPostDate || daysSincePost(a) < 1));
         const postingPct = vaActive.length > 0 ? Math.round(vaPosting.length / vaActive.length * 100) : 0;
+        // Sum follower deltas for this VA's accounts
+        const vaFollowerDelta = vaAccounts.reduce((sum, a) => {
+            const d = growthDeltas[a.username?.toLowerCase()];
+            return sum + (d?.followerDelta || 0);
+        }, 0);
         return {
             handler: v.handler, phone: v.phone,
             active: vaActive.length, warmUp: vaWarmUp.length,
             idle: idleAccounts.length, idleAccounts,
             stale: staleAccounts.length, staleAccounts,
             errors: vaErrors, accsPerPhone, threads: vaThreads, postingPct,
+            followerDelta: vaFollowerDelta,
         };
     })
-    .filter(v => v.active + v.warmUp + v.errors > 0) // hide VAs with only dead accounts
-    .sort((a, b) => a.postingPct - b.postingPct); // worst posters first
+    .filter(v => v.active + v.warmUp + v.errors > 0)
+    .sort((a, b) => a.postingPct - b.postingPct);
 
     // Top 10 active by followers
-    const topPerformers = activeAccs.sort((a, b) => b.followers - a.followers).slice(0, 10);
+    const topPerformers = [...activeAccs].sort((a, b) => b.followers - a.followers).slice(0, 10);
 
     // Only critical/warning alerts
     const criticalAlerts = [
@@ -122,18 +177,88 @@ export function ThreadsDashboard() {
 
     const fmtFollowers = (n) => n >= 1000000 ? `${(n / 1000000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
     const fmtThreads = (n) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+    const fmtDelta = (n) => {
+        const abs = Math.abs(n);
+        const str = abs >= 1000 ? `${(abs / 1000).toFixed(1)}k` : String(abs);
+        return n > 0 ? `+${str}` : n < 0 ? `-${str}` : '0';
+    };
     const postingPctTotal = activeAccs.length > 0 ? Math.round(postingAccs.length / activeAccs.length * 100) : 0;
 
     return (
         <>
             <header className="page-header">
                 <h1 className="page-title">Threads Dashboard</h1>
-                <button className="btn btn-primary" onClick={handleSync} disabled={syncing} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <RefreshCw size={16} className={syncing ? 'spinning' : ''} />
-                    {syncing ? 'Syncing...' : 'Sync from Airtable'}
-                </button>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <button className="btn btn-outline" onClick={handleRunPatrol} disabled={patrolRunning || syncing} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Activity size={16} />
+                        {patrolRunning ? `Patrol ${patrolProgress?.checked || 0}/${patrolProgress?.total || '?'}` : 'Run Patrol'}
+                    </button>
+                    <button className="btn btn-primary" onClick={handleSync} disabled={syncing || patrolRunning} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <RefreshCw size={16} className={syncing ? 'spinning' : ''} />
+                        {syncing ? 'Syncing...' : 'Sync'}
+                    </button>
+                </div>
             </header>
             <div className="page-content">
+                {/* Patrol Error Banner */}
+                {patrolError && (
+                    <div style={{ padding: '12px 16px', borderRadius: '8px', background: 'rgba(244,63,94,0.12)', border: '1px solid var(--status-danger)', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <AlertTriangle size={18} style={{ color: COLORS.danger, flexShrink: 0 }} />
+                        <span style={{ color: COLORS.danger, fontWeight: 600, flex: 1 }}>{patrolError}</span>
+                        <button onClick={() => setPatrolError(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: COLORS.danger, padding: '2px' }}><X size={16} /></button>
+                    </div>
+                )}
+
+                {/* Patrol Progress */}
+                {patrolRunning && (
+                    <div style={{ padding: '12px 16px', borderRadius: '8px', background: 'var(--bg-surface)', marginBottom: '16px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: '8px' }}>
+                            <span>Scanning {patrolProgress?.total || '...'} accounts...</span>
+                            <span style={{ color: 'var(--text-secondary)' }}>
+                                {patrolProgress?.alive || 0} alive · {patrolProgress?.dead || 0} dead
+                            </span>
+                        </div>
+                        <div style={{ height: '6px', borderRadius: '3px', background: 'var(--bg-surface-elevated)', overflow: 'hidden' }}>
+                            <div style={{
+                                height: '100%', borderRadius: '3px', background: COLORS.accent,
+                                width: patrolProgress?.total ? `${Math.round((patrolProgress.checked / patrolProgress.total) * 100)}%` : '0%',
+                                transition: 'width 0.3s ease'
+                            }} />
+                        </div>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                            {patrolProgress?.checked || 0} / {patrolProgress?.total || '?'}
+                        </div>
+                    </div>
+                )}
+
+                {/* Patrol Results */}
+                {patrolResults && (
+                    <div style={{ padding: '16px', borderRadius: '8px', background: 'var(--bg-surface)', marginBottom: '16px', border: '1px solid var(--border-color)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: patrolResults.updated.length > 0 ? '12px' : 0 }}>
+                            <div style={{ display: 'flex', gap: '16px', fontSize: '0.9rem' }}>
+                                <span style={{ color: COLORS.success }}><strong>{patrolResults.alive}</strong> alive</span>
+                                <span style={{ color: COLORS.danger }}><strong>{patrolResults.dead}</strong> dead</span>
+                                {patrolResults.errors > 0 && <span style={{ color: COLORS.warning }}><strong>{patrolResults.errors}</strong> errors</span>}
+                                {patrolResults.rateLimited > 0 && <span style={{ color: COLORS.warning }}><strong>{patrolResults.rateLimited}</strong> rate limited</span>}
+                            </div>
+                            <button onClick={() => setPatrolResults(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '2px' }}><X size={16} /></button>
+                        </div>
+                        {patrolResults.updated.length > 0 && (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                {patrolResults.updated.map(u => (
+                                    <span key={u.username} style={{
+                                        display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.78rem',
+                                        background: u.newStatus === 'Active' ? 'rgba(16,185,129,0.12)' : 'rgba(244,63,94,0.12)',
+                                        color: u.newStatus === 'Active' ? COLORS.success : COLORS.danger,
+                                    }}>
+                                        @{u.username} <span style={{ opacity: 0.7 }}>({u.prevStatus} → {u.newStatus})</span>
+                                    </span>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+
                 {/* Row 1: Active Fleet Strip */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '12px 16px', borderRadius: '8px', background: 'var(--bg-surface)', marginBottom: '16px', flexWrap: 'wrap' }}>
                     <span style={{ color: COLORS.success }}><strong>{activeAccs.length}</strong> <span style={{ fontSize: '0.85rem' }}>Active</span></span>
@@ -149,6 +274,14 @@ export function ThreadsDashboard() {
                     <span style={{ color: errorAccs.length > 0 ? '#f97316' : COLORS.muted }}><strong>{errorAccs.length}</strong> <span style={{ fontSize: '0.85rem' }}>Errors</span></span>
                     <span style={{ color: 'var(--border-color)' }}>|</span>
                     <span><strong>{fmtThreads(totalThreads)}</strong> <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Total Posts</span></span>
+                    {hasDeltas && totalFollowerDelta !== 0 && (
+                        <>
+                            <span style={{ color: 'var(--border-color)' }}>|</span>
+                            <span style={{ color: totalFollowerDelta > 0 ? COLORS.success : COLORS.danger, fontWeight: 600 }}>
+                                {fmtDelta(totalFollowerDelta)} <span style={{ fontSize: '0.85rem', fontWeight: 400 }}>Followers Today</span>
+                            </span>
+                        </>
+                    )}
                 </div>
 
                 {/* Row 2: VA Scorecard */}
@@ -167,11 +300,13 @@ export function ThreadsDashboard() {
                                     <th style={thStyleNum}>Errors</th>
                                     <th style={thStyleNum}>Posts</th>
                                     <th style={thStyleNum}>Posting %</th>
+                                    {hasDeltas && <th style={thStyleNum}>Growth</th>}
                                 </tr>
                             </thead>
                             <tbody>
                                 {enhancedVA.map(v => {
                                     const borderColor = v.idle > 0 ? COLORS.danger : v.stale > 5 ? COLORS.warning : 'transparent';
+                                    const colSpan = hasDeltas ? 10 : 9;
                                     return (
                                         <React.Fragment key={v.handler}>
                                         <tr style={{ borderBottom: '1px solid var(--border-color)', borderLeft: `3px solid ${borderColor}` }}>
@@ -198,10 +333,15 @@ export function ThreadsDashboard() {
                                                     {v.postingPct}%
                                                 </span>
                                             </td>
+                                            {hasDeltas && (
+                                                <td style={{ ...tdStyleNum, color: v.followerDelta > 0 ? COLORS.success : v.followerDelta < 0 ? COLORS.danger : 'inherit', fontWeight: v.followerDelta !== 0 ? 600 : 400 }}>
+                                                    {fmtDelta(v.followerDelta)}
+                                                </td>
+                                            )}
                                         </tr>
                                         {expandedVA === v.handler + ':idle' && v.idleAccounts.length > 0 && (
                                             <tr style={{ background: 'rgba(244,63,94,0.05)' }}>
-                                                <td colSpan={9} style={{ padding: '8px 12px 8px 24px' }}>
+                                                <td colSpan={colSpan} style={{ padding: '8px 12px 8px 24px' }}>
                                                     <div style={{ fontSize: '0.8rem', color: COLORS.danger, marginBottom: '4px', fontWeight: 600 }}>
                                                         Not posting:
                                                     </div>
@@ -225,7 +365,7 @@ export function ThreadsDashboard() {
                                         )}
                                         {expandedVA === v.handler + ':stale' && v.staleAccounts.length > 0 && (
                                             <tr style={{ background: 'rgba(245,158,11,0.05)' }}>
-                                                <td colSpan={9} style={{ padding: '8px 12px 8px 24px' }}>
+                                                <td colSpan={colSpan} style={{ padding: '8px 12px 8px 24px' }}>
                                                     <div style={{ fontSize: '0.8rem', color: COLORS.warning, marginBottom: '4px', fontWeight: 600 }}>
                                                         Not logged in 3+ days:
                                                     </div>
@@ -261,21 +401,29 @@ export function ThreadsDashboard() {
                             ) : (
                                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                                     <tbody>
-                                        {topPerformers.map(a => (
-                                            <tr key={a.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                                                <td style={tdStyle}><ThreadsLink username={a.username} /></td>
-                                                <td style={{ ...tdStyle, color: 'var(--text-secondary)' }}>{a.model}</td>
-                                                <td style={{ ...tdStyleNum, fontWeight: 600 }}>{fmtFollowers(a.followers)}</td>
-                                                <td style={{ ...tdStyleNum, color: 'var(--text-secondary)' }}>{a.threadCount || 0} posts</td>
-                                            </tr>
-                                        ))}
+                                        {topPerformers.map(a => {
+                                            const delta = growthDeltas[a.username?.toLowerCase()]?.followerDelta || 0;
+                                            return (
+                                                <tr key={a.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                                    <td style={tdStyle}><ThreadsLink username={a.username} /></td>
+                                                    <td style={{ ...tdStyle, color: 'var(--text-secondary)' }}>{a.model}</td>
+                                                    <td style={{ ...tdStyleNum, fontWeight: 600 }}>{fmtFollowers(a.followers)}</td>
+                                                    {hasDeltas && (
+                                                        <td style={{ ...tdStyleNum, color: delta > 0 ? COLORS.success : delta < 0 ? COLORS.danger : 'var(--text-secondary)', fontSize: '0.78rem' }}>
+                                                            {fmtDelta(delta)}
+                                                        </td>
+                                                    )}
+                                                    <td style={{ ...tdStyleNum, color: 'var(--text-secondary)' }}>{a.threadCount || 0} posts</td>
+                                                </tr>
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                             )}
                         </div>
                     </div>
 
-                    {/* Login Errors — need fixing now */}
+                    {/* Login Errors */}
                     <div className="card">
                         <h2 style={{ fontSize: '1.1rem', marginBottom: '12px' }}>
                             Login Errors
