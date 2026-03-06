@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { db } from '../db/db';
 import { generateId } from '../db/generateId';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { AccountSyncService, AnalyticsEngine } from '../services/growthEngine';
+import { AccountSyncService, AnalyticsEngine, markPendingDelete } from '../services/growthEngine';
 import { Smartphone, RefreshCw, AlertTriangle, Trash2, ShieldCheck } from 'lucide-react';
 
 const PHASE_BADGES = {
@@ -140,6 +140,11 @@ export function Accounts() {
             : `Delete ${acc.handle}?`;
 
         if (!window.confirm(confirmMsg)) return;
+
+        // Mark as pending delete so in-flight sync won't re-add them
+        markPendingDelete('accounts', acc.id);
+        for (const tid of relatedTaskIds) markPendingDelete('tasks', tid);
+        for (const p of relatedPerformances) markPendingDelete('performances', p.id);
 
         // Delete from cloud FIRST so sync doesn't pull it back
         try {
