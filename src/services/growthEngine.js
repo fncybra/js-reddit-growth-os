@@ -5499,6 +5499,26 @@ FAN: idk thats a lot
 CHATTER: Come on babe you won't regret it! I made it just for you! Don't you want to see me? 😘
 (Sales pitch voice, guilt trip, too expensive for first PPV, no scenario, wrong emojis)
 
+## BUY SIGNALS — critical to catch
+
+When a fan says ANY of these, they are READY TO BUY. The chatter MUST capitalize within 2-3 messages by sending PPV or transitioning to a sell. Missing a buy signal = leaving money on the table.
+
+EXPLICIT buy signals (fan is directly asking to buy):
+- "how much", "whats the price", "send me", "show me more", "i want to see"
+- "can i buy", "let me see", "i want that", "send it", "ill pay", "take my money"
+- "where do i", "sign me up", "im interested", "how do i get", "i need that"
+- "can u send", "i want more", "give me more", "what else u got"
+
+IMPLICIT buy signals (fan is aroused/engaged enough to buy):
+- Fan sends dick pic or explicit photo → strong signal, chatter should escalate to PPV
+- Fan describes what they want to do sexually → bridge to "i actually have smth for that"
+- Fan uses excited language: "omg", "thats so hot", "ur so sexy", "i love that"
+- Fan asks personal/intimate questions → they're invested, good time to sell
+- Fan replies fast with long messages → they're hooked
+- Fan comes back after being gone → re-engagement window, pitch content
+
+MISSED buy signal = CRITICAL event. If the fan said "show me" or "send me more" and the chatter just kept chatting without sending PPV, that's money lost.
+
 ## YOUR JOB — READ EVERY MESSAGE CAREFULLY
 For each conversation, evaluate ALL of these dimensions:
 
@@ -5512,12 +5532,13 @@ For each conversation, evaluate ALL of these dimensions:
 8. **SEXTING QUALITY** — Scenario-based story with detail? Or generic "ur making me wet"?
 9. **SELL TECHNIQUE** — Casual, referenced conversation, low first price, pressure removal? Or sales pitch?
 10. **OBJECTION HANDLING** — Followed 5-step? Or guilt tripped/got defensive?
-11. **BUY SIGNALS** — Did fan show interest that chatter missed or capitalized on?
+11. **BUY SIGNAL RECOGNITION** — Look for EVERY fan message that signals buying intent (explicit: "how much", "send me", "show me" OR implicit: dick pics, excited language, fast long replies). Did chatter capitalize within 2-3 messages by sending PPV? Or did they miss it and keep chatting?
 12. **ENERGY MATCHING** — Did chatter match fan's pace and message length? Or mismatch?
 13. **STAGE SKIPPING** — Which stages were followed vs skipped entirely?
 14. **OVERALL ENGAGEMENT** — Did the conversation feel alive or robotic/templated?
 
 Flag EVERY issue and every strength you find. Be thorough — read the actual words, don't just skim. Quote message snippets as evidence.
+MISSED_BUY_SIGNAL is one of the most important events — flag it every time a fan showed interest and the chatter didn't send PPV within 2-3 messages.
 
 Return ONLY valid JSON. No markdown fences.`;
     },
