@@ -4,88 +4,96 @@ import { CloudSyncService, SettingsService } from '../services/growthEngine';
 export function CloudSyncHandler() {
     const hasRun = useRef(false);
     const cycleRef = useRef(false);
-    const tgCheckRef = useRef(false);
-    const threadsDailyRef = useRef(false);
-    const ofDailyRef = useRef(false);
+
+    // Persistent flags — once a report sends today, never retry until tomorrow
+    const redditSentToday = useRef(false);
+    const threadsSentToday = useRef(false);
+    const ofSentToday = useRef(false);
 
     useEffect(() => {
         if (hasRun.current) return;
         hasRun.current = true;
 
-        const checkTelegramAutoSend = async () => {
-            if (tgCheckRef.current) return;
-            tgCheckRef.current = true;
+        const checkRedditDailyReport = async () => {
+            if (redditSentToday.current) return;
             try {
                 const settings = await SettingsService.getSettings();
-                const token = (settings.telegramBotToken || '').trim();
-                const chatId = (settings.telegramChatId || '').trim();
+                if (!settings.redditDailyReportEnabled) return;
+
+                const token = (settings.redditTelegramBotToken || settings.telegramBotToken || '').trim();
+                const chatId = (settings.redditTelegramChatId || settings.telegramChatId || '').trim();
                 if (!token || !chatId) return;
 
                 const now = new Date();
                 const today = now.toISOString().slice(0, 10);
-                if (settings.lastTelegramReportDate === today) return;
+                if (settings.lastTelegramReportDate === today) {
+                    redditSentToday.current = true;
+                    return;
+                }
 
-                console.log('[CloudSync] Auto-sending Telegram daily report...');
+                const sendHour = Number(settings.redditDailyReportHour) || 8;
+                if (now.getHours() < sendHour) return;
+
+                // Stamp BEFORE sending to prevent duplicate sends from concurrent cycles
+                redditSentToday.current = true;
+                await SettingsService.updateSetting('lastTelegramReportDate', today);
+
+                console.log('[CloudSync] Auto-sending Reddit daily report...');
                 const { TelegramService } = await import('../services/growthEngine');
                 const result = await TelegramService.sendDailyReport();
                 if (result.sent) {
-                    await SettingsService.updateSetting('lastTelegramReportDate', today);
-                    console.log('[CloudSync] Telegram report sent for', today);
+                    console.log('[CloudSync] Reddit report sent for', today);
                 } else {
-                    console.warn('[CloudSync] Telegram report not sent:', result.reason);
+                    console.warn('[CloudSync] Reddit report not sent:', result.reason);
                 }
             } catch (err) {
-                console.error('[CloudSync] Telegram auto-send failed:', err);
-            } finally {
-                tgCheckRef.current = false;
+                console.error('[CloudSync] Reddit auto-send failed:', err);
             }
         };
 
         const checkThreadsDailyReport = async () => {
-            if (threadsDailyRef.current) return;
-            threadsDailyRef.current = true;
+            if (threadsSentToday.current) return;
             try {
                 const settings = await SettingsService.getSettings();
                 if (!settings.threadsDailyReportEnabled) return;
 
-                // Need Telegram config (Threads or main)
                 const token = (settings.threadsTelegramBotToken || settings.telegramBotToken || '').trim();
                 const chatId = (settings.threadsTelegramChatId || settings.telegramChatId || '').trim();
                 if (!token || !chatId) return;
 
-                // Need Airtable config
                 const airtableKey = (settings.airtableApiKey || '').trim();
                 const airtableBase = (settings.airtableBaseId || '').trim();
                 if (!airtableKey || !airtableBase) return;
 
-                // Already sent today?
                 const now = new Date();
                 const today = now.toISOString().slice(0, 10);
-                if (settings.lastThreadsDailyReportDate === today) return;
+                if (settings.lastThreadsDailyReportDate === today) {
+                    threadsSentToday.current = true;
+                    return;
+                }
 
-                // Hour gate
                 const sendHour = Number(settings.threadsDailyReportHour) || 8;
                 if (now.getHours() < sendHour) return;
+
+                // Stamp BEFORE sending to prevent duplicate sends from concurrent cycles
+                threadsSentToday.current = true;
+                await SettingsService.updateSetting('lastThreadsDailyReportDate', today);
 
                 console.log('[CloudSync] Auto-sending Threads daily VA report...');
                 const { TelegramService } = await import('../services/growthEngine');
                 const result = await TelegramService.sendThreadsDailyReport();
                 if (result.sent) {
-                    await SettingsService.updateSetting('lastThreadsDailyReportDate', today);
                     console.log('[CloudSync] Threads daily VA report sent for', today);
                 } else {
                     console.warn('[CloudSync] Threads daily VA report not sent:', result.reason);
                 }
             } catch (err) {
                 console.error('[CloudSync] Threads daily VA report failed:', err);
-            } finally {
-                threadsDailyRef.current = false;
             }
         };
 
         const checkOFDailyReport = async () => {
-            if (ofDailyRef.current) return;
-            ofDailyRef.current = true;
+            if (ofSentToday.current) return;
             try {
                 const settings = await SettingsService.getSettings();
                 if (!settings.ofDailyReportEnabled) return;
@@ -96,24 +104,28 @@ export function CloudSyncHandler() {
 
                 const now = new Date();
                 const today = now.toISOString().slice(0, 10);
-                if (settings.lastOFDailyReportDate === today) return;
+                if (settings.lastOFDailyReportDate === today) {
+                    ofSentToday.current = true;
+                    return;
+                }
 
                 const sendHour = Number(settings.ofDailyReportHour) || 20;
                 if (now.getHours() < sendHour) return;
+
+                // Stamp BEFORE sending to prevent duplicate sends from concurrent cycles
+                ofSentToday.current = true;
+                await SettingsService.updateSetting('lastOFDailyReportDate', today);
 
                 console.log('[CloudSync] Auto-sending OF daily report...');
                 const { TelegramService } = await import('../services/growthEngine');
                 const result = await TelegramService.sendOFDailyReport();
                 if (result.sent) {
-                    await SettingsService.updateSetting('lastOFDailyReportDate', today);
                     console.log('[CloudSync] OF daily report sent for', today);
                 } else {
                     console.warn('[CloudSync] OF daily report not sent:', result.reason);
                 }
             } catch (err) {
                 console.error('[CloudSync] OF daily report failed:', err);
-            } finally {
-                ofDailyRef.current = false;
             }
         };
 
@@ -131,17 +143,17 @@ export function CloudSyncHandler() {
                 console.log('[CloudSync] Running ordered push->pull cycle...');
                 await CloudSyncService.pushLocalToCloud();
                 await CloudSyncService.pullCloudToLocal();
+
+                // Reports run INSIDE the sync block — after pull completes, data is fresh
+                await checkRedditDailyReport();
+                await checkThreadsDailyReport();
+                await checkOFDailyReport();
             } catch (err) {
                 console.error('[CloudSync] Cycle failed:', err);
             } finally {
                 CloudSyncService.releaseLock();
                 cycleRef.current = false;
             }
-
-            // Check Telegram auto-send after each sync cycle (outside lock)
-            checkTelegramAutoSend();
-            checkThreadsDailyReport();
-            checkOFDailyReport();
         };
 
         runCycle();

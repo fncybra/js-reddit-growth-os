@@ -76,7 +76,7 @@ export function Settings() {
         for (const [key, value] of Object.entries(settings)) {
             // Handle mixing types: vaPin stays string, others are numbers, api key is string
             let finalValue = value;
-            const textKeys = ['vaPin', 'openRouterApiKey', 'aiBaseUrl', 'openRouterModel', 'supabaseUrl', 'supabaseAnonKey', 'proxyUrl', 'telegramBotToken', 'telegramChatId', 'telegramThreadId', 'lastTelegramReportDate', 'airtableApiKey', 'airtableBaseId', 'airtableTableName', 'lastThreadsPatrol', 'threadsTelegramBotToken', 'threadsTelegramChatId', 'threadsTelegramThreadId', 'lastThreadsDailyReportDate', 'lastVASnapshot', 'threadsManagerPin', 'redditManagerPin', 'ofTelegramBotToken', 'ofTelegramChatId', 'ofTelegramThreadId', 'lastOFDailyReportDate', 'aiChatApiKey', 'aiChatGeminiKey', 'aiChatHaikuModel', 'aiChatSonnetModel'];
+            const textKeys = ['vaPin', 'openRouterApiKey', 'aiBaseUrl', 'openRouterModel', 'supabaseUrl', 'supabaseAnonKey', 'proxyUrl', 'telegramBotToken', 'telegramChatId', 'telegramThreadId', 'lastTelegramReportDate', 'airtableApiKey', 'airtableBaseId', 'airtableTableName', 'lastThreadsPatrol', 'threadsTelegramBotToken', 'threadsTelegramChatId', 'threadsTelegramThreadId', 'lastThreadsDailyReportDate', 'lastVASnapshot', 'threadsManagerPin', 'redditManagerPin', 'redditTelegramBotToken', 'redditTelegramChatId', 'redditTelegramThreadId', 'ofTelegramBotToken', 'ofTelegramChatId', 'ofTelegramThreadId', 'lastOFDailyReportDate', 'aiChatApiKey', 'aiChatGeminiKey', 'aiChatHaikuModel', 'aiChatSonnetModel'];
             if (!textKeys.includes(key) && value !== '') {
                 finalValue = Number(value);
             }
@@ -347,7 +347,10 @@ export function Settings() {
                             </button>
                         </div>
                         <div className="card">
-                            <h2 style={{ fontSize: '1.2rem', marginBottom: '20px' }}>Telegram Notifications</h2>
+                            <h2 style={{ fontSize: '1.2rem', marginBottom: '20px' }}>Telegram (Default / Fallback)</h2>
+                            <small style={{ color: 'var(--text-secondary)', display: 'block', marginBottom: '16px' }}>
+                                Default Telegram credentials. Used as fallback if Reddit/Threads/OF sections below are left blank.
+                            </small>
                             <div className="input-group">
                                 <label className="input-label">Bot Token</label>
                                 <input
@@ -404,6 +407,76 @@ export function Settings() {
                                     }}
                                 >
                                     Send Test Message
+                                </button>
+                            </div>
+                        </div>
+                        <div className="card">
+                            <h2 style={{ fontSize: '1.2rem', marginBottom: '20px' }}>Reddit Telegram Alerts</h2>
+                            <small style={{ color: 'var(--text-secondary)', display: 'block', marginBottom: '16px' }}>
+                                Separate Telegram settings for Reddit daily reports. If left blank, falls back to the default Telegram settings above.
+                            </small>
+                            <div className="input-group">
+                                <label className="input-label">Bot Token (Reddit)</label>
+                                <input
+                                    type="password"
+                                    className="input-field"
+                                    placeholder="Leave blank to use default bot token"
+                                    value={settings.redditTelegramBotToken || ''}
+                                    onChange={e => setSettings({ ...settings, redditTelegramBotToken: e.target.value })}
+                                />
+                            </div>
+                            <div className="input-group">
+                                <label className="input-label">Chat ID (Reddit)</label>
+                                <input
+                                    type="text"
+                                    className="input-field"
+                                    placeholder="Leave blank to use default chat ID"
+                                    value={settings.redditTelegramChatId || ''}
+                                    onChange={e => setSettings({ ...settings, redditTelegramChatId: e.target.value })}
+                                />
+                            </div>
+                            <div className="input-group">
+                                <label className="input-label">Topic Thread ID (Reddit) <small>(optional)</small></label>
+                                <input
+                                    type="text"
+                                    className="input-field"
+                                    placeholder="Leave blank to use default thread ID"
+                                    value={settings.redditTelegramThreadId || ''}
+                                    onChange={e => setSettings({ ...settings, redditTelegramThreadId: e.target.value })}
+                                />
+                            </div>
+                            <div className="input-group">
+                                <label className="input-label">Enable Reddit Daily Report</label>
+                                <select className="input-field" value={String(settings.redditDailyReportEnabled ?? 1)} onChange={e => setSettings({ ...settings, redditDailyReportEnabled: Number(e.target.value) })}>
+                                    <option value="1">Enabled</option>
+                                    <option value="0">Disabled</option>
+                                </select>
+                            </div>
+                            <div className="input-group">
+                                <label className="input-label">Send After Hour (0-23)</label>
+                                <input type="number" className="input-field" value={settings.redditDailyReportHour ?? 8} onChange={e => setSettings({ ...settings, redditDailyReportHour: e.target.value })} min="0" max="23" />
+                                <small style={{ color: 'var(--text-secondary)' }}>Report auto-sends once per day after this hour (local time). Default: 8 AM.</small>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '12px' }}>
+                                <button onClick={handleSave} className="btn btn-primary">Save</button>
+                                <button
+                                    type="button"
+                                    className="btn btn-outline"
+                                    onClick={async () => {
+                                        try {
+                                            const { TelegramService } = await import('../services/growthEngine');
+                                            const result = await TelegramService.sendDailyReport();
+                                            if (result.sent) {
+                                                alert('Reddit daily report sent! Check your Telegram.');
+                                            } else {
+                                                alert('Report not sent: ' + (result.reason || 'Unknown error'));
+                                            }
+                                        } catch (e) {
+                                            alert('Failed: ' + e.message);
+                                        }
+                                    }}
+                                >
+                                    Send Now
                                 </button>
                             </div>
                         </div>

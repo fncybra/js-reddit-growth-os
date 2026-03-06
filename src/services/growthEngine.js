@@ -3281,12 +3281,12 @@ export const TelegramService = {
     async sendDailyReport() {
         try {
             const settings = await SettingsService.getSettings();
-            const token = (settings.telegramBotToken || '').trim();
-            const chatId = (settings.telegramChatId || '').trim();
+            const token = (settings.redditTelegramBotToken || settings.telegramBotToken || '').trim();
+            const chatId = (settings.redditTelegramChatId || settings.telegramChatId || '').trim();
             if (!token || !chatId) {
                 return { sent: false, reason: 'Telegram not configured' };
             }
-            const threadId = (settings.telegramThreadId || '').trim();
+            const threadId = (settings.redditTelegramThreadId || settings.telegramThreadId || '').trim();
             const report = await this.buildReport();
             await this.sendMessage(token, chatId, report, threadId);
             return { sent: true };
