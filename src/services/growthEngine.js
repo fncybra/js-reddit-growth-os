@@ -100,6 +100,12 @@ export const SettingsService = {
             lastVASnapshot: '',
             threadsManagerPin: '',
             redditManagerPin: '',
+            redditTelegramBotToken: '',
+            redditTelegramChatId: '',
+            redditTelegramThreadId: '',
+            redditDailyReportEnabled: 1,
+            redditDailyReportHour: 8,
+            lastRedditDailyReportDate: '',
             ofTelegramBotToken: '',
             ofTelegramChatId: '',
             ofTelegramThreadId: '',
@@ -3497,35 +3503,37 @@ export const AirtableService = {
         return allRecords;
     },
 
+    _mapRecord(r) {
+        const f = r.fields || {};
+        return {
+            id: r.id,
+            username: f['Username'] || '',
+            model: f['Model'] || '',
+            status: f['Status'] || '',
+            followers: Number(f['Followers']) || 0,
+            daysSinceCreation: Number(f['Days Since Creation']) || 0,
+            device: f['Device'] || [],
+            password: f['Password'] || '',
+            twoFA: f['2FA'] || '',
+            vpnLocation: f['VPN Location'] || '',
+            provider: f['Provider'] || '',
+            loginDate: f['Login Date'] || '',
+            daysSinceLogin: Number(f['Days Since Login']) || 0,
+            linkInBio: f['Link in Bio'] || '',
+            threadCount: Number(f['Thread Count']) || 0,
+            lastPostDate: f['Last Post Date'] || '',
+            creationDate: f['Creation Date'] || '',
+            openThreadsUrl: f['Open Threads'] || '',
+        };
+    },
+
     async fetchAllAccounts(forceRefresh = false) {
         if (!forceRefresh && this._cache && (Date.now() - this._cacheTime < this._CACHE_TTL)) {
             return this._cache;
         }
         const { apiKey, baseId, tableName } = await this._getConfig();
         const records = await this._fetchPaginated(baseId, tableName, apiKey);
-        const accounts = records.map(r => {
-            const f = r.fields || {};
-            return {
-                id: r.id,
-                username: f['Username'] || '',
-                model: f['Model'] || '',
-                status: f['Status'] || '',
-                followers: Number(f['Followers']) || 0,
-                daysSinceCreation: Number(f['Days Since Creation']) || 0,
-                device: f['Device'] || [],
-                password: f['Password'] || '',
-                twoFA: f['2FA'] || '',
-                vpnLocation: f['VPN Location'] || '',
-                provider: f['Provider'] || '',
-                loginDate: f['Login Date'] || '',
-                daysSinceLogin: Number(f['Days Since Login']) || 0,
-                linkInBio: f['Link in Bio'] || '',
-                threadCount: Number(f['Thread Count']) || 0,
-                lastPostDate: f['Last Post Date'] || '',
-                creationDate: f['Creation Date'] || '',
-                openThreadsUrl: f['Open Threads'] || '',
-            };
-        });
+        const accounts = records.map(r => this._mapRecord(r));
         this._cache = accounts;
         this._cacheTime = Date.now();
         return accounts;
@@ -3535,29 +3543,7 @@ export const AirtableService = {
         const { apiKey, baseId, tableName } = await this._getConfig();
         const filter = "OR({Status}='Active',{Status}='Warm Up',{Status}='Setting Up')";
         const records = await this._fetchPaginated(baseId, tableName, apiKey, filter);
-        return records.map(r => {
-            const f = r.fields || {};
-            return {
-                id: r.id,
-                username: f['Username'] || '',
-                model: f['Model'] || '',
-                status: f['Status'] || '',
-                followers: Number(f['Followers']) || 0,
-                daysSinceCreation: Number(f['Days Since Creation']) || 0,
-                device: f['Device'] || [],
-                password: f['Password'] || '',
-                twoFA: f['2FA'] || '',
-                vpnLocation: f['VPN Location'] || '',
-                provider: f['Provider'] || '',
-                loginDate: f['Login Date'] || '',
-                daysSinceLogin: Number(f['Days Since Login']) || 0,
-                linkInBio: f['Link in Bio'] || '',
-                threadCount: Number(f['Thread Count']) || 0,
-                lastPostDate: f['Last Post Date'] || '',
-                creationDate: f['Creation Date'] || '',
-                openThreadsUrl: f['Open Threads'] || '',
-            };
-        });
+        return records.map(r => this._mapRecord(r));
     },
 
     async fetchDevices(forceRefresh = false) {

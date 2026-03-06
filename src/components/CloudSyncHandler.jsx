@@ -26,7 +26,7 @@ export function CloudSyncHandler() {
 
                 const now = new Date();
                 const today = now.toISOString().slice(0, 10);
-                if (settings.lastTelegramReportDate === today) {
+                if (settings.lastRedditDailyReportDate === today) {
                     redditSentToday.current = true;
                     return;
                 }
@@ -36,7 +36,7 @@ export function CloudSyncHandler() {
 
                 // Stamp BEFORE sending to prevent duplicate sends from concurrent cycles
                 redditSentToday.current = true;
-                await SettingsService.updateSetting('lastTelegramReportDate', today);
+                await SettingsService.updateSetting('lastRedditDailyReportDate', today);
 
                 console.log('[CloudSync] Auto-sending Reddit daily report...');
                 const { TelegramService } = await import('../services/growthEngine');
@@ -44,9 +44,15 @@ export function CloudSyncHandler() {
                 if (result.sent) {
                     console.log('[CloudSync] Reddit report sent for', today);
                 } else {
+                    // Rollback so it retries next cycle
+                    redditSentToday.current = false;
+                    await SettingsService.updateSetting('lastRedditDailyReportDate', '');
                     console.warn('[CloudSync] Reddit report not sent:', result.reason);
                 }
             } catch (err) {
+                // Rollback so it retries next cycle
+                redditSentToday.current = false;
+                try { await SettingsService.updateSetting('lastRedditDailyReportDate', ''); } catch (_) {}
                 console.error('[CloudSync] Reddit auto-send failed:', err);
             }
         };
@@ -85,9 +91,13 @@ export function CloudSyncHandler() {
                 if (result.sent) {
                     console.log('[CloudSync] Threads daily VA report sent for', today);
                 } else {
+                    threadsSentToday.current = false;
+                    await SettingsService.updateSetting('lastThreadsDailyReportDate', '');
                     console.warn('[CloudSync] Threads daily VA report not sent:', result.reason);
                 }
             } catch (err) {
+                threadsSentToday.current = false;
+                try { await SettingsService.updateSetting('lastThreadsDailyReportDate', ''); } catch (_) {}
                 console.error('[CloudSync] Threads daily VA report failed:', err);
             }
         };
@@ -122,9 +132,13 @@ export function CloudSyncHandler() {
                 if (result.sent) {
                     console.log('[CloudSync] OF daily report sent for', today);
                 } else {
+                    ofSentToday.current = false;
+                    await SettingsService.updateSetting('lastOFDailyReportDate', '');
                     console.warn('[CloudSync] OF daily report not sent:', result.reason);
                 }
             } catch (err) {
+                ofSentToday.current = false;
+                try { await SettingsService.updateSetting('lastOFDailyReportDate', ''); } catch (_) {}
                 console.error('[CloudSync] OF daily report failed:', err);
             }
         };
@@ -137,22 +151,27 @@ export function CloudSyncHandler() {
                 cycleRef.current = false;
                 return;
             }
+            let syncOk = false;
             try {
                 const enabled = await CloudSyncService.isEnabled();
                 if (!enabled) return;
                 console.log('[CloudSync] Running ordered push->pull cycle...');
                 await CloudSyncService.pushLocalToCloud();
                 await CloudSyncService.pullCloudToLocal();
-
-                // Reports run INSIDE the sync block — after pull completes, data is fresh
-                await checkRedditDailyReport();
-                await checkThreadsDailyReport();
-                await checkOFDailyReport();
+                syncOk = true;
             } catch (err) {
                 console.error('[CloudSync] Cycle failed:', err);
             } finally {
                 CloudSyncService.releaseLock();
                 cycleRef.current = false;
+            }
+
+            // Reports run AFTER sync completes and lock is released
+            // so they don't block the next sync cycle with HTTP calls
+            if (syncOk) {
+                checkRedditDailyReport();
+                checkThreadsDailyReport();
+                checkOFDailyReport();
             }
         };
 
