@@ -3,19 +3,28 @@ import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { AIChatReportService } from '../services/growthEngine';
 
 // Tier 1 (rules) + Tier 2 (AI) event types
-const CRITICAL_TYPES = ['GENERIC_OPENER','BAD_TONE','MISSED_BUY_SIGNAL','VISIBLE_TRANSITION','PREMATURE_PITCH','SLOW_REPLY_SELLING'];
-const POSITIVE_TYPES = ['GOOD_OPENER','GOOD_RAPPORT','GOOD_TRANSITION','GOOD_TONE','GOOD_PPV_LOOPING','FAST_RESPONSE','SUCCESSFUL_SALE'];
+const CRITICAL_TYPES = ['GENERIC_OPENER','BAD_TONE','MISSED_BUY_SIGNAL','VISIBLE_TRANSITION','NO_LOCATION_MATCH','OBJECTION_FAILURE','GF_EXPERIENCE','PREMATURE_PITCH','SLOW_REPLY_SELLING'];
+const POSITIVE_TYPES = ['GOOD_OPENER','GOOD_LOCATION_MATCH','GOOD_HUMANIZING','GOOD_RAPPORT','GOOD_PROFILING','GOOD_TRANSITION','GOOD_SCENARIO_SEXT','GOOD_TONE','GOOD_OBJECTION_HANDLING','GOOD_ENERGY_MATCH','GOOD_PPV_LOOPING','FAST_RESPONSE','SUCCESSFUL_SALE'];
 
 const EVENT_COLOR = (type) => CRITICAL_TYPES.includes(type) ? 'danger' : POSITIVE_TYPES.includes(type) ? 'success' : 'warning';
 
 const EVENT_LABELS = {
-    // AI-detected (qualitative)
-    GENERIC_OPENER: 'Generic Opener', GOOD_OPENER: 'Good Opener',
-    BAD_TONE: 'Bad Tone', GOOD_TONE: 'Good Tone',
+    // AI-detected critical
+    GENERIC_OPENER: 'Generic Opener', BAD_TONE: 'Bad Tone',
     MISSED_BUY_SIGNAL: 'Missed Buy Signal', VISIBLE_TRANSITION: 'Visible Transition',
-    GOOD_RAPPORT: 'Good Rapport', GOOD_TRANSITION: 'Smooth Transition',
+    NO_LOCATION_MATCH: 'No Location Match', OBJECTION_FAILURE: 'Objection Failure',
+    GF_EXPERIENCE: 'GF Experience',
+    // AI-detected warning
     DRY_CONVERSATION: 'Dry Conversation', INTERVIEW_MODE: 'Interview Mode',
-    // Rule-detected (quantitative)
+    NO_HUMANIZING: 'No Humanizing', STAGE_SKIP: 'Stage Skip',
+    REAL_TIME_SEXT: 'Generic Sexting', WEAK_PPV_CAPTION: 'Weak PPV Caption',
+    // AI-detected positive
+    GOOD_OPENER: 'Good Opener', GOOD_LOCATION_MATCH: 'Good Location Match',
+    GOOD_HUMANIZING: 'Good Humanizing', GOOD_RAPPORT: 'Good Rapport',
+    GOOD_PROFILING: 'Good Profiling', GOOD_TRANSITION: 'Smooth Transition',
+    GOOD_SCENARIO_SEXT: 'Good Scenario Sext', GOOD_TONE: 'Good Tone',
+    GOOD_OBJECTION_HANDLING: 'Good Objection Handling', GOOD_ENERGY_MATCH: 'Good Energy Match',
+    // Rule-detected
     PREMATURE_PITCH: 'Premature Pitch', BAD_PRICING: 'Bad Pricing',
     SLOW_REPLY_SELLING: 'Slow Reply (Selling)', FAST_RESPONSE: 'Fast Response',
     SPAMMING: 'Spamming', NO_AFTERCARE: 'No Aftercare',
