@@ -3828,7 +3828,7 @@ export const ThreadsPatrolService = {
 
         // Save daily snapshots to Dexie
         if (snapshots.length > 0) {
-            await db.threadsSnapshots.bulkPut(snapshots);
+            await db.threadsSnapshots.bulkAdd(snapshots);
         }
 
         // Batch update Airtable
@@ -3851,7 +3851,7 @@ export const ThreadsPatrolService = {
         const weekAgo = new Date();
         weekAgo.setDate(weekAgo.getDate() - 7);
         const allPrev = await db.threadsSnapshots
-            .where('date').between(weekAgo.toISOString().slice(0, 10), today)
+            .where('date').between(weekAgo.toISOString().slice(0, 10), today, true, false)
             .reverse().toArray();
         const prevMap = {};
         for (const s of allPrev) {
