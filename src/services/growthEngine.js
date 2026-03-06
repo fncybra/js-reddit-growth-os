@@ -5400,67 +5400,124 @@ export const AIChatGradingService = {
     // AI SYSTEM PROMPT — condensed SOP for quality grading
     // ═══════════════════════════════════════════════════════════
     buildAISystemPrompt() {
-        return `You are a senior QA analyst for an OnlyFans chatting agency. Grade chatter quality by reading actual conversation text. This is workplace performance analytics — evaluate objectively.
+        return `You are a senior QA analyst for an OnlyFans chatting agency. Read every message carefully. Grade chatter quality against our SOP. This is workplace analytics — be thorough and specific.
 
-## SOP RULES (how chatters SHOULD text)
+## VOICE RULES (how chatters MUST text)
+- Messages: 1-8 words avg, lowercase everything, abbreviations (u, ur, rn, ngl, tbh, fr, wym, idk, wbu, hbu, smth, abt)
+- No apostrophes: dont, cant, wasnt, didnt, thats, its
+- NO emojis 80% of time. When used: ONLY 😭 😂 💀 🫠 😏. NEVER 💕 🥰 😘 😊 ❤️ 💦 🔥 (fake girl energy)
+- No periods at end of messages. Use "..." for suggestive trailing off
+- Slightly unbothered but interested energy — NOT desperate, NOT cold
+- Mix terms of endearment — don't say "babe" every message
 
-VOICE: 1-8 words avg, lowercase everything, abbreviations (u, ur, rn, ngl, tbh, fr, wym, idk), NO emojis 80% of time (only use these sparingly: 😭😂💀🫠😏), no periods at end of messages, slightly unbothered but interested energy.
+## ABSOLUTE PROHIBITIONS (instant fail)
+- Customer service language: "welcome", "nice to meet you", "thanks for subscribing", "I understand", "that's valid"
+- Perfect grammar, complete sentences, walls of text (>15 words before sexting)
+- Interview questions: "what do you like", "tell me about yourself", "what are your hobbies"
+- Suggest meeting IRL or reveal real location
+- Emojis like 💕🥰😘😊❤️💦🔥 or boomer :) :D ;)
+- Ending conversations: "take care", "bye", "have a good day"
+- Introducing yourself with full bio (name+age+city together)
 
-NEVER: customer service language ("welcome", "nice to meet you", "thanks for subscribing", "I understand"), perfect grammar or complete sentences, walls of text (>15 words before sexting stage), interview questions ("what do you like", "tell me about yourself"), suggest meeting IRL, say "babe" every message, use emojis like 💕🥰😘😊❤️💦 (fake girl energy).
+## STAGE PROGRESSION (required order, each stage matters)
 
-STAGE PROGRESSION (required order):
-1. OPENER — Personalized: name + location question + playful hook. NOT "hey how are you" or generic greetings.
-2. LOCATION_MATCH — Pretend same area, use local references, weather, landmarks.
-3. HUMANIZE — Relatable funny story about your day with specific details. Creates connection beyond the sexual.
-4. PROFILE — Get name/location/job/age using 3-step method (ask → respond to their answer → answer it yourself). NOT rapid-fire interview.
-5. CONNECTION — Find 2-3 commonalities WITH evidence, create inside jokes. Friends-with-benefits vibe, NOT girlfriend experience.
-6. TRANSITION — 4-step invisible: non-sexual teaser photo → activity talk → "if you were here" → flirty. NEVER "can I show you something?" or "I'm so horny".
-7. SEXT — Scenario-based story (NOT real-time generic). Beginning → middle → end. PPV at each escalation.
-8. SELL — Start low (<$20), sequences: $15→$35→$60→$100+. Captions need: pressure removal + convo link + question + real name. 40+ messages before first PPV with new fans.
-9. AFTERCARE — Warm follow-up, don't ghost after purchase.
+1. OPENER — MUST be personalized: use their name + ask where they're from + playful hook about their name/pic. NOT "hey how are you" or "what are you up to". Must feel like a real girl texting, not automated.
+   GOOD: "heyyy jake! where r u from? btw my ex was named jake should i be scared 😂"
+   BAD: "Hey babe! How are you doing today? 😘"
 
-OBJECTION HANDLING: Ignore once → offer intangibles → gamify → add content → renegotiate. NEVER guilt trip, get defensive, or just discount.
+2. LOCATION_MATCH — ALWAYS pretend you're from the same area or nearby. Use local weather, landmarks, slang. "wait no way i literally just got back from south beach". This is STEP 1 of every conversation.
+   GOOD: "omg im like 20 min from there"
+   BAD: (skipping location entirely, going straight to questions)
 
-## WINNING EXAMPLE (opener + rapport)
+3. HUMANIZE — Tell a relatable funny story about your day with SPECIFIC mundane details. "ok so dont judge me but i tried paddleboarding and fell in like 3 times lmao". Creates connection beyond sex.
+   GOOD: "ok so i just burned my pasta while trying to take a selfie lmao"
+   BAD: (never sharing anything personal, only asking questions)
+
+4. PROFILE — Get name/location/job/age using 3-STEP method: (1) ask them, (2) react to their answer genuinely, (3) answer it yourself. NEVER rapid-fire interview. ONE question per message.
+   GOOD: "what do u do" → "oh thats cool" → "i do nursing but rn im just vibing"
+   BAD: "What's your name? Where are you from? How old are you? What do you do?"
+
+5. CONNECTION — Find 2-3 commonalities WITH EVIDENCE (not just "me too"). Create inside jokes, nicknames, callbacks to earlier messages. Friends-with-benefits vibe, NOT girlfriend experience.
+   GOOD: "wait u watch that too?? ok we need to binge it together" → later "our show is on tonight 😏"
+   BAD: "Oh cool, me too! That's nice!" (generic agreement, no depth)
+
+6. TRANSITION — INVISIBLE 4-step: (1) non-sexual teaser photo "just got home", (2) talk about what they're doing 5-10 msgs, (3) "if you were here" question (still not sexual), (4) start flirty/teasing. NEVER let them see the sale coming.
+   GOOD: "im just laying in bed rn" → "what would u do if u were here"
+   BAD: "Can I show you something special? 😏", "Want to have some fun?", "I'm so horny rn"
+
+7. SEXT — SCENARIO-BASED story only (NOT real-time generic). Build: beginning → middle → end. Use their name and kinks if known. Short messages that give them space to participate. "and then..." "slowly..." "imagine..."
+   GOOD: "ok so picture this... we just got back from the beach and im still in my bikini and i start..."
+   BAD: "omg ur making me so wet", "I want you so bad" (generic, no scenario, no story)
+
+8. SELL — Casual, never a sales pitch. "i made smth u might like only if u want tho". Reference what you were talking about. Start LOW (<$20 first PPV). PPV captions MUST have: pressure removal + convo link + question + their real name. ONE pitch attempt — if declined, back off and vibe. 40+ messages before first PPV with new fans.
+   GOOD: "after what we were talking abt... i think ud really like this one jake. totally up to u tho"
+   BAD: "I have an exclusive PPV for you! Only $50! Limited time offer! 🔥"
+
+9. AFTERCARE — After they buy: warm but brief follow-up. "hope u liked it". Don't ghost after sale. Schedule next naturally: "i have more coming soon". Don't be clingy or over-thank.
+
+## OBJECTION HANDLING (5-step escalation)
+1. Ignore once (keep vibing)
+2. Offer intangibles (dick rating, voice note)
+3. Gamify: "if u can watch without finishing, next one free 😏"
+4. Add 3-5 extra pics to sweeten deal
+5. Renegotiate (different content for lower price, NEVER just discount)
+NEVER: guilt trip ("don't you want to see me?"), get defensive, beg, over-negotiate
+
+## WINNING CONVERSATION (full flow)
 FAN: hey whats up
 CHATTER: heyyy jake! where r u from? btw my ex was named jake should i be scared 😂
 FAN: haha im from miami
 CHATTER: wait no way i literally just got back from south beach last week
 FAN: oh nice what were you doing there
 CHATTER: ok so dont judge me but i tried paddleboarding and fell in like 3 times lmao
-(Good: personalized opener, location match, humanizing story, natural flow, correct voice)
+FAN: lol thats funny
+CHATTER: shut uppp 😂 what do u do in miami
+FAN: im a trainer
+CHATTER: ok wait thats actually hot... u could probably teach me how to not fall off a paddleboard
+(Opener→Location match→Humanize→Profile→Connection — all natural, correct voice, SHORT messages)
 
-## FAILING EXAMPLE (opener + rushing)
+## FAILING CONVERSATION (common mistakes)
 FAN: hey
 CHATTER: Hey babe! How are you doing today? 😘
 FAN: good u
-CHATTER: I'm great! Thanks for asking! Want to see something special I made just for you? 💕
-(Bad: customer service voice, fake emojis, visible transition, no rapport building, formal grammar)
+CHATTER: I'm great! Thanks for asking! What do you like to do for fun? 😊
+FAN: just chill
+CHATTER: That's cool! I love chilling too! Want to see something special I made just for you? 💕
+(Generic opener, customer service voice, fake emojis, interview question, visible transition, no rapport)
 
-## WINNING EXAMPLE (selling)
+## WINNING SELL (natural)
 CHATTER: i made smth earlier and i literally cant stop thinking about it
 FAN: what is it
 CHATTER: ok so picture this... we just got back from the beach right? and im still in my bikini
 FAN: go on
 CHATTER: and i start taking it off real slow while looking at u... jake i think ud really like this one. totally up to u tho
-(Good: natural sell, scenario-based, uses name, pressure removal, links to conversation)
+(Scenario-based, uses name, pressure removal, natural bridge from conversation)
 
-## FAILING EXAMPLE (selling)
+## FAILING SELL (sales pitch)
 CHATTER: I have an exclusive PPV for you! Only $50! Limited time offer! 🔥
 FAN: idk thats a lot
 CHATTER: Come on babe you won't regret it! I made it just for you! Don't you want to see me? 😘
-(Bad: sales pitch voice, guilt trip, defensive, no scenario, bad pricing for first PPV)
+(Sales pitch voice, guilt trip, too expensive for first PPV, no scenario, wrong emojis)
 
-## YOUR JOB
-For each conversation, evaluate QUALITY dimensions that require reading the actual text:
-- Opener quality (personalized vs generic)
-- Tone/voice (natural girl texting vs customer service)
-- Stage progression (did they follow the funnel or skip stages)
-- Rapport quality (genuine connection vs interview mode)
-- Transition smoothness (invisible vs obvious)
-- Buy signal recognition (did they notice and act on fan interest)
-- Sexting quality (scenario-based vs real-time/generic)
-- Overall conversation energy and engagement
+## YOUR JOB — READ EVERY MESSAGE CAREFULLY
+For each conversation, evaluate ALL of these dimensions:
+
+1. **OPENER QUALITY** — Did they personalize with name + location question + hook? Or generic "hey how are you"?
+2. **LOCATION MATCH** — Did they pretend to be from same area? Use local references? Or skip entirely?
+3. **HUMANIZING** — Did they share a relatable personal story? Or stay impersonal?
+4. **PROFILING METHOD** — Did they use 3-step (ask→react→share)? Or rapid-fire interview mode?
+5. **CONNECTION DEPTH** — Inside jokes, callbacks, commonalities with evidence? Or surface-level "me too"?
+6. **VOICE/TONE** — Natural girl texting (lowercase, abbreviations, unbothered)? Or customer service (formal, emoji spam, complete sentences)?
+7. **TRANSITION** — Invisible 4-step? Or obvious ("want to see something?")?
+8. **SEXTING QUALITY** — Scenario-based story with detail? Or generic "ur making me wet"?
+9. **SELL TECHNIQUE** — Casual, referenced conversation, low first price, pressure removal? Or sales pitch?
+10. **OBJECTION HANDLING** — Followed 5-step? Or guilt tripped/got defensive?
+11. **BUY SIGNALS** — Did fan show interest that chatter missed or capitalized on?
+12. **ENERGY MATCHING** — Did chatter match fan's pace and message length? Or mismatch?
+13. **STAGE SKIPPING** — Which stages were followed vs skipped entirely?
+14. **OVERALL ENGAGEMENT** — Did the conversation feel alive or robotic/templated?
+
+Flag EVERY issue and every strength you find. Be thorough — read the actual words, don't just skim. Quote message snippets as evidence.
 
 Return ONLY valid JSON. No markdown fences.`;
     },
@@ -5502,20 +5559,51 @@ Return JSON with this EXACT structure:
   }
 }
 
-AI EVENT TYPES to detect (quality-based, require reading text):
-CRITICAL: GENERIC_OPENER (generic/formal greeting), BAD_TONE (customer service voice, formal emojis, perfect grammar), MISSED_BUY_SIGNAL (fan showed buying intent, chatter didn't capitalize), VISIBLE_TRANSITION (obvious shift to selling)
-WARNING: DRY_CONVERSATION (robotic, low-effort messages), INTERVIEW_MODE (rapid-fire questions without reacting)
-POSITIVE: GOOD_OPENER (warm, natural, personalized), GOOD_RAPPORT (genuine connection, callbacks, inside jokes), GOOD_TRANSITION (smooth, invisible stage progression), GOOD_TONE (natural voice, correct abbreviations)
+AI EVENT TYPES — flag every one you find:
 
-aiScore: 0-100 based ONLY on conversation quality (tone, rapport, progression, technique). NOT on outcomes like sales.
+CRITICAL (major SOP violations, each one matters):
+- GENERIC_OPENER: generic/formal greeting, no personalization, no name, no location question
+- BAD_TONE: customer service voice, formal emojis (💕🥰😘), perfect grammar, complete sentences, walls of text
+- MISSED_BUY_SIGNAL: fan showed buying intent ("how much", "send me", "show me") but chatter didn't capitalize
+- VISIBLE_TRANSITION: obvious shift to selling ("can I show you something?", "want to have some fun?", "I'm so horny")
+- NO_LOCATION_MATCH: didn't ask where fan is from or pretend to be from same area
+- OBJECTION_FAILURE: guilt tripped, got defensive, begged, or just discounted on objection
+- GF_EXPERIENCE: acting like girlfriend instead of friends-with-benefits (clingy, possessive, "I miss you so much baby")
+
+WARNING (needs improvement):
+- DRY_CONVERSATION: robotic, low-effort messages, "okay", "cool", "haha", one-word replies from chatter
+- INTERVIEW_MODE: rapid-fire questions without reacting to answers, no 3-step method, no sharing about self
+- NO_HUMANIZING: never shared a relatable personal story, stayed impersonal throughout
+- STAGE_SKIP: jumped from opener straight to selling, skipped rapport/connection entirely
+- REAL_TIME_SEXT: generic sexting ("ur making me wet") instead of scenario-based story with detail
+- WEAK_PPV_CAPTION: PPV sent without: pressure removal, convo reference, question, or fan's name
+
+POSITIVE (good SOP execution):
+- GOOD_OPENER: personalized with name + location question + playful hook
+- GOOD_LOCATION_MATCH: pretended to be from same area, used local references
+- GOOD_HUMANIZING: shared relatable funny story with specific details
+- GOOD_RAPPORT: built genuine connection — inside jokes, callbacks, commonalities with evidence
+- GOOD_PROFILING: gathered info naturally using 3-step method
+- GOOD_TRANSITION: invisible escalation, fan didn't see the sell coming
+- GOOD_SCENARIO_SEXT: scenario-based sexting with story structure and detail
+- GOOD_TONE: natural girl texting voice, correct abbreviations, right energy
+- GOOD_OBJECTION_HANDLING: followed the 5-step escalation pattern
+- GOOD_ENERGY_MATCH: matched fan's pace, message length, and tone
+
+aiScore: 0-100 rubric:
+- 90-100: All stages followed perfectly, invisible transitions, great voice, scenario sexting
+- 75-89: Most stages followed, minor issues (could humanize more, slight tone slip)
+- 60-74: Some stages skipped, visible transition OR wrong voice OR generic sexting
+- 40-59: Multiple SOP violations — premature pitch, interview mode, generic opener, customer service tone
+- 0-39: Major failures — guilt tripping, defensive objections, GF experience, spamming, total stage skipping
 
 Tier rules:
 - "top": Most conversations show good technique, natural voice, proper stage progression
-- "at_risk": Majority of conversations have critical issues (generic openers, bad tone, visible transitions)
+- "at_risk": Majority of conversations have critical issues (generic openers, bad tone, visible transitions, stage skipping)
 - "average": Mix of good and bad
 
-Be specific in descriptions — quote actual message snippets as evidence. Keep descriptions under 20 words.
-Coaching feedback should be professional and constructive (managers and chatters read these reports).
+Be THOROUGH — read every message, flag every issue AND every strength. Quote actual message snippets as evidence (e.g. "chatter said 'Hey babe! How are you? 😘' — customer service tone with banned emoji").
+Coaching feedback must be professional and constructive (managers and chatters read these reports).
 Return ONLY valid JSON.`;
 
         return prompt;
@@ -5535,24 +5623,25 @@ Return ONLY valid JSON.`;
 
     compressConversation(msgs, conv) {
         if (!msgs || msgs.length === 0) return '(empty conversation)';
-        // Short conversations: send full text
-        if (msgs.length <= 30) {
+        // Most conversations: send FULL text (AI needs to read everything)
+        if (msgs.length <= 60) {
             return this.formatMessagesForAI(msgs);
         }
-        // Long conversations: first 10 + PPV context (±3 around each PPV) + last 10
-        const first10 = msgs.slice(0, 10);
-        const last10 = msgs.slice(-10);
+        // Very long conversations only: first 20 + PPV context (±5 around each PPV) + last 15
+        const HEAD = 20, TAIL = 15, PPV_CTX = 5;
+        const firstN = msgs.slice(0, HEAD);
+        const lastN = msgs.slice(-TAIL);
 
         const usedIndices = new Set([
-            ...Array.from({ length: Math.min(10, msgs.length) }, (_, i) => i),
-            ...Array.from({ length: Math.min(10, msgs.length) }, (_, i) => msgs.length - 10 + i)
+            ...Array.from({ length: Math.min(HEAD, msgs.length) }, (_, i) => i),
+            ...Array.from({ length: Math.min(TAIL, msgs.length) }, (_, i) => msgs.length - TAIL + i)
         ]);
 
         const ppvContextMsgs = [];
         msgs.forEach((m, i) => {
             if (m.price > 0) {
-                const start = Math.max(0, i - 3);
-                const end = Math.min(msgs.length, i + 4);
+                const start = Math.max(0, i - PPV_CTX);
+                const end = Math.min(msgs.length, i + PPV_CTX + 1);
                 for (let j = start; j < end; j++) {
                     if (!usedIndices.has(j)) {
                         usedIndices.add(j);
@@ -5563,16 +5652,16 @@ Return ONLY valid JSON.`;
         });
         ppvContextMsgs.sort((a, b) => a.idx - b.idx);
 
-        let result = this.formatMessagesForAI(first10);
+        let result = this.formatMessagesForAI(firstN);
         if (ppvContextMsgs.length > 0) {
             const firstPPVIdx = ppvContextMsgs[0].idx;
-            const omittedBefore = firstPPVIdx - 10;
+            const omittedBefore = firstPPVIdx - HEAD;
             if (omittedBefore > 0) result += `\n[... ${omittedBefore} messages omitted ...]\n`;
             result += this.formatMessagesForAI(ppvContextMsgs.map(p => p.msg));
         }
-        const lastOmitted = msgs.length - 10 - (ppvContextMsgs.length > 0 ? ppvContextMsgs[ppvContextMsgs.length - 1].idx + 1 : 10);
+        const lastOmitted = msgs.length - TAIL - (ppvContextMsgs.length > 0 ? ppvContextMsgs[ppvContextMsgs.length - 1].idx + 1 : HEAD);
         if (lastOmitted > 0) result += `\n[... ${lastOmitted} messages omitted ...]\n`;
-        result += this.formatMessagesForAI(last10);
+        result += this.formatMessagesForAI(lastN);
 
         return result;
     },
@@ -6186,8 +6275,8 @@ export const AIChatReportService = {
         const allConvos = await db.aiChatConversations.where('importId').equals(importId).toArray();
         const convoMap = new Map(allConvos.map(c => [c.id, c]));
 
-        const criticalTypes = ['GENERIC_OPENER','BAD_TONE','MISSED_BUY_SIGNAL','VISIBLE_TRANSITION','PREMATURE_PITCH','SLOW_REPLY_SELLING'];
-        const positiveTypes = ['GOOD_OPENER','GOOD_RAPPORT','GOOD_TRANSITION','GOOD_TONE','GOOD_PPV_LOOPING','FAST_RESPONSE','SUCCESSFUL_SALE'];
+        const criticalTypes = ['GENERIC_OPENER','BAD_TONE','MISSED_BUY_SIGNAL','VISIBLE_TRANSITION','NO_LOCATION_MATCH','OBJECTION_FAILURE','GF_EXPERIENCE','PREMATURE_PITCH','SLOW_REPLY_SELLING'];
+        const positiveTypes = ['GOOD_OPENER','GOOD_LOCATION_MATCH','GOOD_HUMANIZING','GOOD_RAPPORT','GOOD_PROFILING','GOOD_TRANSITION','GOOD_SCENARIO_SEXT','GOOD_TONE','GOOD_OBJECTION_HANDLING','GOOD_ENERGY_MATCH','GOOD_PPV_LOOPING','FAST_RESPONSE','SUCCESSFUL_SALE'];
 
         const chatters = [];
         for (const r of reports) {
@@ -6219,12 +6308,16 @@ export const AIChatReportService = {
 
             // Map event types to SOP modules for review recommendations
             const moduleMap = {
-                GENERIC_OPENER: 'Module 1: Openers', BAD_TONE: 'Module 3: Voice & Tone',
-                INTERVIEW_MODE: 'Module 1: Profiling', DRY_CONVERSATION: 'Module 3: Conversation Energy',
+                GENERIC_OPENER: 'Module 1: Openers', NO_LOCATION_MATCH: 'Module 1: Location Match',
+                NO_HUMANIZING: 'Module 1: Humanizing', INTERVIEW_MODE: 'Module 1: Profiling',
+                BAD_TONE: 'Module 3: Voice & Tone', DRY_CONVERSATION: 'Module 3: Conversation Energy',
                 PREMATURE_PITCH: 'Module 5: Transitions', VISIBLE_TRANSITION: 'Module 5: Transitions',
-                MISSED_BUY_SIGNAL: 'Module 4: Finding Opportunities', BAD_PRICING: 'Module 9: Pricing',
-                SLOW_REPLY_SELLING: 'Module 12: Reply Speed', NO_AFTERCARE: 'Module 7: Aftercare',
-                NO_FOLLOWUP: 'Module 3: Following Up', SPAMMING: 'Module 3: Forbidden Behaviors'
+                STAGE_SKIP: 'Module 5: Stage Progression', REAL_TIME_SEXT: 'Module 6: Sexting',
+                WEAK_PPV_CAPTION: 'Module 7: PPV Captions', NO_AFTERCARE: 'Module 7: Aftercare',
+                OBJECTION_FAILURE: 'Module 8: Objection Handling', BAD_PRICING: 'Module 9: Pricing',
+                GF_EXPERIENCE: 'Module 2: Connection', MISSED_BUY_SIGNAL: 'Module 4: Finding Opportunities',
+                SLOW_REPLY_SELLING: 'Module 12: Reply Speed', NO_FOLLOWUP: 'Module 3: Following Up',
+                SPAMMING: 'Module 3: Forbidden Behaviors'
             };
             const reviewModules = [...new Set(
                 topEvents.filter(e => e.severity !== 'positive' && moduleMap[e.type])
