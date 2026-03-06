@@ -2,6 +2,20 @@ import { db } from '../db/db.js';
 import { generateId } from '../db/generateId.js';
 import { subDays, isAfter, startOfDay, differenceInDays } from 'date-fns';
 
+// Pending-delete guard: prevents CloudSync pull from re-adding records
+// that were deleted locally while a pull was in-flight
+const _pendingDeletes = new Map(); // table -> Set<id>
+const _pendingClears = new Set();  // tables fully cleared by user
+
+export function markPendingDelete(table, id) {
+    if (!_pendingDeletes.has(table)) _pendingDeletes.set(table, new Set());
+    _pendingDeletes.get(table).add(id);
+}
+
+export function markPendingClear(table) {
+    _pendingClears.add(table);
+}
+
 const fetchWithTimeout = async (url, options = {}, timeoutMs = 5000) => {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeoutMs);
@@ -2380,6 +2394,19 @@ export const CloudSyncService = {
                     }
                     return remote;
                 });
+            }
+
+            // Respect pending deletes/clears from concurrent user actions (OFConfig)
+            if (_pendingClears.has(table)) {
+                _pendingClears.delete(table);
+                _pendingDeletes.delete(table);
+                console.log(`[CloudSync] Skipped pull for ${table} — user cleared it`);
+                continue;
+            }
+            const pendingDel = _pendingDeletes.get(table);
+            if (pendingDel && pendingDel.size > 0) {
+                cloudData = cloudData.filter(r => !pendingDel.has(r.id));
+                _pendingDeletes.delete(table);
             }
 
             // Merge: upsert cloud data without clearing local

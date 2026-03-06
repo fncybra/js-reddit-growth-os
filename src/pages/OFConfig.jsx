@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { db } from '../db/db';
 import { generateId } from '../db/generateId';
-import { OFVAPatternService } from '../services/growthEngine';
+import { OFVAPatternService, markPendingDelete, markPendingClear } from '../services/growthEngine';
 import { useLiveQuery } from 'dexie-react-hooks';
 
 export function OFConfig() {
@@ -67,18 +67,21 @@ export function OFConfig() {
     };
     const deleteModel = async (id) => {
         if (!confirm('Delete this model?')) return;
-        await cloudDelete('ofModels', id);
+        markPendingDelete('ofModels', id);
         await db.ofModels.delete(id);
+        await cloudDelete('ofModels', id);
     };
     const deleteVA = async (id) => {
         if (!confirm('Delete this VA?')) return;
-        await cloudDelete('ofVas', id);
+        markPendingDelete('ofVas', id);
         await db.ofVas.delete(id);
+        await cloudDelete('ofVas', id);
     };
     const deleteLink = async (id) => {
         if (!confirm('Delete this link?')) return;
-        await cloudDelete('ofTrackingLinks', id);
+        markPendingDelete('ofTrackingLinks', id);
         await db.ofTrackingLinks.delete(id);
+        await cloudDelete('ofTrackingLinks', id);
     };
 
     const assignVA = async (snap, vaId) => {
@@ -102,13 +105,17 @@ export function OFConfig() {
     const clearAllConfig = async () => {
         if (!confirm('Clear ALL models, VAs, and tracking links? This cannot be undone.')) return;
         try {
-            const { getSupabaseClient } = await import('../db/supabase');
-            const supabase = await getSupabaseClient();
-            // Clear local
+            // Mark pending clears so in-flight sync pulls don't re-add
+            markPendingClear('ofModels');
+            markPendingClear('ofVas');
+            markPendingClear('ofTrackingLinks');
+            // Clear local first (instant UI)
             await db.ofModels.clear();
             await db.ofVas.clear();
             await db.ofTrackingLinks.clear();
             // Clear cloud
+            const { getSupabaseClient } = await import('../db/supabase');
+            const supabase = await getSupabaseClient();
             if (supabase) {
                 await supabase.from('ofTrackingLinks').delete().neq('id', 0);
                 await supabase.from('ofVas').delete().neq('id', 0);
