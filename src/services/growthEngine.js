@@ -6404,6 +6404,9 @@ Return ONLY valid JSON.`;
 };
 
 
+const AI_CRITICAL_TYPES = ['GENERIC_OPENER','BAD_TONE','MISSED_BUY_SIGNAL','VISIBLE_TRANSITION','NO_LOCATION_MATCH','OBJECTION_FAILURE','GF_EXPERIENCE','SOLD_TOO_EARLY','SLOW_REPLY_SELLING'];
+const AI_POSITIVE_TYPES = ['GOOD_OPENER','GOOD_LOCATION_MATCH','GOOD_HUMANIZING','GOOD_RAPPORT','GOOD_PROFILING','GOOD_TRANSITION','GOOD_SCENARIO_SEXT','GOOD_TONE','GOOD_OBJECTION_HANDLING','GOOD_ENERGY_MATCH','GOOD_PPV_LOOPING','FAST_RESPONSE','SUCCESSFUL_SALE'];
+
 export const AIChatReportService = {
     async getLeaderboard(importId) {
         const reports = await db.aiChatterReports.where('importId').equals(importId).toArray();
@@ -6416,15 +6419,12 @@ export const AIChatReportService = {
         const allConvos = await db.aiChatConversations.where('importId').equals(importId).toArray();
         const convoMap = new Map(allConvos.map(c => [c.id, c]));
 
-        const criticalTypes = ['GENERIC_OPENER','BAD_TONE','MISSED_BUY_SIGNAL','VISIBLE_TRANSITION','NO_LOCATION_MATCH','OBJECTION_FAILURE','GF_EXPERIENCE','SOLD_TOO_EARLY','SLOW_REPLY_SELLING'];
-        const positiveTypes = ['GOOD_OPENER','GOOD_LOCATION_MATCH','GOOD_HUMANIZING','GOOD_RAPPORT','GOOD_PROFILING','GOOD_TRANSITION','GOOD_SCENARIO_SEXT','GOOD_TONE','GOOD_OBJECTION_HANDLING','GOOD_ENERGY_MATCH','GOOD_PPV_LOOPING','FAST_RESPONSE','SUCCESSFUL_SALE'];
-
         const chatters = [];
         for (const r of reports) {
             const ec = typeof r.eventCounts === 'string' ? JSON.parse(r.eventCounts || '{}') : (r.eventCounts || {});
             const topEvents = Object.entries(ec).filter(([,v]) => v > 0).map(([type, count]) => ({
                 type, count,
-                severity: criticalTypes.includes(type) ? 'critical' : positiveTypes.includes(type) ? 'positive' : 'warning'
+                severity: AI_CRITICAL_TYPES.includes(type) ? 'critical' : AI_POSITIVE_TYPES.includes(type) ? 'positive' : 'warning'
             })).sort((a, b) => b.count - a.count);
 
             // Pull real examples: find grades for this chatter with events
@@ -6438,7 +6438,7 @@ export const AIChatReportService = {
                     if (realExamples.length >= 8) break;
                     realExamples.push({
                         type: evt.type,
-                        severity: criticalTypes.includes(evt.type) ? 'critical' : positiveTypes.includes(evt.type) ? 'positive' : 'warning',
+                        severity: AI_CRITICAL_TYPES.includes(evt.type) ? 'critical' : AI_POSITIVE_TYPES.includes(evt.type) ? 'positive' : 'warning',
                         description: evt.description || '',
                         fanName,
                         messageIndex: evt.messageIndex
@@ -6492,8 +6492,8 @@ export const AIChatReportService = {
         const totalConversations = chatters.reduce((s, c) => s + c.conversationCount, 0);
         const avgConversion = chatters.length > 0 ? chatters.reduce((s, c) => s + c.conversionRate, 0) / chatters.length : 0;
 
-        // Needs attention: median-based flagging
-        const needsAttention = this.computeNeedsAttention(chatters);
+        // Needs attention: cross-import trend analysis
+        const needsAttention = await this.computeNeedsAttention(chatters, importId);
 
         return {
             importId, importDate: imp?.importDate,
@@ -6503,14 +6503,101 @@ export const AIChatReportService = {
         };
     },
 
-    computeNeedsAttention(chatters) {
+    async computeNeedsAttention(chatters, currentImportId) {
+        const results = [];
+
+        // Get last 5 imports sorted by date (most recent first)
+        const allImports = await db.aiChatImports.orderBy('importDate').reverse().limit(5).toArray();
+        const importIds = allImports.map(i => i.id);
+        const importIdxMap = new Map(importIds.map((id, idx) => [id, idx]));
+
+        // Load only reports from recent imports (indexed query, not full table scan)
+        const chatterIdSet = new Set(chatters.map(c => c.chatterId));
+        const recentReports = await db.aiChatterReports.where('importId').anyOf(importIds).toArray();
+        const historyMap = new Map();
+        for (const r of recentReports) {
+            if (!chatterIdSet.has(r.chatterId)) continue;
+            const idx = importIdxMap.get(r.importId);
+            if (idx == null) continue;
+            if (!historyMap.has(r.chatterId)) historyMap.set(r.chatterId, []);
+            const ec = typeof r.eventCounts === 'string' ? JSON.parse(r.eventCounts || '{}') : (r.eventCounts || {});
+            historyMap.get(r.chatterId).push({ importId: r.importId, avgSopScore: r.avgSopScore, tier: r.tier, eventCounts: ec, importIdx: idx });
+        }
+
+        // Median threshold for single-import flagging
         const withScores = chatters.filter(c => c.avgSopScore != null);
-        if (withScores.length < 3) return [];
-        const sorted = [...withScores].sort((a, b) => a.avgSopScore - b.avgSopScore);
-        const median = sorted[Math.floor(sorted.length / 2)].avgSopScore;
-        const threshold = Math.max(Math.floor(median * 0.6), 30);
-        return chatters.filter(c => c.avgSopScore != null && c.avgSopScore < threshold)
-            .map(c => ({ name: c.name, score: c.avgSopScore, reason: `SOP score ${c.avgSopScore?.toFixed(0)} below threshold ${threshold}` }));
+        let medianThreshold = 30;
+        if (withScores.length >= 3) {
+            const sorted = [...withScores].sort((a, b) => a.avgSopScore - b.avgSopScore);
+            const median = sorted[Math.floor(sorted.length / 2)].avgSopScore;
+            medianThreshold = Math.max(Math.floor(median * 0.6), 30);
+        }
+
+        for (const c of chatters) {
+            if (c.avgSopScore == null) continue;
+            const reasons = [];
+            const history = (historyMap.get(c.chatterId) || []).sort((a, b) => a.importIdx - b.importIdx);
+
+            if (history.length >= 2) {
+                // 1. Score trend: declining or stuck
+                const scores = history.map(h => h.avgSopScore).filter(s => s != null);
+                if (scores.length >= 2) {
+                    const latest = scores[scores.length - 1];
+                    const previous = scores[scores.length - 2];
+                    const diff = latest - previous;
+                    if (diff < -5) {
+                        reasons.push({ type: 'declining', text: `Score dropped ${Math.abs(diff).toFixed(0)} pts (${previous.toFixed(0)} \u2192 ${latest.toFixed(0)})` });
+                    } else if (scores.length >= 3 && scores.slice(-3).every(s => s < 50)) {
+                        reasons.push({ type: 'stuck', text: `Score stuck below 50 for ${scores.length} imports` });
+                    }
+                }
+
+                // 2. Repeat critical events across consecutive imports
+                const prevEc = history[history.length - 2]?.eventCounts || {};
+                const currEc = c.eventCounts || {};
+                const repeats = AI_CRITICAL_TYPES.filter(t => (prevEc[t] || 0) > 0 && (currEc[t] || 0) > 0);
+                if (repeats.length > 0) {
+                    const labels = repeats.map(t => t.replace(/_/g, ' ').toLowerCase()).slice(0, 3);
+                    reasons.push({ type: 'repeat', text: `Repeat issues: ${labels.join(', ')}` });
+                }
+
+                // 3. Consistently at-risk tier
+                const recentTiers = history.slice(-3).map(h => h.tier);
+                if (recentTiers.every(t => t === 'at_risk')) {
+                    reasons.push({ type: 'at_risk', text: `At-risk tier for ${recentTiers.length} consecutive imports` });
+                }
+            }
+
+            // 4. Below median (fallback for single-import)
+            if (c.avgSopScore < medianThreshold && reasons.length === 0) {
+                reasons.push({ type: 'low_score', text: `SOP score ${c.avgSopScore.toFixed(0)} below team threshold ${medianThreshold}` });
+            }
+
+            if (reasons.length > 0) {
+                const scores = history.length >= 2 ? history.map(h => h.avgSopScore).filter(s => s != null) : [];
+                let trend = 'flat';
+                if (scores.length >= 2) {
+                    const diff = scores[scores.length - 1] - scores[scores.length - 2];
+                    trend = diff > 5 ? 'improving' : diff < -5 ? 'declining' : 'flat';
+                }
+                results.push({
+                    name: c.name, chatterId: c.chatterId, score: c.avgSopScore, tier: c.tier, trend,
+                    reason: reasons.map(r => r.text).join(' \u00B7 '),
+                    reasons,
+                    importCount: history.length
+                });
+            }
+        }
+
+        // Sort: declining first, then repeat offenders, then low scores
+        const priority = { declining: 0, repeat: 1, stuck: 2, at_risk: 3, low_score: 4 };
+        results.sort((a, b) => {
+            const aPri = Math.min(...a.reasons.map(r => priority[r.type] ?? 99));
+            const bPri = Math.min(...b.reasons.map(r => priority[r.type] ?? 99));
+            return aPri - bPri || a.score - b.score;
+        });
+
+        return results;
     },
 
     async getImportDates() {

@@ -179,8 +179,19 @@ export function AIChatLeaderboard() {
                                     Needs Attention ({leaderboard.needsAttention.length})
                                 </h3>
                                 {leaderboard.needsAttention.map((c, i) => (
-                                    <div key={i} style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', padding: '4px 0' }}>
-                                        <strong>{c.name}</strong>: {c.reason}
+                                    <div key={i} style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', padding: '6px 0', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                                        <span style={{ fontSize: '1rem', flexShrink: 0 }}>
+                                            {c.trend === 'declining' ? '\u2198' : c.trend === 'improving' ? '\u2197' : '\u2192'}
+                                        </span>
+                                        <div>
+                                            <strong>{c.name}</strong>
+                                            <span style={{ marginLeft: '6px', color: 'var(--text-tertiary)', fontSize: '0.8rem' }}>
+                                                SOP {c.score?.toFixed(0)}{c.importCount > 1 ? ` \u00B7 ${c.importCount} imports tracked` : ''}
+                                            </span>
+                                            <div style={{ marginTop: '2px', color: c.trend === 'declining' ? 'var(--status-error)' : 'var(--text-secondary)' }}>
+                                                {c.reason}
+                                            </div>
+                                        </div>
                                     </div>
                                 ))}
                             </div>
