@@ -3474,12 +3474,13 @@ export const AirtableService = {
         return { apiKey, baseId, tableName };
     },
 
-    async _fetchPaginated(baseId, tableName, apiKey) {
+    async _fetchPaginated(baseId, tableName, apiKey, filterByFormula) {
         const allRecords = [];
         let offset = null;
         do {
             const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`);
             url.searchParams.set('pageSize', '100');
+            if (filterByFormula) url.searchParams.set('filterByFormula', filterByFormula);
             if (offset) url.searchParams.set('offset', offset);
 
             const res = await fetch(url.toString(), {
@@ -3528,6 +3529,35 @@ export const AirtableService = {
         this._cache = accounts;
         this._cacheTime = Date.now();
         return accounts;
+    },
+
+    async fetchActiveAccounts() {
+        const { apiKey, baseId, tableName } = await this._getConfig();
+        const filter = "OR({Status}='Active',{Status}='Warm Up',{Status}='Setting Up')";
+        const records = await this._fetchPaginated(baseId, tableName, apiKey, filter);
+        return records.map(r => {
+            const f = r.fields || {};
+            return {
+                id: r.id,
+                username: f['Username'] || '',
+                model: f['Model'] || '',
+                status: f['Status'] || '',
+                followers: Number(f['Followers']) || 0,
+                daysSinceCreation: Number(f['Days Since Creation']) || 0,
+                device: f['Device'] || [],
+                password: f['Password'] || '',
+                twoFA: f['2FA'] || '',
+                vpnLocation: f['VPN Location'] || '',
+                provider: f['Provider'] || '',
+                loginDate: f['Login Date'] || '',
+                daysSinceLogin: Number(f['Days Since Login']) || 0,
+                linkInBio: f['Link in Bio'] || '',
+                threadCount: Number(f['Thread Count']) || 0,
+                lastPostDate: f['Last Post Date'] || '',
+                creationDate: f['Creation Date'] || '',
+                openThreadsUrl: f['Open Threads'] || '',
+            };
+        });
     },
 
     async fetchDevices(forceRefresh = false) {
@@ -3757,14 +3787,9 @@ export const ThreadsPatrolService = {
             throw new Error('DAILY_LIMIT');
         }
 
-        const accounts = await AirtableService.fetchAllAccounts(true);
+        const toCheck = await AirtableService.fetchActiveAccounts();
         const proxyUrl = await SettingsService.getProxyUrl();
         if (!proxyUrl) throw new Error('Proxy URL not configured. Set it in Settings.');
-
-        // Include Suspended — might come back alive
-        const toCheck = accounts.filter(a =>
-            a.status === 'Active' || a.status === 'Warm Up' || a.status === 'Setting Up' || a.status === 'Suspended'
-        );
 
         const results = { alive: 0, dead: 0, errors: 0, rateLimited: 0, updated: [] };
         const updates = [];
@@ -3805,14 +3830,7 @@ export const ThreadsPatrolService = {
                 } else {
                     // Alive — update metrics
                     if (data.followerCount !== undefined) fields['Followers'] = data.followerCount;
-                    if (data.threadCount !== undefined) fields['Thread Count'] = data.threadCount;
                     results.alive++;
-
-                    // Revive suspended accounts that are actually alive
-                    if (acc.status === 'Suspended') {
-                        fields['Status'] = 'Active';
-                        results.updated.push({ username: acc.username, prevStatus: 'Suspended', newStatus: 'Active' });
-                    }
                 }
 
                 if (Object.keys(fields).length > 0) {
