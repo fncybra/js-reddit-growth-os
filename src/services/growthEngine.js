@@ -4466,36 +4466,23 @@ export const OFImportService = {
                 const profit = this.parseAmount(row['Profit']);
                 const lastUpdated = String(row['Last updated'] || '').trim() || null;
 
-                const category = OFVAPatternService.classifySource(label);
-                const vaName = category === 'va' ? OFVAPatternService.matchVA(label) : null;
-                let vaId = null;
-
-                if (vaName) {
-                    let va = await db.ofVas.where('name').equalsIgnoreCase(vaName).first();
-                    if (!va) {
-                        vaId = generateId();
-                        va = { id: vaId, name: vaName, active: 1 };
-                        await db.ofVas.add(va);
-                    } else {
-                        vaId = va.id;
-                    }
-                }
-
-                if (category === 'unknown') {
-                    unmappedLabels.push({ label, model: model.name, category });
-                }
-
                 const platform = OFVAPatternService.detectPlatform(label, source);
 
-                // Auto-create tracking link if VA-owned
-                if (vaId) {
-                    const existingLink = await db.ofTrackingLinks
-                        .where('label').equals(label).and(r => r.ofModelId === modelId).first();
-                    if (!existingLink) {
-                        await db.ofTrackingLinks.add({
-                            id: generateId(), label, ofModelId: modelId, ofVaId: vaId, platform
-                        });
-                    }
+                // Check if this link was manually assigned in config
+                const existingLink = await db.ofTrackingLinks
+                    .where('label').equals(label).and(r => r.ofModelId === modelId).first();
+
+                let vaId = null;
+                let category;
+
+                if (existingLink && existingLink.ofVaId && existingLink.ofVaId > 0) {
+                    // Link was manually assigned to a VA — use that
+                    vaId = existingLink.ofVaId;
+                    category = 'va';
+                } else {
+                    // Not assigned — classify source for reporting but don't auto-create anything
+                    category = OFVAPatternService.classifySource(label);
+                    unmappedLabels.push({ label, model: model.name, category });
                 }
 
                 // Insert link snapshot (check for dupe within same import)
@@ -4542,12 +4529,14 @@ export const OFImportService = {
                 modelEarnings += earningsDelta; modelCumEarnings += earningsCumulative;
                 totalNewSubs += subsDelta; totalEarningsDelta += earningsDelta;
 
-                // VA breakdown
-                if (category === 'va' && vaName) {
-                    const existing = vaSubsMap.get(vaName) || { subs: 0, cumSubs: 0, earnings: 0, cumEarnings: 0, vaId };
+                // VA breakdown (only for manually assigned links)
+                if (category === 'va' && vaId) {
+                    const va = await db.ofVas.get(vaId);
+                    const vaLabel = va?.name || 'Unknown VA';
+                    const existing = vaSubsMap.get(vaLabel) || { subs: 0, cumSubs: 0, earnings: 0, cumEarnings: 0, vaId };
                     existing.subs += subsDelta; existing.cumSubs += subsCumulative;
                     existing.earnings += earningsDelta; existing.cumEarnings += earningsCumulative;
-                    vaSubsMap.set(vaName, existing);
+                    vaSubsMap.set(vaLabel, existing);
                 }
 
                 // Non-VA category totals
