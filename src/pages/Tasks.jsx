@@ -54,13 +54,24 @@ export function Tasks() {
             const datedRows = rows.filter(r => !!r.date);
             if (datedRows.length === 0) return { queueDate: null, tasks: rows };
 
-            const latestDate = datedRows
-                .map(r => r.date)
-                .sort((a, b) => (a > b ? -1 : a < b ? 1 : 0))[0];
+            // Find latest date that still has open (non-closed) tasks
+            const uniqueDates = [...new Set(datedRows.map(r => r.date))].sort((a, b) => (a > b ? -1 : 1));
+            let latestDate = uniqueDates[0];
+            for (const d of uniqueDates) {
+                const dateTasks = rows.filter(r => r.date === d);
+                if (dateTasks.some(t => t.status !== 'closed')) {
+                    latestDate = d;
+                    break;
+                }
+            }
+
+            // Show non-closed tasks from that date (closed tasks are history)
+            const dateTasks = rows.filter(r => !r.date || r.date === latestDate);
+            const openTasks = dateTasks.filter(t => t.status !== 'closed');
 
             return {
                 queueDate: latestDate,
-                tasks: rows.filter(r => !r.date || r.date === latestDate)
+                tasks: openTasks.length > 0 ? openTasks : dateTasks
             };
         },
         [activeModelId]
