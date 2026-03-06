@@ -5683,6 +5683,7 @@ CRITICAL (major SOP violations, each one matters):
 - NO_LOCATION_MATCH: didn't ask where fan is from or pretend to be from same area
 - OBJECTION_FAILURE: guilt tripped, got defensive, begged, or just discounted on objection
 - GF_EXPERIENCE: acting like girlfriend instead of friends-with-benefits (clingy, possessive, "I miss you so much baby")
+- SOLD_TOO_EARLY: dropped PPV before building enough rapport — didn't vibe long enough before pitching
 
 WARNING (needs improvement):
 - DRY_CONVERSATION: robotic, low-effort messages, "okay", "cool", "haha", one-word replies from chatter
@@ -5796,24 +5797,24 @@ Return ONLY valid JSON.`;
         const ppvPurchased = ppvMsgs.filter(m => m.purchased);
         const ppvNotPurchased = ppvMsgs.filter(m => !m.purchased);
 
-        // PREMATURE_PITCH: First PPV before message #20 in a longer conversation
+        // SOLD_TOO_EARLY: First PPV before message #30 in a longer conversation
         if (ppvMsgs.length > 0) {
             const firstPPVIdx = msgs.indexOf(ppvMsgs[0]);
-            if (firstPPVIdx < 20 && msgs.length > 25) {
+            if (firstPPVIdx < 30 && msgs.length > 35) {
                 events.push({
-                    type: 'PREMATURE_PITCH', severity: 'critical',
+                    type: 'SOLD_TOO_EARLY', severity: 'critical',
                     messageIndex: firstPPVIdx,
-                    description: `PPV at msg #${firstPPVIdx + 1} of ${msgs.length} — too early`
+                    description: `Dropped PPV at msg #${firstPPVIdx + 1} of ${msgs.length} — didn't build enough rapport first`
                 });
             }
         }
 
-        // BAD_PRICING: First PPV > $30
-        if (ppvMsgs.length > 0 && ppvMsgs[0].price > 30) {
+        // BAD_PRICING: First PPV > $20
+        if (ppvMsgs.length > 0 && ppvMsgs[0].price > 20) {
             events.push({
                 type: 'BAD_PRICING', severity: 'warning',
                 messageIndex: msgs.indexOf(ppvMsgs[0]),
-                description: `First PPV $${ppvMsgs[0].price} — start under $25`
+                description: `First PPV $${ppvMsgs[0].price} — start under $20 to get the first buy`
             });
         }
 
@@ -5917,6 +5918,32 @@ Return ONLY valid JSON.`;
                 messageIndex: msgs.length - 1,
                 description: 'Last message from fan — left on read'
             });
+        }
+
+        // --- MISSED BUY SIGNAL detection (keyword scan on fan messages) ---
+        const buyPhrases = [
+            'how much', 'whats the price', 'what the price', 'send me', 'show me more',
+            'i want to see', 'can i buy', 'let me see', 'i want that', 'send it',
+            'ill pay', 'take my money', 'sign me up', 'im interested', 'how do i get',
+            'i need that', 'can u send', 'i want more', 'give me more', 'what else u got',
+            'show me', 'send more', 'i wanna see', 'lemme see', 'how much for'
+        ];
+        for (let i = 0; i < msgs.length; i++) {
+            if (msgs[i].sender !== 'fan') continue;
+            const text = (msgs[i].content || '').toLowerCase();
+            const matchedPhrase = buyPhrases.find(p => text.includes(p));
+            if (!matchedPhrase) continue;
+
+            // Check if chatter sent PPV within the next 4 messages
+            const nextMsgs = msgs.slice(i + 1, i + 5);
+            const sentPPV = nextMsgs.some(m => m.sender === 'chatter' && m.price > 0);
+            if (!sentPPV) {
+                events.push({
+                    type: 'MISSED_BUY_SIGNAL', severity: 'critical',
+                    messageIndex: i,
+                    description: `Fan said "${matchedPhrase}" but chatter didn't send PPV within next 4 messages — money left on the table`
+                });
+            }
         }
 
         // --- COMPUTE RULE SCORE ---
@@ -6340,7 +6367,7 @@ Return ONLY valid JSON.`;
                 if (ec.FAST_RESPONSE > 0) strengths.push('Fast response times');
                 if (ec.SUCCESSFUL_SALE > 0) strengths.push(`${ec.SUCCESSFUL_SALE} successful sales`);
                 if (conversionRate >= 0.2) strengths.push(`Strong ${(conversionRate * 100).toFixed(0)}% conversion`);
-                if (ec.PREMATURE_PITCH > 0) weaknesses.push(`Premature pitching in ${ec.PREMATURE_PITCH} conversations`);
+                if (ec.SOLD_TOO_EARLY > 0) weaknesses.push(`Sold too early in ${ec.SOLD_TOO_EARLY} conversations — needs more rapport before PPV`);
                 if (ec.SLOW_REPLY_SELLING > 0) weaknesses.push('Slow replies during selling');
                 if (ec.NO_AFTERCARE > 0) weaknesses.push(`No aftercare after ${ec.NO_AFTERCARE} purchases`);
                 if (ec.NO_FOLLOWUP > 0) weaknesses.push(`${ec.NO_FOLLOWUP} conversations left on read`);
@@ -6389,7 +6416,7 @@ export const AIChatReportService = {
         const allConvos = await db.aiChatConversations.where('importId').equals(importId).toArray();
         const convoMap = new Map(allConvos.map(c => [c.id, c]));
 
-        const criticalTypes = ['GENERIC_OPENER','BAD_TONE','MISSED_BUY_SIGNAL','VISIBLE_TRANSITION','NO_LOCATION_MATCH','OBJECTION_FAILURE','GF_EXPERIENCE','PREMATURE_PITCH','SLOW_REPLY_SELLING'];
+        const criticalTypes = ['GENERIC_OPENER','BAD_TONE','MISSED_BUY_SIGNAL','VISIBLE_TRANSITION','NO_LOCATION_MATCH','OBJECTION_FAILURE','GF_EXPERIENCE','SOLD_TOO_EARLY','SLOW_REPLY_SELLING'];
         const positiveTypes = ['GOOD_OPENER','GOOD_LOCATION_MATCH','GOOD_HUMANIZING','GOOD_RAPPORT','GOOD_PROFILING','GOOD_TRANSITION','GOOD_SCENARIO_SEXT','GOOD_TONE','GOOD_OBJECTION_HANDLING','GOOD_ENERGY_MATCH','GOOD_PPV_LOOPING','FAST_RESPONSE','SUCCESSFUL_SALE'];
 
         const chatters = [];
@@ -6425,7 +6452,7 @@ export const AIChatReportService = {
                 GENERIC_OPENER: 'Module 1: Openers', NO_LOCATION_MATCH: 'Module 1: Location Match',
                 NO_HUMANIZING: 'Module 1: Humanizing', INTERVIEW_MODE: 'Module 1: Profiling',
                 BAD_TONE: 'Module 3: Voice & Tone', DRY_CONVERSATION: 'Module 3: Conversation Energy',
-                PREMATURE_PITCH: 'Module 5: Transitions', VISIBLE_TRANSITION: 'Module 5: Transitions',
+                SOLD_TOO_EARLY: 'Module 5: Transitions', VISIBLE_TRANSITION: 'Module 5: Transitions',
                 STAGE_SKIP: 'Module 5: Stage Progression', REAL_TIME_SEXT: 'Module 6: Sexting',
                 WEAK_PPV_CAPTION: 'Module 7: PPV Captions', NO_AFTERCARE: 'Module 7: Aftercare',
                 OBJECTION_FAILURE: 'Module 8: Objection Handling', BAD_PRICING: 'Module 9: Pricing',
