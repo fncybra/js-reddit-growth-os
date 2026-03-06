@@ -74,14 +74,22 @@ const vaResponsiveCss = `
         gap: 12px;
     }
 
+    .va-header-left {
+        flex-direction: column;
+        gap: 8px;
+    }
+
     .va-header-left select {
         width: 100%;
         min-width: 0;
+        min-height: 44px;
+        font-size: 1rem;
     }
 
     .va-header-stats {
         justify-content: space-between;
         gap: 8px;
+        flex-wrap: wrap;
     }
 
     .va-main {
