@@ -158,6 +158,34 @@ db.version(17).stores({
     aiChatterReports: '++id, importId, chatterId'
 });
 
+// v18: Threads patrol daily snapshots for growth tracking
+db.version(18).stores({
+    models: '++id, name, status, driveFolderId, usedFolderId, redgifsProfile, proxyInfo, vaPin',
+    accounts: '++id, modelId, handle, status, proxyInfo, phase',
+    subreddits: '++id, modelId, name, status, lastTestedDate',
+    assets: '++id, modelId, assetType, approved, lastUsedDate, driveFileId, externalUrl',
+    tasks: '++id, date, modelId, accountId, subredditId, assetId, status, redditPostId, taskType',
+    performances: '++id, taskId',
+    settings: '++id, key',
+    verifications: '++id, accountId, subredditId',
+    dailySnapshots: '++id, date',
+    competitors: '++id, modelId, handle',
+    ofModels: '++id, name, ofUsername, active',
+    ofVas: '++id, name, active',
+    ofTrackingLinks: '++id, label, ofModelId, ofVaId, platform',
+    ofBulkImports: '++id, importDate, filename',
+    ofLinkSnapshots: '++id, importId, ofModelId, ofVaId, label, sourceCategory',
+    ofDailyStats: '++id, statDate, ofModelId, ofVaId',
+    aiChatImports: '++id, importDate, filename',
+    aiChatters: '++id, &name',
+    aiChatModels: '++id, &name',
+    aiChatConversations: '++id, importId, chatterId, modelId, fanUserId',
+    aiChatMessages: '++id, conversationId, sender, timestamp',
+    aiChatGrades: '++id, importId, conversationId, chatterId',
+    aiChatterReports: '++id, importId, chatterId',
+    threadsSnapshots: '++id, [username+date], username, date'
+});
+
 // Seed default settings if empty
 db.on('populate', async () => {
     await db.settings.bulkAdd([

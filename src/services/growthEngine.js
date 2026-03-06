@@ -2064,7 +2064,7 @@ export const CloudSyncService = {
         const supabase = await getSupabaseClient();
         if (!supabase) return;
 
-        const allTables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'settings', 'verifications', 'dailySnapshots', 'competitors', 'ofModels', 'ofVas', 'ofTrackingLinks', 'ofBulkImports', 'ofLinkSnapshots', 'ofDailyStats', 'aiChatImports', 'aiChatters', 'aiChatModels', 'aiChatConversations', 'aiChatMessages', 'aiChatGrades', 'aiChatterReports'];
+        const allTables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'settings', 'verifications', 'dailySnapshots', 'competitors', 'ofModels', 'ofVas', 'ofTrackingLinks', 'ofBulkImports', 'ofLinkSnapshots', 'ofDailyStats', 'aiChatImports', 'aiChatters', 'aiChatModels', 'aiChatConversations', 'aiChatMessages', 'aiChatGrades', 'aiChatterReports', 'threadsSnapshots'];
         const tables = onlyTables || allTables;
         const TASK_STATUS_RANK = { 'generated': 1, 'failed': 2, 'closed': 3 };
 
@@ -2219,7 +2219,7 @@ export const CloudSyncService = {
         const supabase = await getSupabaseClient();
         if (!supabase) return;
 
-        const tables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'settings', 'verifications', 'dailySnapshots', 'competitors', 'ofModels', 'ofVas', 'ofTrackingLinks', 'ofBulkImports', 'ofLinkSnapshots', 'ofDailyStats', 'aiChatImports', 'aiChatters', 'aiChatModels', 'aiChatConversations', 'aiChatMessages', 'aiChatGrades', 'aiChatterReports'];
+        const tables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'settings', 'verifications', 'dailySnapshots', 'competitors', 'ofModels', 'ofVas', 'ofTrackingLinks', 'ofBulkImports', 'ofLinkSnapshots', 'ofDailyStats', 'aiChatImports', 'aiChatters', 'aiChatModels', 'aiChatConversations', 'aiChatMessages', 'aiChatGrades', 'aiChatterReports', 'threadsSnapshots'];
         const fetched = {};
 
         // Phase 1: fetch every table first; skip tables that don't exist in cloud yet
@@ -2439,7 +2439,7 @@ export const CloudSyncService = {
         const supabase = await getSupabaseClient();
         if (!supabase) return;
 
-        const tables = ['aiChatterReports', 'aiChatGrades', 'aiChatMessages', 'aiChatConversations', 'aiChatModels', 'aiChatters', 'aiChatImports', 'ofDailyStats', 'ofLinkSnapshots', 'ofTrackingLinks', 'ofBulkImports', 'ofVas', 'ofModels', 'verifications', 'dailySnapshots', 'competitors', 'performances', 'tasks', 'assets', 'subreddits', 'accounts', 'models', 'settings'];
+        const tables = ['threadsSnapshots', 'aiChatterReports', 'aiChatGrades', 'aiChatMessages', 'aiChatConversations', 'aiChatModels', 'aiChatters', 'aiChatImports', 'ofDailyStats', 'ofLinkSnapshots', 'ofTrackingLinks', 'ofBulkImports', 'ofVas', 'ofModels', 'verifications', 'dailySnapshots', 'competitors', 'performances', 'tasks', 'assets', 'subreddits', 'accounts', 'models', 'settings'];
         for (const table of tables) {
             const { error } = await supabase.from(table).delete().neq('id', -1);
             if (error) {
@@ -3690,6 +3690,23 @@ export const AirtableService = {
 // ─── Threads Health Patrol ────────────────────────────────────────────────────
 // Bulk-checks all active/warmup accounts via proxy scraper, writes dead status back to Airtable
 
+// Process items in parallel with a concurrency limit (no npm dependency)
+async function parallelWithLimit(items, limit, fn) {
+    const results = [];
+    let index = 0;
+    async function worker() {
+        while (index < items.length) {
+            const i = index++;
+            results[i] = await fn(items[i], i).then(
+                value => ({ status: 'fulfilled', value }),
+                reason => ({ status: 'rejected', reason })
+            );
+        }
+    }
+    await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
+    return results;
+}
+
 export const ThreadsPatrolService = {
     _STORAGE_KEY: 'threadsPatrol_lastRun',
 
@@ -3717,50 +3734,77 @@ export const ThreadsPatrolService = {
         const proxyUrl = await SettingsService.getProxyUrl();
         if (!proxyUrl) throw new Error('Proxy URL not configured. Set it in Settings.');
 
+        // Include Suspended — might come back alive
         const toCheck = accounts.filter(a =>
-            a.status === 'Active' || a.status === 'Warm Up' || a.status === 'Setting Up'
+            a.status === 'Active' || a.status === 'Warm Up' || a.status === 'Setting Up' || a.status === 'Suspended'
         );
 
-        const results = { alive: 0, dead: 0, errors: 0, updated: [] };
+        const results = { alive: 0, dead: 0, errors: 0, rateLimited: 0, updated: [] };
         const updates = [];
+        const snapshots = [];
+        const today = new Date().toISOString().slice(0, 10);
+        let checked = 0;
 
         onProgress?.({ checked: 0, total: toCheck.length, ...results });
 
-        const settled = await Promise.allSettled(
-            toCheck.map(async (acc) => {
+        const CONCURRENCY = 5;
+
+        await parallelWithLimit(toCheck, CONCURRENCY, async (acc) => {
+            try {
                 const res = await fetch(`${proxyUrl}/api/scrape/threads/user/stats/${acc.username}`, { signal: AbortSignal.timeout(30000) });
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                return res.json();
-            })
-        );
+                const data = await res.json();
 
-        for (let j = 0; j < toCheck.length; j++) {
-            const acc = toCheck[j];
-            const r = settled[j];
-            if (r.status === 'fulfilled') {
-                const data = r.value;
                 const fields = {};
+
+                // Save snapshot for growth tracking
+                snapshots.push({
+                    id: generateId(),
+                    username: acc.username.toLowerCase(),
+                    date: today,
+                    followers: data.followerCount ?? 0,
+                    threadCount: data.threadCount ?? 0,
+                    status: data.exists ? 'active' : (data.status || 'not_found'),
+                    airtableRecordId: acc.id,
+                    model: acc.model || '',
+                });
 
                 if (!data.exists || data.status === 'not_found') {
                     fields['Status'] = 'Dead/Shadowbanned';
                     results.dead++;
                     results.updated.push({ username: acc.username, prevStatus: acc.status, newStatus: 'Dead/Shadowbanned' });
+                } else if (data.status === 'rate_limited') {
+                    results.rateLimited++;
                 } else {
+                    // Alive — update metrics
                     if (data.followerCount !== undefined) fields['Followers'] = data.followerCount;
                     if (data.threadCount !== undefined) fields['Thread Count'] = data.threadCount;
                     results.alive++;
+
+                    // Revive suspended accounts that are actually alive
+                    if (acc.status === 'Suspended') {
+                        fields['Status'] = 'Active';
+                        results.updated.push({ username: acc.username, prevStatus: 'Suspended', newStatus: 'Active' });
+                    }
                 }
 
                 if (Object.keys(fields).length > 0) {
                     updates.push({ id: acc.id, fields });
                 }
-            } else {
+            } catch {
                 results.errors++;
             }
+
+            checked++;
+            onProgress?.({ checked, total: toCheck.length, ...results });
+        });
+
+        // Save daily snapshots to Dexie
+        if (snapshots.length > 0) {
+            await db.threadsSnapshots.bulkPut(snapshots);
         }
 
-        onProgress?.({ checked: toCheck.length, total: toCheck.length, ...results });
-
+        // Batch update Airtable
         if (updates.length > 0) {
             await AirtableService.updateAccountsBatch(updates);
         }
@@ -3769,6 +3813,31 @@ export const ThreadsPatrolService = {
         this._setLastRunDate();
 
         return results;
+    },
+
+    async getGrowthDeltas() {
+        const today = new Date().toISOString().slice(0, 10);
+        const todaySnaps = await db.threadsSnapshots.where('date').equals(today).toArray();
+        if (todaySnaps.length === 0) return {};
+
+        // Find previous day's snapshots (most recent before today per username)
+        const allPrev = await db.threadsSnapshots.where('date').below(today).reverse().toArray();
+        const prevMap = {};
+        for (const s of allPrev) {
+            if (!prevMap[s.username]) prevMap[s.username] = s;
+        }
+
+        const deltas = {};
+        for (const snap of todaySnaps) {
+            const prev = prevMap[snap.username];
+            deltas[snap.username] = {
+                followers: snap.followers,
+                threadCount: snap.threadCount,
+                followerDelta: prev ? snap.followers - prev.followers : 0,
+                threadDelta: prev ? snap.threadCount - prev.threadCount : 0,
+            };
+        }
+        return deltas;
     }
 };
 
