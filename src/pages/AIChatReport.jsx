@@ -3,7 +3,7 @@ import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { AIChatReportService } from '../services/growthEngine';
 
 // Tier 1 (rules) + Tier 2 (AI) event types
-const CRITICAL_TYPES = ['GENERIC_OPENER','BAD_TONE','MISSED_BUY_SIGNAL','VISIBLE_TRANSITION','NO_LOCATION_MATCH','OBJECTION_FAILURE','GF_EXPERIENCE','PREMATURE_PITCH','SLOW_REPLY_SELLING'];
+const CRITICAL_TYPES = ['GENERIC_OPENER','BAD_TONE','MISSED_BUY_SIGNAL','VISIBLE_TRANSITION','NO_LOCATION_MATCH','OBJECTION_FAILURE','GF_EXPERIENCE','SOLD_TOO_EARLY','SLOW_REPLY_SELLING'];
 const POSITIVE_TYPES = ['GOOD_OPENER','GOOD_LOCATION_MATCH','GOOD_HUMANIZING','GOOD_RAPPORT','GOOD_PROFILING','GOOD_TRANSITION','GOOD_SCENARIO_SEXT','GOOD_TONE','GOOD_OBJECTION_HANDLING','GOOD_ENERGY_MATCH','GOOD_PPV_LOOPING','FAST_RESPONSE','SUCCESSFUL_SALE'];
 
 const EVENT_COLOR = (type) => CRITICAL_TYPES.includes(type) ? 'danger' : POSITIVE_TYPES.includes(type) ? 'success' : 'warning';
@@ -25,7 +25,7 @@ const EVENT_LABELS = {
     GOOD_SCENARIO_SEXT: 'Good Scenario Sext', GOOD_TONE: 'Good Tone',
     GOOD_OBJECTION_HANDLING: 'Good Objection Handling', GOOD_ENERGY_MATCH: 'Good Energy Match',
     // Rule-detected
-    PREMATURE_PITCH: 'Premature Pitch', BAD_PRICING: 'Bad Pricing',
+    SOLD_TOO_EARLY: 'Sold Too Early', BAD_PRICING: 'Bad Pricing',
     SLOW_REPLY_SELLING: 'Slow Reply (Selling)', FAST_RESPONSE: 'Fast Response',
     SPAMMING: 'Spamming', NO_AFTERCARE: 'No Aftercare',
     NO_FOLLOWUP: 'No Follow-Up', IDLE_TIME: 'Idle Gap',
