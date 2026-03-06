@@ -596,26 +596,32 @@ export function VADashboard() {
                 <div className="va-header-left">
                     <div style={{ fontWeight: 'bold', fontSize: '1.2rem', color: '#6366f1' }}>VA Operations Terminal</div>
                     {syncing && <span style={{ color: '#fbbf24', fontSize: '0.8rem' }}>☁️ Syncing...</span>}
-                    <select
-                        style={{ padding: '8px', backgroundColor: '#2d313a', color: '#fff', border: 'none', borderRadius: '4px', outline: 'none' }}
-                        value={selectedModelId || ''}
-                        onChange={e => setSelectedModelId(e.target.value)}
-                    >
-                        {authorizedModels?.map(m => (
-                            <option key={m.id} value={m.id}>{m.name}</option>
-                        ))}
-                    </select>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
+                        <label style={{ fontSize: '0.7rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Model</label>
+                        <select
+                            style={{ padding: '8px', backgroundColor: '#2d313a', color: '#fff', border: 'none', borderRadius: '4px', outline: 'none', width: '100%' }}
+                            value={selectedModelId || ''}
+                            onChange={e => setSelectedModelId(e.target.value)}
+                        >
+                            {authorizedModels?.map(m => (
+                                <option key={m.id} value={m.id}>{m.name}</option>
+                            ))}
+                        </select>
+                    </div>
 
-                    <select
-                        style={{ padding: '8px', backgroundColor: '#2d313a', color: '#fff', border: 'none', borderRadius: '4px', outline: 'none' }}
-                        value={selectedAccountId}
-                        onChange={e => setSelectedAccountId(e.target.value)}
-                    >
-                        {authorizedAccountIds.length === 0 && <option value="ALL">All Accounts Queue</option>}
-                        {visibleAccounts?.map(a => (
-                            <option key={a.id} value={a.id}>u/{a.handle}</option>
-                        ))}
-                    </select>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
+                        <label style={{ fontSize: '0.7rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Account</label>
+                        <select
+                            style={{ padding: '8px', backgroundColor: '#2d313a', color: '#fff', border: 'none', borderRadius: '4px', outline: 'none', width: '100%' }}
+                            value={selectedAccountId}
+                            onChange={e => setSelectedAccountId(e.target.value)}
+                        >
+                            <option value="ALL">All Accounts</option>
+                            {visibleAccounts?.map(a => (
+                                <option key={a.id} value={a.id}>u/{a.handle}</option>
+                            ))}
+                        </select>
+                    </div>
                 </div>
                 <div className="va-header-stats" style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
                     <div style={{ fontSize: '0.9rem', color: '#9ca3af' }}>
