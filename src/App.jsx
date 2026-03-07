@@ -19,6 +19,7 @@ const Discovery = lazy(() => import('./pages/Discovery').then(m => ({ default: m
 const ModelDetail = lazy(() => import('./pages/ModelDetail').then(m => ({ default: m.ModelDetail })));
 const AccountDetail = lazy(() => import('./pages/AccountDetail').then(m => ({ default: m.AccountDetail })));
 const VADashboard = lazy(() => import('./pages/VADashboard').then(m => ({ default: m.VADashboard })));
+const ForceSync = lazy(() => import('./pages/ForceSync').then(m => ({ default: m.ForceSync })));
 const SOP = lazy(() => import('./pages/SOP').then(m => ({ default: m.SOP })));
 const Repurpose = lazy(() => import('./pages/Repurpose').then(m => ({ default: m.Repurpose })));
 const LinkTracker = lazy(() => import('./pages/LinkTracker').then(m => ({ default: m.LinkTracker })));
@@ -87,6 +88,7 @@ function App() {
             <Routes>
               {/* VA Mode: No Internal sidebars, pure robot mode */}
               <Route path="/va" element={<VADashboard />} />
+              <Route path="/force-sync" element={<ForceSync />} />
 
               {/* Admin/Agency Mode: Full dashboard */}
               <Route element={<Layout />}>
