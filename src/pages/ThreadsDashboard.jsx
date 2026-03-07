@@ -235,7 +235,8 @@ export function ThreadsDashboard() {
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: patrolResults.updated.length > 0 ? '12px' : 0 }}>
                             <div style={{ display: 'flex', gap: '16px', fontSize: '0.9rem' }}>
                                 <span style={{ color: COLORS.success }}><strong>{patrolResults.alive}</strong> alive</span>
-                                <span style={{ color: COLORS.danger }}><strong>{patrolResults.dead}</strong> dead</span>
+                                <span style={{ color: COLORS.warning }}><strong>{patrolResults.dead - (patrolResults.confirmed_dead || 0)}</strong> suspect</span>
+                                <span style={{ color: COLORS.danger }}><strong>{patrolResults.confirmed_dead || 0}</strong> confirmed dead</span>
                                 {patrolResults.errors > 0 && <span style={{ color: COLORS.warning }}><strong>{patrolResults.errors}</strong> errors</span>}
                                 {patrolResults.rateLimited > 0 && <span style={{ color: COLORS.warning }}><strong>{patrolResults.rateLimited}</strong> rate limited</span>}
                             </div>
@@ -246,10 +247,10 @@ export function ThreadsDashboard() {
                                 {patrolResults.updated.map(u => (
                                     <span key={u.username} style={{
                                         display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.78rem',
-                                        background: u.newStatus === 'Active' ? 'rgba(16,185,129,0.12)' : 'rgba(244,63,94,0.12)',
-                                        color: u.newStatus === 'Active' ? COLORS.success : COLORS.danger,
+                                        background: u.newStatus === 'Dead/Shadowbanned' ? 'rgba(244,63,94,0.12)' : u.newStatus.includes('suspect') ? 'rgba(251,191,36,0.12)' : 'rgba(16,185,129,0.12)',
+                                        color: u.newStatus === 'Dead/Shadowbanned' ? COLORS.danger : u.newStatus.includes('suspect') ? COLORS.warning : COLORS.success,
                                     }}>
-                                        @{u.username} <span style={{ opacity: 0.7 }}>({u.prevStatus} → {u.newStatus})</span>
+                                        @{u.username} <span style={{ opacity: 0.7 }}>({u.newStatus})</span>
                                     </span>
                                 ))}
                             </div>

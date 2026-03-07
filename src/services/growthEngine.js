@@ -3780,28 +3780,40 @@ export const ThreadsPatrolService = {
         const proxyUrl = await SettingsService.getProxyUrl();
         if (!proxyUrl) throw new Error('Proxy URL not configured. Set it in Settings.');
 
-        const results = { alive: 0, dead: 0, errors: 0, rateLimited: 0, updated: [] };
+        const results = { alive: 0, dead: 0, confirmed_dead: 0, errors: 0, rateLimited: 0, updated: [] };
         const updates = [];
         const snapshots = [];
         const today = new Date().toISOString().slice(0, 10);
         let checked = 0;
 
+        // Load prior dead snapshots for 2-strike rule (dead on a DIFFERENT day = confirmed)
+        const allPriorSnaps = await db.threadsSnapshots.where('status').equals('not_found').toArray();
+        const priorDeadDays = new Map(); // username -> Set of dates they were dead
+        for (const s of allPriorSnaps) {
+            if (s.date === today) continue; // only count previous days
+            if (!priorDeadDays.has(s.username)) priorDeadDays.set(s.username, new Set());
+            priorDeadDays.get(s.username).add(s.date);
+        }
+
         onProgress?.({ checked: 0, total: toCheck.length, ...results });
 
-        const CONCURRENCY = 5;
+        // Slow: 1 at a time with 3s delay to avoid Threads rate-limiting
+        const CONCURRENCY = 1;
+        const DELAY_MS = 3000;
 
-        await parallelWithLimit(toCheck, CONCURRENCY, async acc => {
+        for (const acc of toCheck) {
             try {
                 const res = await fetch(`${proxyUrl}/api/scrape/threads/user/stats/${acc.username}`, { signal: AbortSignal.timeout(30000) });
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const data = await res.json();
 
                 const fields = {};
+                const uname = acc.username.toLowerCase();
 
                 // Save snapshot for growth tracking
                 snapshots.push({
                     id: generateId(),
-                    username: acc.username.toLowerCase(),
+                    username: uname,
                     date: today,
                     followers: data.followerCount ?? 0,
                     threadCount: data.threadCount ?? 0,
@@ -3811,9 +3823,16 @@ export const ThreadsPatrolService = {
                 });
 
                 if (!data.exists || data.status === 'not_found') {
-                    fields['Status'] = 'Dead/Shadowbanned';
                     results.dead++;
-                    results.updated.push({ username: acc.username, prevStatus: acc.status, newStatus: 'Dead/Shadowbanned' });
+                    // 2-strike rule: only write Dead to Airtable if also dead on a previous day
+                    const priorDead = priorDeadDays.get(uname);
+                    if (priorDead && priorDead.size > 0) {
+                        fields['Status'] = 'Dead/Shadowbanned';
+                        results.confirmed_dead++;
+                        results.updated.push({ username: acc.username, prevStatus: acc.status, newStatus: 'Dead/Shadowbanned', strikes: priorDead.size + 1 });
+                    } else {
+                        results.updated.push({ username: acc.username, prevStatus: acc.status, newStatus: 'suspect (1st strike)' });
+                    }
                 } else if (data.status === 'rate_limited') {
                     results.rateLimited++;
                 } else {
@@ -3831,14 +3850,19 @@ export const ThreadsPatrolService = {
 
             checked++;
             onProgress?.({ checked, total: toCheck.length, ...results });
-        });
+
+            // Delay between requests to avoid rate-limiting
+            if (checked < toCheck.length) {
+                await new Promise(r => setTimeout(r, DELAY_MS));
+            }
+        }
 
         // Save daily snapshots to Dexie
         if (snapshots.length > 0) {
             await db.threadsSnapshots.bulkAdd(snapshots);
         }
 
-        // Batch update Airtable
+        // Batch update Airtable (only confirmed dead + alive metric updates)
         if (updates.length > 0) {
             await AirtableService.updateAccountsBatch(updates);
         }
