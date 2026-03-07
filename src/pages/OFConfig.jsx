@@ -4,6 +4,8 @@ import { generateId } from '../db/generateId';
 import { OFVAPatternService, markPendingDelete, markPendingClear } from '../services/growthEngine';
 import { useLiveQuery } from 'dexie-react-hooks';
 
+const PLATFORMS = ['reddit', 'instagram', 'threads', 'twitter', 'tiktok', 'tinder', 'snapchat', 'telegram', 'erome', 'fetlife', 'youtube', 'sfs', 'ads'];
+
 export function OFConfig() {
     const [tab, setTab] = useState('models');
 
@@ -220,6 +222,10 @@ export function OFConfig() {
                                     <option value="">VA (optional)...</option>
                                     {vas.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
                                 </select>
+                                <select className="input-field" value={newLink.platform} onChange={e => setNewLink({ ...newLink, platform: e.target.value })} style={{ flex: 1, minWidth: '120px' }}>
+                                    <option value="">Platform...</option>
+                                    {PLATFORMS.map(p => <option key={p} value={p}>{p}</option>)}
+                                </select>
                                 <button className="btn btn-primary" onClick={addLink}>Add</button>
                             </div>
                             <div className="data-table-container">
@@ -231,7 +237,13 @@ export function OFConfig() {
                                                 <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.label}</td>
                                                 <td>{modelMap.get(l.ofModelId) || '-'}</td>
                                                 <td>{vas.find(v => v.id === l.ofVaId)?.name || '-'}</td>
-                                                <td>{l.platform || '-'}</td>
+                                                <td>
+                                                    <select className="input-field" style={{ padding: '4px 8px', fontSize: '0.8rem' }}
+                                                        value={l.platform || ''} onChange={e => db.ofTrackingLinks.update(l.id, { platform: e.target.value || null })}>
+                                                        <option value="">—</option>
+                                                        {PLATFORMS.map(p => <option key={p} value={p}>{p}</option>)}
+                                                    </select>
+                                                </td>
                                                 <td><button onClick={() => deleteLink(l.id)} className="btn btn-outline" style={{ padding: '2px 8px', fontSize: '0.75rem', color: 'var(--status-danger)' }}>Delete</button></td>
                                             </tr>
                                         ))}
@@ -249,12 +261,15 @@ export function OFConfig() {
                             ) : (
                                 <div className="data-table-container">
                                     <table className="data-table">
-                                        <thead><tr><th>Label</th><th>Model</th><th>Assign VA</th></tr></thead>
+                                        <thead><tr><th>Label</th><th>Model</th><th>Platform</th><th>Assign VA</th></tr></thead>
                                         <tbody>
                                             {unmapped.map(u => (
                                                 <tr key={u.id}>
                                                     <td style={{ maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.label}</td>
                                                     <td>{modelMap.get(u.ofModelId) || '-'}</td>
+                                                    <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                                        {OFVAPatternService.detectPlatform(u.label, u.source || '') || '-'}
+                                                    </td>
                                                     <td>
                                                         <select className="input-field" style={{ padding: '4px 8px', fontSize: '0.8rem' }}
                                                             onChange={e => assignVA(u, e.target.value)} defaultValue="">
