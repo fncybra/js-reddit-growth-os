@@ -224,13 +224,14 @@ function CloudSyncStatus() {
         <button
           onClick={async () => {
             const { CloudSyncService } = await import('../services/growthEngine');
+            await CloudSyncService.pushLocalToCloud();
             await CloudSyncService.pullCloudToLocal();
             window.location.reload();
           }}
           className="btn btn-primary"
           style={{ padding: '4px 8px', fontSize: '0.65rem', width: 'fit-content' }}
         >
-          Pull Updates
+          Sync Now
         </button>
       )}
     </div>
