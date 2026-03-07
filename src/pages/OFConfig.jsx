@@ -167,8 +167,16 @@ export function OFConfig() {
                                     <tbody>
                                         {models.map(m => (
                                             <tr key={m.id}>
-                                                <td style={{ fontWeight: 600 }}>{m.name}</td>
-                                                <td>{m.ofUsername || '-'}</td>
+                                                <td>
+                                                    <input className="input-field" style={{ padding: '4px 8px', fontSize: '0.8rem', fontWeight: 600, width: '140px' }}
+                                                        defaultValue={m.name} placeholder="name"
+                                                        onBlur={e => { const v = e.target.value.trim(); if (v && v !== m.name) db.ofModels.update(m.id, { name: v }); }} />
+                                                </td>
+                                                <td>
+                                                    <input className="input-field" style={{ padding: '4px 8px', fontSize: '0.8rem', width: '140px' }}
+                                                        defaultValue={m.ofUsername || ''} placeholder="username"
+                                                        onBlur={e => { const v = e.target.value.trim(); if (v !== (m.ofUsername || '')) db.ofModels.update(m.id, { ofUsername: v || null }); }} />
+                                                </td>
                                                 <td><span className={`badge ${m.active ? 'badge-success' : 'badge-danger'}`}>{m.active ? 'Yes' : 'No'}</span></td>
                                                 <td>
                                                     <button onClick={() => db.ofModels.update(m.id, { active: m.active ? 0 : 1 })} className="btn btn-outline" style={{ padding: '2px 8px', fontSize: '0.75rem', marginRight: '4px' }}>Toggle</button>
