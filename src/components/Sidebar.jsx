@@ -222,11 +222,23 @@ function CloudSyncStatus() {
       )}
       {isSynced && (
         <button
-          onClick={async () => {
-            const { CloudSyncService } = await import('../services/growthEngine');
-            await CloudSyncService.pushLocalToCloud();
-            await CloudSyncService.pullCloudToLocal();
-            window.location.reload();
+          id="sync-now-btn"
+          onClick={async (e) => {
+            const btn = e.currentTarget;
+            btn.textContent = 'Pushing...';
+            btn.disabled = true;
+            try {
+              const { CloudSyncService } = await import('../services/growthEngine');
+              await CloudSyncService.pushLocalToCloud();
+              btn.textContent = 'Pulling...';
+              await CloudSyncService.pullCloudToLocal();
+              btn.textContent = 'Done!';
+              setTimeout(() => window.location.reload(), 500);
+            } catch (err) {
+              btn.textContent = 'FAILED: ' + (err.message || err).substring(0, 40);
+              btn.style.color = '#ef4444';
+              console.error('[Sync]', err);
+            }
           }}
           className="btn btn-primary"
           style={{ padding: '4px 8px', fontSize: '0.65rem', width: 'fit-content' }}
