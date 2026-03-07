@@ -2101,7 +2101,10 @@ export const CloudSyncService = {
         }
 
         // Tables where local is authoritative for deletions — sync deletions to cloud
-        const ofConfigTables = ['ofModels', 'ofVas', 'ofTrackingLinks', 'accounts'];
+        // NOTE: 'accounts' removed — fresh browsers (VA phones) have 0 local accounts
+        // and would wipe all cloud accounts. Account deletions are handled explicitly
+        // in handleDeleteAccount() which deletes from cloud directly.
+        const ofConfigTables = ['ofModels', 'ofVas', 'ofTrackingLinks'];
         for (const table of ofConfigTables) {
             if (!tables.includes(table)) continue;
             try {
@@ -2264,7 +2267,7 @@ export const CloudSyncService = {
         // Phase 2: MERGE cloud data into local (never clear — prevents data loss)
         for (const table of tables) {
             let cloudData = fetched[table] || [];
-            const localAuthTables = ['ofModels', 'ofVas', 'ofTrackingLinks', 'accounts'];
+            const localAuthTables = ['ofModels', 'ofVas', 'ofTrackingLinks'];
             if (cloudData.length === 0) {
                 // Local-authoritative tables: if cloud is empty, clear local too
                 if (localAuthTables.includes(table)) {
