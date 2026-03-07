@@ -411,14 +411,8 @@ export function VADashboard() {
             return query.toArray().then(rows => {
                 if (!rows || rows.length === 0) return [];
 
-                const datedRows = rows.filter(r => !!r.date);
-                if (datedRows.length === 0) return rows;
-
-                const latestDate = datedRows
-                    .map(r => r.date)
-                    .sort((a, b) => (a > b ? -1 : a < b ? 1 : 0))[0];
-
-                return rows.filter(r => !r.date || r.date === latestDate);
+                const today = new Date().toISOString().slice(0, 10);
+                return rows.filter(r => !r.date || r.date === today);
             });
         },
         [activeModelId, selectedAccountId, authorizedAccountIds]
@@ -725,7 +719,7 @@ function VATaskCard({ task, index, onPosted, cooldownActive, vaName }) {
     const [regeneratingTitle, setRegeneratingTitle] = useState(false);
     const proxyBase = 'https://js-reddit-proxy-production.up.railway.app';
 
-    const isDone = task.status === 'closed' || performance;
+    const isDone = task.status === 'closed';
 
     const isHeic = asset?.fileName && (asset.fileName.toLowerCase().endsWith('.heic') || asset.fileName.toLowerCase().endsWith('.heif'));
     const localBlobUrl = useMemo(() => {
