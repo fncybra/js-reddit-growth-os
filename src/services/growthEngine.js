@@ -16,16 +16,33 @@ export function markPendingClear(table) {
     _pendingClears.add(table);
 }
 
+// Cached proxy token to avoid DB lookup on every request
+let _cachedProxyApiToken = '';
+export async function getProxyHeaders(extra = {}) {
+    if (!_cachedProxyApiToken) {
+        try {
+            const row = await db.settings.where({ key: 'proxyApiToken' }).first();
+            _cachedProxyApiToken = row?.value || '';
+        } catch { /* ignore */ }
+    }
+    const headers = { ...extra };
+    if (_cachedProxyApiToken) headers['x-api-token'] = _cachedProxyApiToken;
+    return headers;
+}
+// Reset cached token when settings change
+function invalidateProxyTokenCache() { _cachedProxyApiToken = ''; }
+
 const fetchWithTimeout = async (url, options = {}, timeoutMs = 5000) => {
     const controller = new AbortController();
+    const proxyHeaders = await getProxyHeaders(options.headers || {});
     const id = setTimeout(() => controller.abort(), timeoutMs);
     try {
-        const response = await fetch(url, { ...options, signal: controller.signal });
+        const response = await fetch(url, { ...options, headers: proxyHeaders, signal: controller.signal });
         clearTimeout(id);
         return response;
     } catch (err) {
         clearTimeout(id);
-        throw err; // Will be caught by outer try-catch
+        throw err;
     }
 };
 
@@ -77,10 +94,10 @@ export const SettingsService = {
             dailyPostCap: 10,
             maxPostsPerSubPerDay: 5,
             allowSubredditRepeatsInQueue: 0,
-            supabaseUrl: 'https://REDACTED_SUPABASE_URL',
-            supabaseAnonKey: 'REDACTED_SUPABASE_ANON_KEY',
-            proxyUrl: 'https://js-reddit-proxy-production.up.railway.app',
-            openRouterApiKey: 'REDACTED_OPENROUTER_KEY',
+            supabaseUrl: '',
+            supabaseAnonKey: '',
+            proxyUrl: '',
+            openRouterApiKey: '',
             openRouterModel: 'z-ai/glm-5',
             useVoiceProfile: 1,
             telegramBotToken: '',
@@ -89,7 +106,7 @@ export const SettingsService = {
             telegramAutoSendHour: 20,
             lastTelegramReportDate: '',
             airtableApiKey: '',
-            airtableBaseId: 'REDACTED_AIRTABLE_BASE_ID',
+            airtableBaseId: '',
             airtableTableName: 'Phone Posting',
             threadsTelegramBotToken: '',
             threadsTelegramChatId: '',
@@ -115,7 +132,8 @@ export const SettingsService = {
             aiChatApiKey: '',
             aiChatGeminiKey: '',
             aiChatHaikuModel: 'google/gemini-2.0-flash-001',
-            aiChatSonnetModel: 'google/gemini-2.0-flash-001'
+            aiChatSonnetModel: 'google/gemini-2.0-flash-001',
+            proxyApiToken: ''
         };
         const settingsArr = await db.settings.toArray();
         const settings = { ...defaultSettings };
@@ -143,6 +161,7 @@ export const SettingsService = {
         } else {
             await db.settings.add({ id: generateId(), key, value });
         }
+        if (key === 'proxyApiToken') invalidateProxyTokenCache();
     },
     async getProxyUrl() {
         const settings = await this.getSettings();
@@ -338,7 +357,7 @@ Print ONLY the single final title as plain text. No quotes. No numbering. No ext
                     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
                         const response = await fetch(`${proxyUrl}/api/ai/generate`, {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers: await getProxyHeaders({ 'Content-Type': 'application/json' }),
                             body: JSON.stringify({
                                 aiBaseUrl: aiEndpoint,
                                 apiKey: activeKey,
@@ -932,7 +951,7 @@ export const DailyPlanGenerator = {
                     if (match) cleanFolderId = match[1];
                 }
 
-                const res = await fetch(`${proxyUrl}/api/drive/list/${cleanFolderId}`);
+                const res = await fetch(`${proxyUrl}/api/drive/list/${cleanFolderId}`, { headers: await getProxyHeaders() });
                 if (res.ok) {
                     const driveFiles = await res.json();
                     const assetsToAdd = [];
@@ -2497,7 +2516,7 @@ export const DriveSyncService = {
 
         const proxyUrl = await SettingsService.getProxyUrl();
         const cleanFolderId = normalizeDriveFolderId(model.driveFolderId);
-        const res = await fetch(`${proxyUrl}/api/drive/list/${cleanFolderId}`);
+        const res = await fetch(`${proxyUrl}/api/drive/list/${cleanFolderId}`, { headers: await getProxyHeaders() });
 
         if (!res.ok) {
             const errData = await res.json().catch(() => ({}));
@@ -2506,7 +2525,7 @@ export const DriveSyncService = {
                 // Fetch service account email to show the user exactly what to share with
                 let shareHint = 'Share the Google Drive folder with the service account email (check Settings or proxy logs).';
                 try {
-                    const infoRes = await fetch(`${proxyUrl}/api/drive/info`);
+                    const infoRes = await fetch(`${proxyUrl}/api/drive/info`, { headers: await getProxyHeaders() });
                     if (infoRes.ok) {
                         const info = await infoRes.json();
                         if (info.email) shareHint = `Share the folder with: ${info.email}`;
@@ -3803,7 +3822,7 @@ export const ThreadsPatrolService = {
 
         for (const acc of toCheck) {
             try {
-                const res = await fetch(`${proxyUrl}/api/scrape/threads/user/stats/${acc.username}`, { signal: AbortSignal.timeout(30000) });
+                const res = await fetch(`${proxyUrl}/api/scrape/threads/user/stats/${acc.username}`, { headers: await getProxyHeaders(), signal: AbortSignal.timeout(30000) });
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const data = await res.json();
 
@@ -6023,7 +6042,7 @@ Return ONLY valid JSON.`;
             try {
                 response = await fetch(`${proxyUrl}/api/ai/generate`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: await getProxyHeaders({ 'Content-Type': 'application/json' }),
                     signal: controller.signal,
                     body: JSON.stringify({
                         aiBaseUrl: aiBaseUrl.replace(/\/$/, ''),

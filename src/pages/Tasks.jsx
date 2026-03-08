@@ -655,7 +655,8 @@ function TaskRow({ task, activeModelId, proxyUrl, showAccount }) {
             if (!asset?.driveFileId || !isHeic) return;
 
             try {
-                const response = await fetch(`${proxyUrl}/api/drive/download/${asset.driveFileId}?convert=true`);
+                const { getProxyHeaders } = await import('../services/growthEngine');
+                const response = await fetch(`${proxyUrl}/api/drive/download/${asset.driveFileId}?convert=true`, { headers: await getProxyHeaders() });
                 if (!response.ok) return;
                 const blob = await response.blob();
                 generatedUrl = URL.createObjectURL(blob);

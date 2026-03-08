@@ -41,7 +41,8 @@ export function Subreddits() {
             const cleanName = formData.name.replace(/^(r\/|\/r\/)/i, '');
             const { SettingsService } = await import('../services/growthEngine');
             const proxyUrl = await SettingsService.getProxyUrl();
-            const res = await fetch(`${proxyUrl}/api/scrape/subreddit/${cleanName}`);
+            const { getProxyHeaders } = await import('../services/growthEngine');
+            const res = await fetch(`${proxyUrl}/api/scrape/subreddit/${cleanName}`, { headers: await getProxyHeaders() });
             if (res.ok) {
                 const deepData = await res.json();
                 rulesSummary = deepData.rules?.map(r => `• ${r.title}: ${r.description}`).join('\n\n') || '';

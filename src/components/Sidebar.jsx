@@ -183,7 +183,8 @@ function CloudSyncStatus() {
           return;
         }
 
-        const res = await fetch(`${base}/api/proxy/status`);
+        const { getProxyHeaders } = await import('../services/growthEngine');
+        const res = await fetch(`${base}/api/proxy/status`, { headers: await getProxyHeaders() });
         const data = await res.json().catch(() => ({}));
         if (!cancelled) {
           setProxyState({

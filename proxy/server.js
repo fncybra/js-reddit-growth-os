@@ -6,7 +6,8 @@ const heicConvert = require('heic-convert');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 
 const { HttpsProxyAgent } = require('https-proxy-agent');
 
@@ -14,12 +15,7 @@ const { HttpsProxyAgent } = require('https-proxy-agent');
 // 1) Request header: x-proxy-info
 // 2) SMARTPROXY/PROXY pool API URL env
 // 3) REDDIT_PROXY_POOL env (comma/newline separated)
-// 4) hardcoded fallback pool
-const fallbackProxies = [
-    "REDACTED_PROXY_1",
-    "REDACTED_PROXY_2",
-    "REDACTED_PROXY_3"
-];
+const fallbackProxies = [];
 
 const envProxyPoolRaw = process.env.REDDIT_PROXY_POOL || '';
 const envProxyPool = envProxyPoolRaw
@@ -161,16 +157,54 @@ function getRequestProxyInfo(req) {
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-app.use(express.json({ limit: '5mb' })); // Allow large AI grading prompts
-app.use(cors());
+app.use(express.json({ limit: '1mb' }));
+app.use(helmet());
+app.use(cors({
+    origin: process.env.CORS_ORIGINS
+        ? process.env.CORS_ORIGINS.split(',').map(s => s.trim())
+        : ['http://localhost:5173', 'http://localhost:4173'],
+    methods: ['GET', 'POST'],
+}));
 
-app.post('/api/proxy/rotate', (req, res) => {
+// API token auth — set PROXY_API_TOKEN env var to enable
+const PROXY_API_TOKEN = process.env.PROXY_API_TOKEN || '';
+function requireAuth(req, res, next) {
+    if (!PROXY_API_TOKEN) return next(); // no token configured = open (dev mode)
+    const token = req.headers['x-api-token'] || req.query.token;
+    if (token === PROXY_API_TOKEN) return next();
+    return res.status(401).json({ error: 'Unauthorized — set x-api-token header' });
+}
+
+// Rate limiting
+const generalLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 300,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many requests, please try again later.' },
+});
+const scrapeLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Scrape rate limit exceeded.' },
+});
+app.use('/api/', generalLimiter);
+app.use('/api/scrape/', scrapeLimiter);
+
+// Input validation helpers
+const SAFE_USERNAME = /^[a-zA-Z0-9_-]{1,30}$/;
+const SAFE_SUBREDDIT = /^[a-zA-Z0-9_]{1,30}$/;
+const ALLOWED_AI_HOSTS = ['openrouter.ai', 'api.openai.com', 'generativelanguage.googleapis.com', 'api.anthropic.com'];
+
+app.post('/api/proxy/rotate', requireAuth, (req, res) => {
     const sourceProxy = req.body?.proxyInfo || req.headers['x-proxy-info'] || getNextProxyInfo();
     const rotated = rotateProxySession(sourceProxy);
     res.json(rotated);
 });
 
-app.post('/api/proxy/reload', async (req, res) => {
+app.post('/api/proxy/reload', requireAuth, async (req, res) => {
     try {
         const result = await refreshProxyPoolFromApi();
         if (!result.ok) return res.status(400).json(result);
@@ -180,7 +214,7 @@ app.post('/api/proxy/reload', async (req, res) => {
     }
 });
 
-app.get('/api/proxy/status', async (req, res) => {
+app.get('/api/proxy/status', requireAuth, async (req, res) => {
     try {
         const selectedProxy = getRequestProxyInfo(req) || getNextProxyInfo();
         const ipRes = await axios.get('https://api.ipify.org?format=json', {
@@ -208,7 +242,7 @@ app.get('/api/proxy/status', async (req, res) => {
     }
 });
 
-app.get('/api/proxy/check', async (req, res) => {
+app.get('/api/proxy/check', requireAuth, async (req, res) => {
     try {
         const proxyInfo = getRequestProxyInfo(req) || getNextProxyInfo();
         const response = await axios.get('https://api.ipify.org?format=json', {
@@ -263,15 +297,16 @@ try {
     }
 } catch (_) {}
 
-app.get('/api/drive/info', (req, res) => {
+app.get('/api/drive/info', requireAuth, (req, res) => {
     res.json({ configured: !!drive, email: _serviceAccountEmail || null });
 });
 
 // Proxy endpoint for Reddit User Scraping
-app.get('/api/scrape/user/stats/:username', async (req, res) => {
+app.get('/api/scrape/user/stats/:username', requireAuth, async (req, res) => {
     try {
         const { username } = req.params;
         const cleanName = username.replace(/^u\//i, '');
+        if (!SAFE_USERNAME.test(cleanName)) return res.status(400).json({ error: 'Invalid username' });
         const url = `https://old.reddit.com/user/${cleanName}/about.json`;
         const proxyInfo = getRequestProxyInfo(req);
 
@@ -280,20 +315,8 @@ app.get('/api/scrape/user/stats/:username', async (req, res) => {
         const data = response.data.data;
         const sub = data.subreddit || {};
 
-        // Debug: log raw Reddit profile fields for troubleshooting
-        console.log(`[ProfileAudit] ${cleanName} raw fields:`, JSON.stringify({
-            icon_img: data.icon_img,
-            snoovatar_img: data.snoovatar_img,
-            banner_img: sub.banner_img,
-            banner_background_image: sub.banner_background_image,
-            description: sub.description,
-            public_description: sub.public_description,
-            title: sub.title,
-            display_name: sub.display_name,
-            has_verified_email: data.has_verified_email,
-            url: sub.url,
-            social_links: sub.social_links,
-        }, null, 0));
+        // Profile audit — log field presence only (no PII)
+        console.log(`[ProfileAudit] ${cleanName}: avatar=${!!data.icon_img || !!data.snoovatar_img}, banner=${!!sub.banner_img}, bio=${!!(sub.description || sub.public_description)}, verified=${data.has_verified_email}`);
 
         // Bio: check both description fields
         const bioFull = sub.description || '';
@@ -356,9 +379,10 @@ app.get('/api/scrape/user/stats/:username', async (req, res) => {
     }
 });
 
-app.get('/api/scrape/user/:username', async (req, res) => {
+app.get('/api/scrape/user/:username', requireAuth, async (req, res) => {
     try {
         const { username } = req.params;
+        if (!SAFE_USERNAME.test(username)) return res.status(400).json({ error: 'Invalid username' });
         const proxyInfo = getRequestProxyInfo(req);
         const response = await axiosWithRetry(`https://old.reddit.com/user/${username}/submitted.json?limit=100`, { 'Accept-Language': 'en-US,en;q=0.9' }, { proxyInfo });
         res.json(response.data);
@@ -374,9 +398,10 @@ app.get('/api/scrape/user/:username', async (req, res) => {
 
 
 // Proxy endpoint for Subreddit Rules & Flairs
-app.get('/api/scrape/subreddit/:name', async (req, res) => {
+app.get('/api/scrape/subreddit/:name', requireAuth, async (req, res) => {
     try {
         const { name } = req.params;
+        if (!SAFE_SUBREDDIT.test(name)) return res.status(400).json({ error: 'Invalid subreddit name' });
         const proxyInfo = getRequestProxyInfo(req);
         const [aboutRes, rulesRes] = await Promise.all([
             axiosWithRetry(`https://old.reddit.com/r/${name}/about.json`, {}, { proxyInfo }),
@@ -403,7 +428,7 @@ app.get('/api/scrape/subreddit/:name', async (req, res) => {
 });
 
 // Proxy endpoint for Subreddit Search (By Keyword)
-app.get('/api/scrape/search/subreddits', async (req, res) => {
+app.get('/api/scrape/search/subreddits', requireAuth, async (req, res) => {
     try {
         const { q } = req.query;
         const proxyInfo = getRequestProxyInfo(req);
@@ -424,7 +449,7 @@ app.get('/api/scrape/search/subreddits', async (req, res) => {
 });
 
 // Proxy endpoint for Top Subreddit Titles
-app.get('/api/scrape/subreddit/top/:name', async (req, res) => {
+app.get('/api/scrape/subreddit/top/:name', requireAuth, async (req, res) => {
     try {
         const { name } = req.params;
         const proxyInfo = getRequestProxyInfo(req);
@@ -469,7 +494,7 @@ async function resolveShareLink(shareId, subreddit, proxyInfo = '') {
 
 // Proxy endpoint for Live Reddit Post Stats (Upvotes, Status)
 // Accepts both standard post IDs (1rd8jg1) and share IDs (aOgafAtLw2)
-app.get('/api/scrape/post/:postId', async (req, res) => {
+app.get('/api/scrape/post/:postId', requireAuth, async (req, res) => {
     try {
         let { postId } = req.params;
         const subreddit = req.query.subreddit || '';
@@ -507,7 +532,7 @@ app.get('/api/scrape/post/:postId', async (req, res) => {
 });
 
 // Google Drive: List files in a folder
-app.get('/api/drive/list/:folderId', async (req, res) => {
+app.get('/api/drive/list/:folderId', requireAuth, async (req, res) => {
     if (!drive) return res.status(503).json({ error: "Google Drive not configured" });
 
     try {
@@ -569,7 +594,7 @@ app.get('/api/drive/list/:folderId', async (req, res) => {
 
 // Google Drive: Fast thumbnail endpoint (tiny cached JPEG, ~10KB instead of 2-5MB)
 const thumbCache = new Map(); // In-memory cache for thumbnails
-app.get('/api/drive/thumb/:fileId', async (req, res) => {
+app.get('/api/drive/thumb/:fileId', requireAuth, async (req, res) => {
     if (!drive) return res.status(503).json({ error: "Google Drive not configured" });
 
     try {
@@ -611,7 +636,7 @@ app.get('/api/drive/thumb/:fileId', async (req, res) => {
 });
 
 // Google Drive: View/stream file inline for browser preview (video/image)
-app.get('/api/drive/view/:fileId', async (req, res) => {
+app.get('/api/drive/view/:fileId', requireAuth, async (req, res) => {
     if (!drive) return res.status(503).json({ error: "Google Drive not configured" });
 
     try {
@@ -642,7 +667,7 @@ app.get('/api/drive/view/:fileId', async (req, res) => {
 });
 
 // Google Drive: Download a file (with HEIC→JPEG conversion support)
-app.get('/api/drive/download/:fileId', async (req, res) => {
+app.get('/api/drive/download/:fileId', requireAuth, async (req, res) => {
     if (!drive) return res.status(503).json({ error: "Google Drive not configured" });
 
     try {
@@ -740,7 +765,7 @@ function extractRedgifsUrl(payload) {
 }
 
 // RedGifs upload endpoint (manager-triggered, never automatic)
-app.post('/api/redgifs/upload-from-asset', async (req, res) => {
+app.post('/api/redgifs/upload-from-asset', requireAuth, async (req, res) => {
     try {
         const {
             driveFileId = '',
@@ -854,7 +879,7 @@ app.post('/api/redgifs/upload-from-asset', async (req, res) => {
 });
 
 // Google Drive: Move file to "Used" folder
-app.post('/api/drive/move', async (req, res) => {
+app.post('/api/drive/move', requireAuth, async (req, res) => {
     if (!drive) return res.status(503).json({ error: "Google Drive not configured" });
 
     try {
@@ -889,10 +914,11 @@ app.post('/api/drive/move', async (req, res) => {
 // Uses og:title and og:description meta tags to detect active vs dead accounts.
 // Active profile:  og:title = "Display Name (@user) • Threads, Say more"
 // Dead/missing:    og:title = "Threads • Log in" (generic login page)
-app.get('/api/scrape/threads/user/stats/:username', async (req, res) => {
+app.get('/api/scrape/threads/user/stats/:username', requireAuth, async (req, res) => {
     try {
         const { username } = req.params;
         const cleanName = username.replace(/^@/, '');
+        if (!SAFE_USERNAME.test(cleanName)) return res.status(400).json({ error: 'Invalid username' });
         const url = `https://www.threads.com/@${cleanName}`;
         const proxyInfo = getRequestProxyInfo(req);
 
@@ -1004,7 +1030,7 @@ function parseFollowerCount(str) {
 }
 
 // Proxy endpoint for AI Generation (Bypasses Browser CORS / Preflight blocks)
-app.post('/api/ai/generate', async (req, res) => {
+app.post('/api/ai/generate', requireAuth, async (req, res) => {
     try {
         const { aiBaseUrl, apiKey, model, messages, temperature, presence_penalty, max_tokens } = req.body;
 
@@ -1013,6 +1039,16 @@ app.post('/api/ai/generate', async (req, res) => {
         }
 
         const targetUrl = aiBaseUrl || "https://openrouter.ai/api/v1";
+
+        // SSRF protection: only allow known AI API hosts
+        try {
+            const parsed = new URL(targetUrl);
+            if (!ALLOWED_AI_HOSTS.some(h => parsed.hostname === h || parsed.hostname.endsWith('.' + h))) {
+                return res.status(400).json({ error: "AI base URL not in allowlist. Allowed: " + ALLOWED_AI_HOSTS.join(', ') });
+            }
+        } catch {
+            return res.status(400).json({ error: "Invalid AI base URL." });
+        }
 
         // Always append /chat/completions if missing
         const completetionsUrl = targetUrl.endsWith('/chat/completions')

@@ -57,16 +57,32 @@ export function AuthProvider({ children }) {
     }
   }, [role]);
 
+  // Rate-limit PIN attempts (max 5 per 60s)
+  const attemptsRef = React.useRef([]);
+  const MAX_ATTEMPTS = 5;
+  const WINDOW_MS = 60000;
+
   const authenticate = useCallback(async (pin) => {
     const trimmed = pin.trim();
     if (!trimmed) return null;
 
+    // Rate limiting
+    const now = Date.now();
+    attemptsRef.current = attemptsRef.current.filter(t => now - t < WINDOW_MS);
+    if (attemptsRef.current.length >= MAX_ATTEMPTS) {
+      throw new Error('Too many attempts. Wait 60 seconds.');
+    }
+    attemptsRef.current.push(now);
+
     try {
       const settings = await SettingsService.getSettings();
 
-      // Also check vaPin directly from DB (it may not be in defaults)
       const vaPinRow = await db.settings.where({ key: 'vaPin' }).first();
-      const masterPin = vaPinRow ? vaPinRow.value : '1234';
+      const masterPin = vaPinRow ? vaPinRow.value : null;
+
+      if (!masterPin) {
+        throw new Error('No master PIN configured. Set vaPin in Settings first.');
+      }
 
       // Priority: master (admin) > threads manager > reddit manager
       if (trimmed === String(masterPin)) {
@@ -86,12 +102,7 @@ export function AuthProvider({ children }) {
 
       return null;
     } catch (err) {
-      console.error('Auth DB error:', err);
-      // Fallback: if DB is broken, still allow default PIN
-      if (trimmed === '1234') {
-        setRole('admin');
-        return 'admin';
-      }
+      console.error('Auth error:', err);
       throw err;
     }
   }, []);

@@ -743,7 +743,8 @@ function VATaskCard({ task, index, onPosted, cooldownActive, vaName }) {
 
             try {
                 setHeicLoading(true);
-                const response = await fetch(`${proxyBase}/api/drive/download/${asset.driveFileId}?convert=true`);
+                const { getProxyHeaders } = await import('../services/growthEngine');
+                const response = await fetch(`${proxyBase}/api/drive/download/${asset.driveFileId}?convert=true`, { headers: await getProxyHeaders() });
                 if (!response.ok) throw new Error(`Preview conversion failed (${response.status})`);
                 const blob = await response.blob();
                 generatedUrl = URL.createObjectURL(blob);
@@ -882,9 +883,10 @@ function VATaskCard({ task, index, onPosted, cooldownActive, vaName }) {
                         }
 
                         console.log(`Moving Drive file ${asset.driveFileId} to Used folder ${cleanUsedFolderId}...`);
+                        const { getProxyHeaders: gph } = await import('../services/growthEngine');
                         const moveRes = await fetch(`${proxyUrl}/api/drive/move`, {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers: await gph({ 'Content-Type': 'application/json' }),
                             body: JSON.stringify({
                                 fileId: asset.driveFileId,
                                 targetFolderId: cleanUsedFolderId

@@ -13,28 +13,12 @@ export function Settings() {
             let modified = false;
             const updates = {};
 
-            if (!data.openRouterApiKey) {
-                updates.openRouterApiKey = 'REDACTED_OPENROUTER_KEY';
-                modified = true;
-            }
             if (!data.aiBaseUrl) {
                 updates.aiBaseUrl = 'https://openrouter.ai/api/v1';
                 modified = true;
             }
             if (!data.openRouterModel) {
                 updates.openRouterModel = 'nousresearch/hermes-3-llama-3.1-70b';
-                modified = true;
-            }
-            if (!data.proxyUrl || data.proxyUrl === 'http://localhost:3001') {
-                updates.proxyUrl = 'https://js-reddit-proxy-production.up.railway.app';
-                modified = true;
-            }
-            if (!data.supabaseUrl) {
-                updates.supabaseUrl = 'https://REDACTED_SUPABASE_URL';
-                modified = true;
-            }
-            if (!data.supabaseAnonKey) {
-                updates.supabaseAnonKey = 'REDACTED_SUPABASE_ANON_KEY';
                 modified = true;
             }
 
@@ -76,7 +60,7 @@ export function Settings() {
         for (const [key, value] of Object.entries(settings)) {
             // Handle mixing types: vaPin stays string, others are numbers, api key is string
             let finalValue = value;
-            const textKeys = ['vaPin', 'openRouterApiKey', 'aiBaseUrl', 'openRouterModel', 'supabaseUrl', 'supabaseAnonKey', 'proxyUrl', 'telegramBotToken', 'telegramChatId', 'telegramThreadId', 'lastTelegramReportDate', 'lastRedditDailyReportDate', 'airtableApiKey', 'airtableBaseId', 'airtableTableName', 'lastThreadsPatrol', 'threadsTelegramBotToken', 'threadsTelegramChatId', 'threadsTelegramThreadId', 'lastThreadsDailyReportDate', 'lastVASnapshot', 'threadsManagerPin', 'redditManagerPin', 'redditTelegramBotToken', 'redditTelegramChatId', 'redditTelegramThreadId', 'ofTelegramBotToken', 'ofTelegramChatId', 'ofTelegramThreadId', 'lastOFDailyReportDate', 'aiChatApiKey', 'aiChatGeminiKey', 'aiChatHaikuModel', 'aiChatSonnetModel'];
+            const textKeys = ['vaPin', 'openRouterApiKey', 'aiBaseUrl', 'openRouterModel', 'supabaseUrl', 'supabaseAnonKey', 'proxyUrl', 'telegramBotToken', 'telegramChatId', 'telegramThreadId', 'lastTelegramReportDate', 'lastRedditDailyReportDate', 'airtableApiKey', 'airtableBaseId', 'airtableTableName', 'lastThreadsPatrol', 'threadsTelegramBotToken', 'threadsTelegramChatId', 'threadsTelegramThreadId', 'lastThreadsDailyReportDate', 'lastVASnapshot', 'threadsManagerPin', 'redditManagerPin', 'redditTelegramBotToken', 'redditTelegramChatId', 'redditTelegramThreadId', 'ofTelegramBotToken', 'ofTelegramChatId', 'ofTelegramThreadId', 'lastOFDailyReportDate', 'aiChatApiKey', 'aiChatGeminiKey', 'aiChatHaikuModel', 'aiChatSonnetModel', 'proxyApiToken'];
             if (!textKeys.includes(key) && value !== '') {
                 finalValue = Number(value);
             }

@@ -11,7 +11,7 @@ export function ThreadsSettings() {
         async function load() {
             const data = await SettingsService.getSettings();
             setApiKey(data.airtableApiKey || '');
-            setBaseId(data.airtableBaseId || 'REDACTED_AIRTABLE_BASE_ID');
+            setBaseId(data.airtableBaseId || '');
             setTableName(data.airtableTableName || 'Phone Posting');
             setLoaded(true);
         }
