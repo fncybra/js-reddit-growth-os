@@ -21,6 +21,10 @@ export function Settings() {
                 updates.openRouterModel = 'nousresearch/hermes-3-llama-3.1-70b';
                 modified = true;
             }
+            if (!data.proxyUrl || data.proxyUrl === 'http://localhost:3001') {
+                updates.proxyUrl = 'https://js-reddit-proxy-production.up.railway.app';
+                modified = true;
+            }
 
             // Fix old AI Chat model IDs — force correct OpenRouter IDs
             if (data.aiChatHaikuModel && data.aiChatHaikuModel !== 'anthropic/claude-haiku-4.5') {
