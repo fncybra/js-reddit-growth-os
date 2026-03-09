@@ -117,6 +117,7 @@ export const SettingsService = {
             lastVASnapshot: '',
             threadsManagerPin: '',
             redditManagerPin: '',
+            chatMonitorPin: '',
             redditTelegramBotToken: '',
             redditTelegramChatId: '',
             redditTelegramThreadId: '',

@@ -25,6 +25,14 @@ export function Settings() {
                 updates.proxyUrl = 'https://js-reddit-proxy-production.up.railway.app';
                 modified = true;
             }
+            if (!data.supabaseUrl) {
+                updates.supabaseUrl = 'https://bwckevjsjlvsfwfbnske.supabase.co';
+                modified = true;
+            }
+            if (!data.supabaseAnonKey) {
+                updates.supabaseAnonKey = 'sb_publishable_zJdDCrJNoZNGU5arum893A_mxmdvoCH';
+                modified = true;
+            }
 
             // Fix old AI Chat model IDs — force correct OpenRouter IDs
             if (data.aiChatHaikuModel && data.aiChatHaikuModel !== 'anthropic/claude-haiku-4.5') {
@@ -64,7 +72,7 @@ export function Settings() {
         for (const [key, value] of Object.entries(settings)) {
             // Handle mixing types: vaPin stays string, others are numbers, api key is string
             let finalValue = value;
-            const textKeys = ['vaPin', 'openRouterApiKey', 'aiBaseUrl', 'openRouterModel', 'supabaseUrl', 'supabaseAnonKey', 'proxyUrl', 'telegramBotToken', 'telegramChatId', 'telegramThreadId', 'lastTelegramReportDate', 'lastRedditDailyReportDate', 'airtableApiKey', 'airtableBaseId', 'airtableTableName', 'lastThreadsPatrol', 'threadsTelegramBotToken', 'threadsTelegramChatId', 'threadsTelegramThreadId', 'lastThreadsDailyReportDate', 'lastVASnapshot', 'threadsManagerPin', 'redditManagerPin', 'redditTelegramBotToken', 'redditTelegramChatId', 'redditTelegramThreadId', 'ofTelegramBotToken', 'ofTelegramChatId', 'ofTelegramThreadId', 'lastOFDailyReportDate', 'aiChatApiKey', 'aiChatGeminiKey', 'aiChatHaikuModel', 'aiChatSonnetModel', 'proxyApiToken'];
+            const textKeys = ['vaPin', 'openRouterApiKey', 'aiBaseUrl', 'openRouterModel', 'supabaseUrl', 'supabaseAnonKey', 'proxyUrl', 'telegramBotToken', 'telegramChatId', 'telegramThreadId', 'lastTelegramReportDate', 'lastRedditDailyReportDate', 'airtableApiKey', 'airtableBaseId', 'airtableTableName', 'lastThreadsPatrol', 'threadsTelegramBotToken', 'threadsTelegramChatId', 'threadsTelegramThreadId', 'lastThreadsDailyReportDate', 'lastVASnapshot', 'threadsManagerPin', 'redditManagerPin', 'chatMonitorPin', 'redditTelegramBotToken', 'redditTelegramChatId', 'redditTelegramThreadId', 'ofTelegramBotToken', 'ofTelegramChatId', 'ofTelegramThreadId', 'lastOFDailyReportDate', 'aiChatApiKey', 'aiChatGeminiKey', 'aiChatHaikuModel', 'aiChatSonnetModel', 'proxyApiToken'];
             if (!textKeys.includes(key) && value !== '') {
                 finalValue = Number(value);
             }
@@ -316,6 +324,17 @@ export function Settings() {
                                     onChange={e => setSettings({ ...settings, redditManagerPin: e.target.value })}
                                 />
                                 <small style={{ color: 'var(--text-secondary)' }}>Unlocks: Command Center, all Reddit pages, Settings</small>
+                            </div>
+                            <div className="input-group">
+                                <label className="input-label">Chat Monitor PIN</label>
+                                <input
+                                    type="text"
+                                    className="input-field"
+                                    placeholder="Leave blank to disable"
+                                    value={settings.chatMonitorPin || ''}
+                                    onChange={e => setSettings({ ...settings, chatMonitorPin: e.target.value })}
+                                />
+                                <small style={{ color: 'var(--text-secondary)' }}>Unlocks: AI Chat Import, Leaderboard, Reports, Replay only</small>
                             </div>
                             <button onClick={handleSave} className="btn btn-outline" style={{ width: '100%', marginTop: '8px' }}>Save Manager PINs</button>
                         </div>
