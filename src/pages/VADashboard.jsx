@@ -411,8 +411,16 @@ export function VADashboard() {
             return query.toArray().then(rows => {
                 if (!rows || rows.length === 0) return [];
 
-                const today = new Date().toISOString().slice(0, 10);
-                return rows.filter(r => !r.date || r.date === today);
+                // Use local date (not UTC) so Australian/overseas VAs see today's tasks
+                const now = new Date();
+                const todayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                return rows.filter(r => {
+                    if (!r.date) return true;
+                    // Task date may be full ISO or YYYY-MM-DD — normalize to local date
+                    const taskDate = new Date(r.date);
+                    const taskLocal = `${taskDate.getFullYear()}-${String(taskDate.getMonth() + 1).padStart(2, '0')}-${String(taskDate.getDate()).padStart(2, '0')}`;
+                    return taskLocal === todayLocal;
+                });
             });
         },
         [activeModelId, selectedAccountId, authorizedAccountIds]
@@ -672,6 +680,7 @@ export function VADashboard() {
                         <div style={{ fontSize: '2rem', marginBottom: '16px' }}>🎉</div>
                         <h3 style={{ marginBottom: '8px' }}>Queue Empty</h3>
                         <p style={{ color: '#9ca3af' }}>No tasks assigned for this model today, or you've completed them all.</p>
+                        <p style={{ color: '#71717a', fontSize: '0.7rem', marginTop: '8px' }}>v3.8 | {new Date().toLocaleDateString()} | Synced: {syncing ? 'in progress' : 'done'}</p>
                     </div>
                 ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -835,76 +844,92 @@ function VATaskCard({ task, index, onPosted, cooldownActive, vaName }) {
             return alert("Please paste the actual Reddit Post URL first so stats can be tracked.");
         }
 
-        const redditPostId = extractRedditPostIdFromUrl(redditUrl);
+        try {
+            const redditPostId = extractRedditPostIdFromUrl(redditUrl);
 
-        if (!redditPostId) {
-            console.warn("Could not extract a valid Reddit Post ID from URL: " + redditUrl);
-        }
+            if (!redditPostId) {
+                console.warn("Could not extract a valid Reddit Post ID from URL: " + redditUrl);
+            }
 
-        // 1. Update Task
-        await db.tasks.update(task.id, {
-            status: 'closed',
-            redditUrl: redditUrl,
-            redditPostId: redditPostId,
-            vaName: vaName || '',
-            postedAt: new Date().toISOString()
-        });
+            // Verify task still exists in DB before proceeding
+            const taskExists = await db.tasks.get(task.id);
+            if (!taskExists) {
+                showToast('Error: Task no longer exists. Skipping.');
+                onPosted();
+                return;
+            }
 
-        // 2. Add Performance Record
-        await db.performances.add({
-            id: generateId(),
-            taskId: task.id,
-            views24h: 0,
-            removed: 0,
-            notes: 'Awaiting automated sync...'
-        });
+            // 1. Update Task
+            await db.tasks.update(task.id, {
+                status: 'closed',
+                redditUrl: redditUrl,
+                redditPostId: redditPostId,
+                vaName: vaName || '',
+                postedAt: new Date().toISOString()
+            });
 
-        // 3. Update Asset Tracking (Usage count + Last used date)
-        if (task.assetId) {
-            const asset = await db.assets.get(task.assetId);
-            const targetModel = await db.models.get(task.modelId);
-            const { SettingsService } = await import('../services/growthEngine');
-            const proxyUrl = await SettingsService.getProxyUrl();
+            // 2. Add Performance Record
+            await db.performances.add({
+                id: generateId(),
+                taskId: task.id,
+                views24h: 0,
+                removed: 0,
+                notes: 'Awaiting automated sync...'
+            });
 
-            if (asset) {
-                const nextTimesUsed = (asset.timesUsed || 0) + 1;
-                const assetUpdate = {
-                    timesUsed: nextTimesUsed,
-                    lastUsedDate: new Date().toISOString()
-                };
-                await db.assets.update(asset.id, assetUpdate);
+            // 3. Update Asset Tracking (Usage count + Last used date)
+            if (task.assetId) {
+                const asset = await db.assets.get(task.assetId);
+                if (!asset) {
+                    console.warn(`[VA] Asset ${task.assetId} not found, skipping asset update`);
+                } else {
+                    const targetModel = await db.models.get(task.modelId);
+                    const { SettingsService } = await import('../services/growthEngine');
+                    const proxyUrl = await SettingsService.getProxyUrl();
 
-                if (nextTimesUsed >= 5 && asset.driveFileId && targetModel?.usedFolderId && !asset.movedToUsed) {
-                    try {
-                        let cleanUsedFolderId = targetModel.usedFolderId;
-                        if (cleanUsedFolderId.includes('drive.google.com')) {
-                            const match = cleanUsedFolderId.match(/folders\/([a-zA-Z0-9_-]+)/);
-                            if (match) cleanUsedFolderId = match[1];
+                    const nextTimesUsed = (asset.timesUsed || 0) + 1;
+                    const assetUpdate = {
+                        timesUsed: nextTimesUsed,
+                        lastUsedDate: new Date().toISOString()
+                    };
+                    await db.assets.update(asset.id, assetUpdate);
+
+                    if (nextTimesUsed >= 5 && asset.driveFileId && targetModel?.usedFolderId && !asset.movedToUsed) {
+                        try {
+                            let cleanUsedFolderId = targetModel.usedFolderId;
+                            if (cleanUsedFolderId.includes('drive.google.com')) {
+                                const match = cleanUsedFolderId.match(/folders\/([a-zA-Z0-9_-]+)/);
+                                if (match) cleanUsedFolderId = match[1];
+                            }
+
+                            console.log(`Moving Drive file ${asset.driveFileId} to Used folder ${cleanUsedFolderId}...`);
+                            const { getProxyHeaders: gph } = await import('../services/growthEngine');
+                            const moveRes = await fetch(`${proxyUrl}/api/drive/move`, {
+                                method: 'POST',
+                                headers: await gph({ 'Content-Type': 'application/json' }),
+                                body: JSON.stringify({
+                                    fileId: asset.driveFileId,
+                                    targetFolderId: cleanUsedFolderId
+                                })
+                            });
+                            if (!moveRes.ok) {
+                                console.error("Failed to move file in Drive");
+                            } else {
+                                await db.assets.update(asset.id, { movedToUsed: 1 });
+                            }
+                        } catch (err) {
+                            console.error("Error during Drive move:", err);
                         }
-
-                        console.log(`Moving Drive file ${asset.driveFileId} to Used folder ${cleanUsedFolderId}...`);
-                        const { getProxyHeaders: gph } = await import('../services/growthEngine');
-                        const moveRes = await fetch(`${proxyUrl}/api/drive/move`, {
-                            method: 'POST',
-                            headers: await gph({ 'Content-Type': 'application/json' }),
-                            body: JSON.stringify({
-                                fileId: asset.driveFileId,
-                                targetFolderId: cleanUsedFolderId
-                            })
-                        });
-                        if (!moveRes.ok) {
-                            console.error("Failed to move file in Drive");
-                        } else {
-                            await db.assets.update(asset.id, { movedToUsed: 1 });
-                        }
-                    } catch (err) {
-                        console.error("Error during Drive move:", err);
                     }
                 }
 
                 // Cloud Sync Push (Native)
-                const { CloudSyncService } = await import('../services/growthEngine');
-                await CloudSyncService.autoPush(['tasks', 'performances', 'assets']);
+                try {
+                    const { CloudSyncService } = await import('../services/growthEngine');
+                    await CloudSyncService.autoPush(['tasks', 'performances', 'assets']);
+                } catch (syncErr) {
+                    console.warn('[VA] Cloud sync failed after posting:', syncErr?.message || syncErr);
+                }
 
                 if (redditPostId) {
                     try {
@@ -915,39 +940,56 @@ function VATaskCard({ task, index, onPosted, cooldownActive, vaName }) {
                     }
                 }
             }
+            onPosted(); // Move onto next task instantly
+        } catch (err) {
+            console.error('[VA] handleMarkPosted error:', err);
+            showToast('Error marking posted: ' + (err?.message || 'Unknown error'));
         }
-        onPosted(); // Move onto next task instantly
     }
 
     async function handleMarkError() {
         const reason = window.prompt("Why couldn't you post this? (e.g., account banned, banned from sub, filter block)");
         if (reason) {
-            const taskUpdate = { status: 'failed', vaName: vaName || '', postedAt: new Date().toISOString() };
-            await db.tasks.update(task.id, taskUpdate);
-
-            const perfInsert = {
-                taskId: task.id,
-                views24h: 0,
-                removed: 1,
-                notes: reason
-            };
-            await db.performances.add({ id: generateId(), ...perfInsert });
-
             try {
-                await SubredditGuardService.recordPostingError(task.subredditId, reason, {
-                    accountHandle: account?.handle || '',
-                    modelName: model?.name || '',
+                // Verify task still exists in DB before proceeding
+                const taskExists = await db.tasks.get(task.id);
+                if (!taskExists) {
+                    showToast('Error: Task no longer exists.');
+                    return;
+                }
+
+                const taskUpdate = { status: 'failed', vaName: vaName || '', postedAt: new Date().toISOString() };
+                await db.tasks.update(task.id, taskUpdate);
+
+                const perfInsert = {
                     taskId: task.id,
-                });
-            } catch (guardErr) {
-                console.warn('[VA] Failed to store subreddit posting guard:', guardErr?.message || guardErr);
-            }
+                    views24h: 0,
+                    removed: 1,
+                    notes: reason
+                };
+                await db.performances.add({ id: generateId(), ...perfInsert });
 
-            // Cloud Sync Push (Native)
-            try {
-                const { CloudSyncService } = await import('../services/growthEngine');
-                await CloudSyncService.autoPush(['tasks', 'performances', 'subreddits']);
-            } catch (err) { }
+                try {
+                    await SubredditGuardService.recordPostingError(task.subredditId, reason, {
+                        accountHandle: account?.handle || '',
+                        modelName: model?.name || '',
+                        taskId: task.id,
+                    });
+                } catch (guardErr) {
+                    console.warn('[VA] Failed to store subreddit posting guard:', guardErr?.message || guardErr);
+                }
+
+                // Cloud Sync Push (Native)
+                try {
+                    const { CloudSyncService } = await import('../services/growthEngine');
+                    await CloudSyncService.autoPush(['tasks', 'performances', 'subreddits']);
+                } catch (err) {
+                    console.warn('[VA] Cloud sync failed after error report:', err?.message || err);
+                }
+            } catch (err) {
+                console.error('[VA] handleMarkError error:', err);
+                showToast('Error reporting failure: ' + (err?.message || 'Unknown error'));
+            }
         }
     }
 

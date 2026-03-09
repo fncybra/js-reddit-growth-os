@@ -94,9 +94,9 @@ export const SettingsService = {
             dailyPostCap: 10,
             maxPostsPerSubPerDay: 5,
             allowSubredditRepeatsInQueue: 0,
-            supabaseUrl: import.meta.env.VITE_SUPABASE_URL || '',
-            supabaseAnonKey: import.meta.env.VITE_SUPABASE_ANON_KEY || '',
-            proxyUrl: import.meta.env.VITE_PROXY_URL || '',
+            supabaseUrl: import.meta.env.VITE_SUPABASE_URL || 'https://bwckevjsjlvsfwfbnske.supabase.co',
+            supabaseAnonKey: import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_zJdDCrJNoZNGU5arum893A_mxmdvoCH',
+            proxyUrl: import.meta.env.VITE_PROXY_URL || 'https://js-reddit-proxy-production.up.railway.app',
             openRouterApiKey: '',
             openRouterModel: 'z-ai/glm-5',
             useVoiceProfile: 1,
@@ -606,7 +606,7 @@ export const TitleGuardService = {
         const cutoffIso = subDays(new Date(), lookbackDays).toISOString();
         const tasks = await db.tasks
             .where('modelId').equals(modelId)
-            .filter(t => t.status === 'closed' && t.subredditId === subredditId && t.title && (!t.date || t.date >= cutoffIso))
+            .filter(t => (t.status === 'closed' || t.status === 'generated') && t.subredditId === subredditId && t.title && (!t.date || t.date >= cutoffIso))
             .toArray();
         return tasks.map(t => t.title).filter(Boolean);
     },
@@ -2286,7 +2286,7 @@ export const CloudSyncService = {
         // Phase 2: MERGE cloud data into local (never clear — prevents data loss)
         for (const table of tables) {
             let cloudData = fetched[table] || [];
-            const localAuthTables = ['ofModels', 'ofVas', 'ofTrackingLinks'];
+            const localAuthTables = ['ofModels', 'ofVas', 'ofTrackingLinks', 'accounts'];
             if (cloudData.length === 0) {
                 // Local-authoritative tables: if cloud is empty, clear local too
                 if (localAuthTables.includes(table)) {
@@ -2434,11 +2434,15 @@ export const CloudSyncService = {
             const pendingDel = _pendingDeletes.get(table);
             if (pendingDel && pendingDel.size > 0) {
                 cloudData = cloudData.filter(r => !pendingDel.has(r.id));
-                _pendingDeletes.delete(table);
             }
 
             // Merge: upsert cloud data without clearing local
             await db[table].bulkPut(cloudData);
+
+            // Clear pending deletes AFTER bulkPut so they can't be re-added by a concurrent sync
+            if (pendingDel) {
+                _pendingDeletes.delete(table);
+            }
             console.log(`[CloudSync] Merged ${cloudData.length} cloud rows into ${table}`);
 
             // For local-authoritative tables: remove local records that no longer exist in cloud
@@ -3814,6 +3818,13 @@ export const ThreadsPatrolService = {
             priorDeadDays.get(s.username).add(s.date);
         }
 
+        // Load most recent prior snapshot per username for threadCount comparison
+        const allActiveSnaps = await db.threadsSnapshots.where('date').below(today).reverse().sortBy('date');
+        const prevThreadCounts = new Map(); // username -> most recent threadCount
+        for (const s of allActiveSnaps) {
+            if (!prevThreadCounts.has(s.username)) prevThreadCounts.set(s.username, s.threadCount || 0);
+        }
+
         onProgress?.({ checked: 0, total: toCheck.length, ...results });
 
         // Slow: 1 at a time with 3s delay to avoid Threads rate-limiting
@@ -3857,6 +3868,14 @@ export const ThreadsPatrolService = {
                 } else {
                     // Alive — update metrics
                     if (data.followerCount !== undefined) fields['Followers'] = data.followerCount;
+                    if (data.threadCount !== undefined) {
+                        fields['Thread Count'] = data.threadCount;
+                        // If threadCount increased vs previous snapshot, account posted — update Last Post Date
+                        const prevCount = prevThreadCounts.get(uname) || 0;
+                        if (data.threadCount > prevCount) {
+                            fields['Last Post Date'] = today;
+                        }
+                    }
                     results.alive++;
                 }
 
