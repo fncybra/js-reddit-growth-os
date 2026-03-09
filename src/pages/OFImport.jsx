@@ -56,6 +56,11 @@ export function OFImport() {
         if (!confirm('FINAL WARNING: This cannot be undone. All OF Tracker data will be wiped. Continue?')) return;
         setResetting(true);
         try {
+            // Mark pending clears so sync won't re-add during cloud delete
+            const { markPendingClear } = await import('../services/growthEngine');
+            const ofTables = ['ofDailyStats', 'ofLinkSnapshots', 'ofTrackingLinks', 'ofBulkImports', 'ofVas', 'ofModels'];
+            for (const t of ofTables) await markPendingClear(t);
+
             // Clear local Dexie tables (dependency order)
             await db.ofDailyStats.clear();
             await db.ofLinkSnapshots.clear();

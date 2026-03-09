@@ -169,29 +169,30 @@ export function Library() {
 
     async function deleteAsset(id) {
         if (window.confirm("Delete this asset? This will also permanently delete any generated Tasks that rely on it across the cloud.")) {
+            const { CloudSyncService, markPendingDelete } = await import('../services/growthEngine');
+
             // Find related tasks
             const relatedTasks = await db.tasks.where('assetId').equals(id).toArray();
 
             // Delete associated tasks and their performances
             if (relatedTasks.length > 0) {
                 const taskIds = relatedTasks.map(t => t.id);
-                // Also clean up any performances tied to these tasks
                 const perfs = await db.performances.where('taskId').anyOf(taskIds).toArray();
                 if (perfs.length > 0) {
                     const perfIds = perfs.map(p => p.id);
+                    for (const pid of perfIds) await markPendingDelete('performances', pid);
                     await db.performances.bulkDelete(perfIds);
-                    const { CloudSyncService } = await import('../services/growthEngine');
                     await CloudSyncService.deleteMultipleFromCloud('performances', perfIds);
                 }
 
+                for (const tid of taskIds) await markPendingDelete('tasks', tid);
                 await db.tasks.bulkDelete(taskIds);
-                const { CloudSyncService } = await import('../services/growthEngine');
                 await CloudSyncService.deleteMultipleFromCloud('tasks', taskIds);
             }
 
             // Finally, delete the asset itself from local and cloud
+            await markPendingDelete('assets', id);
             await db.assets.delete(id);
-            const { CloudSyncService } = await import('../services/growthEngine');
             await CloudSyncService.deleteFromCloud('assets', id);
         }
     }

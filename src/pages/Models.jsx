@@ -168,6 +168,15 @@ export function Models() {
                 const subredditIds = subreddits.map(s => s.id);
                 const assetIds = assets.map(a => a.id);
 
+                // Mark pending deletes BEFORE local delete so sync won't re-add
+                const { markPendingDelete } = await import('../services/growthEngine');
+                for (const id of performanceIds) await markPendingDelete('performances', id);
+                for (const id of taskIds) await markPendingDelete('tasks', id);
+                for (const id of assetIds) await markPendingDelete('assets', id);
+                for (const id of subredditIds) await markPendingDelete('subreddits', id);
+                for (const id of accountIds) await markPendingDelete('accounts', id);
+                await markPendingDelete('models', modelId);
+
                 await db.transaction('rw', db.performances, db.tasks, db.assets, db.subreddits, db.accounts, db.models, async () => {
                     if (performanceIds.length > 0) await db.performances.bulkDelete(performanceIds);
                     if (taskIds.length > 0) await db.tasks.bulkDelete(taskIds);

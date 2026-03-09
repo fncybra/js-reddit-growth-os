@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../db/db';
 import { generateId } from '../db/generateId';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { CloudSyncService, DailyPlanGenerator, SettingsService, SubredditLifecycleService, TitleGeneratorService } from '../services/growthEngine';
+import { CloudSyncService, DailyPlanGenerator, SettingsService, SubredditLifecycleService, TitleGeneratorService, markPendingDelete } from '../services/growthEngine';
 
 const ACCOUNT_COLORS = [
     '#6366f1', '#ec4899', '#14b8a6', '#f59e0b', '#8b5cf6',
@@ -214,6 +214,10 @@ export function Tasks() {
 
             const linkedPerformances = await db.performances.where('taskId').anyOf(taskIds).toArray();
             const performanceIds = linkedPerformances.map(p => p.id);
+
+            // Mark pending deletes BEFORE local delete
+            for (const id of performanceIds) await markPendingDelete('performances', id);
+            for (const id of taskIds) await markPendingDelete('tasks', id);
 
             await db.transaction('rw', db.tasks, db.performances, async () => {
                 if (linkedPerformances.length > 0) {
@@ -621,10 +625,12 @@ function TaskRow({ task, activeModelId, proxyUrl, showAccount }) {
         if (!confirmed) return;
 
         try {
+            await markPendingDelete('tasks', task.id);
             await db.tasks.delete(task.id);
             await CloudSyncService.deleteFromCloud('tasks', task.id);
 
             if (performance) {
+                await markPendingDelete('performances', performance.id);
                 await db.performances.delete(performance.id);
                 await CloudSyncService.deleteFromCloud('performances', performance.id);
             }
@@ -761,7 +767,9 @@ function TaskRow({ task, activeModelId, proxyUrl, showAccount }) {
                                 className="btn btn-primary"
                                 style={{ padding: '4px 16px', fontSize: '0.8rem' }}
                                 onClick={async () => {
+                                    const { markDirty } = await import('../services/growthEngine');
                                     await db.tasks.update(task.id, { status: 'closed' });
+                                    await markDirty('tasks', task.id);
                                     try { await CloudSyncService.autoPush(['tasks']); } catch {}
                                     setSaved(true);
                                 }}

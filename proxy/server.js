@@ -157,12 +157,15 @@ function getRequestProxyInfo(req) {
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Trust Railway/Cloudflare reverse proxy for rate limiting & IP detection
+app.set('trust proxy', 1);
+
 app.use(express.json({ limit: '1mb' }));
 app.use(helmet());
 app.use(cors({
     origin: process.env.CORS_ORIGINS
         ? process.env.CORS_ORIGINS.split(',').map(s => s.trim())
-        : ['http://localhost:5173', 'http://localhost:4173'],
+        : true,
     methods: ['GET', 'POST'],
 }));
 

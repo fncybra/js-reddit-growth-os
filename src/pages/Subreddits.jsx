@@ -203,6 +203,12 @@ export function Subreddits() {
                 : [];
             const performanceIds = linkedPerformances.map(p => p.id);
 
+            // Mark pending deletes BEFORE local delete
+            const { markPendingDelete } = await import('../services/growthEngine');
+            for (const id of performanceIds) await markPendingDelete('performances', id);
+            for (const id of taskIds) await markPendingDelete('tasks', id);
+            await markPendingDelete('subreddits', sub.id);
+
             await db.transaction('rw', db.performances, db.tasks, db.subreddits, async () => {
                 if (performanceIds.length > 0) await db.performances.bulkDelete(performanceIds);
                 if (taskIds.length > 0) await db.tasks.bulkDelete(taskIds);

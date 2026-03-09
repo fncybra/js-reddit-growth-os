@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { db } from '../db/db';
 import { generateId } from '../db/generateId';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { AccountSyncService, AnalyticsEngine, markPendingDelete } from '../services/growthEngine';
+import { AccountSyncService, AnalyticsEngine, markDirty, markPendingDelete } from '../services/growthEngine';
 import { Smartphone, RefreshCw, AlertTriangle, Trash2, ShieldCheck } from 'lucide-react';
 
 const PHASE_BADGES = {
@@ -142,9 +142,9 @@ export function Accounts() {
         if (!window.confirm(confirmMsg)) return;
 
         // Mark as pending delete so in-flight sync won't re-add them
-        markPendingDelete('accounts', acc.id);
-        for (const tid of relatedTaskIds) markPendingDelete('tasks', tid);
-        for (const p of relatedPerformances) markPendingDelete('performances', p.id);
+        await markPendingDelete('accounts', acc.id);
+        for (const tid of relatedTaskIds) await markPendingDelete('tasks', tid);
+        for (const p of relatedPerformances) await markPendingDelete('performances', p.id);
 
         // Delete from cloud FIRST so sync doesn't pull it back
         try {
@@ -194,6 +194,7 @@ export function Accounts() {
             phaseChangedDate: new Date().toISOString(),
             warmupStartDate: new Date().toISOString()
         });
+        await markDirty('accounts', newId);
 
         // Fire-and-forget initial sync to populate createdUtc, karma, profile fields
         AccountSyncService.syncAccountHealth(newId).catch(() => {});

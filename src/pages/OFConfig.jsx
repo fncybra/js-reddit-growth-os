@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { db } from '../db/db';
 import { generateId } from '../db/generateId';
-import { OFVAPatternService, markPendingDelete, markPendingClear } from '../services/growthEngine';
+import { OFVAPatternService, markDirty, markPendingDelete, markPendingClear, CloudSyncService } from '../services/growthEngine';
 import { useLiveQuery } from 'dexie-react-hooks';
 
 const PLATFORMS = ['reddit', 'instagram', 'threads', 'twitter', 'tiktok', 'tinder', 'snapchat', 'telegram', 'erome', 'fetlife', 'youtube', 'sfs', 'ads'];
@@ -37,24 +37,33 @@ export function OFConfig() {
 
     const addModel = async () => {
         if (!newModel.name.trim()) return;
-        await db.ofModels.add({ id: generateId(), name: newModel.name.trim(), ofUsername: newModel.ofUsername.trim(), active: 1 });
+        const id = generateId();
+        await db.ofModels.add({ id, name: newModel.name.trim(), ofUsername: newModel.ofUsername.trim(), active: 1 });
+        await markDirty('ofModels', id);
         setNewModel({ name: '', ofUsername: '' });
+        CloudSyncService.autoPush(['ofModels']).catch(e => console.warn('autoPush failed:', e));
     };
 
     const addVA = async () => {
         if (!newVA.name.trim()) return;
-        await db.ofVas.add({ id: generateId(), name: newVA.name.trim(), active: 1 });
+        const id = generateId();
+        await db.ofVas.add({ id, name: newVA.name.trim(), active: 1 });
+        await markDirty('ofVas', id);
         setNewVA({ name: '' });
+        CloudSyncService.autoPush(['ofVas']).catch(e => console.warn('autoPush failed:', e));
     };
 
     const addLink = async () => {
         if (!newLink.label.trim() || !newLink.ofModelId) return;
+        const id = generateId();
         await db.ofTrackingLinks.add({
-            id: generateId(), label: newLink.label.trim(),
+            id, label: newLink.label.trim(),
             ofModelId: Number(newLink.ofModelId), ofVaId: newLink.ofVaId ? Number(newLink.ofVaId) : null,
             platform: newLink.platform || null,
         });
+        await markDirty('ofTrackingLinks', id);
         setNewLink({ label: '', ofModelId: '', ofVaId: '', platform: '' });
+        CloudSyncService.autoPush(['ofTrackingLinks']).catch(e => console.warn('autoPush failed:', e));
     };
 
     const cloudDelete = async (table, id) => {
@@ -69,19 +78,19 @@ export function OFConfig() {
     };
     const deleteModel = async (id) => {
         if (!confirm('Delete this model?')) return;
-        markPendingDelete('ofModels', id);
+        await markPendingDelete('ofModels', id);
         await db.ofModels.delete(id);
         await cloudDelete('ofModels', id);
     };
     const deleteVA = async (id) => {
         if (!confirm('Delete this VA?')) return;
-        markPendingDelete('ofVas', id);
+        await markPendingDelete('ofVas', id);
         await db.ofVas.delete(id);
         await cloudDelete('ofVas', id);
     };
     const deleteLink = async (id) => {
         if (!confirm('Delete this link?')) return;
-        markPendingDelete('ofTrackingLinks', id);
+        await markPendingDelete('ofTrackingLinks', id);
         await db.ofTrackingLinks.delete(id);
         await cloudDelete('ofTrackingLinks', id);
     };
@@ -108,9 +117,9 @@ export function OFConfig() {
         if (!confirm('Clear ALL models, VAs, and tracking links? This cannot be undone.')) return;
         try {
             // Mark pending clears so in-flight sync pulls don't re-add
-            markPendingClear('ofModels');
-            markPendingClear('ofVas');
-            markPendingClear('ofTrackingLinks');
+            await markPendingClear('ofModels');
+            await markPendingClear('ofVas');
+            await markPendingClear('ofTrackingLinks');
             // Clear local first (instant UI)
             await db.ofModels.clear();
             await db.ofVas.clear();

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../db/db';
 import { generateId } from '../db/generateId';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { extractRedditPostIdFromUrl, SubredditGuardService, TitleGeneratorService } from '../services/growthEngine';
+import { extractRedditPostIdFromUrl, SubredditGuardService, TitleGeneratorService, markDirty, markPendingDelete } from '../services/growthEngine';
 
 const vaResponsiveCss = `
 .va-root {
@@ -480,6 +480,10 @@ export function VADashboard() {
             const linkedPerformances = await db.performances.where('taskId').anyOf(taskIds).toArray();
             const performanceIds = linkedPerformances.map(p => p.id);
 
+            // Mark pending deletes BEFORE local delete so sync won't re-add
+            for (const pid of performanceIds) await markPendingDelete('performances', pid);
+            for (const tid of taskIds) await markPendingDelete('tasks', tid);
+
             await db.transaction('rw', db.tasks, db.performances, async () => {
                 if (performanceIds.length > 0) await db.performances.bulkDelete(performanceIds);
                 await db.tasks.bulkDelete(taskIds);
@@ -867,15 +871,18 @@ function VATaskCard({ task, index, onPosted, cooldownActive, vaName }) {
                 vaName: vaName || '',
                 postedAt: new Date().toISOString()
             });
+            await markDirty('tasks', task.id);
 
             // 2. Add Performance Record
+            const perfId = generateId();
             await db.performances.add({
-                id: generateId(),
+                id: perfId,
                 taskId: task.id,
                 views24h: 0,
                 removed: 0,
                 notes: 'Awaiting automated sync...'
             });
+            await markDirty('performances', perfId);
 
             // 3. Update Asset Tracking (Usage count + Last used date)
             if (task.assetId) {
@@ -893,6 +900,7 @@ function VATaskCard({ task, index, onPosted, cooldownActive, vaName }) {
                         lastUsedDate: new Date().toISOString()
                     };
                     await db.assets.update(asset.id, assetUpdate);
+                    await markDirty('assets', asset.id);
 
                     if (nextTimesUsed >= 5 && asset.driveFileId && targetModel?.usedFolderId && !asset.movedToUsed) {
                         try {
@@ -916,6 +924,7 @@ function VATaskCard({ task, index, onPosted, cooldownActive, vaName }) {
                                 console.error("Failed to move file in Drive");
                             } else {
                                 await db.assets.update(asset.id, { movedToUsed: 1 });
+                                await markDirty('assets', asset.id);
                             }
                         } catch (err) {
                             console.error("Error during Drive move:", err);
@@ -960,14 +969,17 @@ function VATaskCard({ task, index, onPosted, cooldownActive, vaName }) {
 
                 const taskUpdate = { status: 'failed', vaName: vaName || '', postedAt: new Date().toISOString() };
                 await db.tasks.update(task.id, taskUpdate);
+                await markDirty('tasks', task.id);
 
+                const errorPerfId = generateId();
                 const perfInsert = {
                     taskId: task.id,
                     views24h: 0,
                     removed: 1,
                     notes: reason
                 };
-                await db.performances.add({ id: generateId(), ...perfInsert });
+                await db.performances.add({ id: errorPerfId, ...perfInsert });
+                await markDirty('performances', errorPerfId);
 
                 try {
                     await SubredditGuardService.recordPostingError(task.subredditId, reason, {

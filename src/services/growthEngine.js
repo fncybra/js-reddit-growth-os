@@ -2,18 +2,46 @@ import { db } from '../db/db.js';
 import { generateId } from '../db/generateId.js';
 import { subDays, isAfter, startOfDay, differenceInDays } from 'date-fns';
 
-// Pending-delete guard: prevents CloudSync pull from re-adding records
-// that were deleted locally while a pull was in-flight
-const _pendingDeletes = new Map(); // table -> Set<id>
-const _pendingClears = new Set();  // tables fully cleared by user
+// Persistent sync metadata — survives page refresh (stored in IndexedDB)
+// Replaces the old in-memory _pendingDeletes Map which was lost on refresh
 
-export function markPendingDelete(table, id) {
-    if (!_pendingDeletes.has(table)) _pendingDeletes.set(table, new Set());
-    _pendingDeletes.get(table).add(id);
+export async function markDirty(table, recordId) {
+    await db._syncMeta.put({ table, recordId, type: 'dirty', ts: Date.now() });
 }
 
-export function markPendingClear(table) {
-    _pendingClears.add(table);
+export async function markPendingDelete(table, id) {
+    // Remove any dirty mark, add pending delete
+    await db._syncMeta.where({ table, recordId: id }).delete();
+    await db._syncMeta.put({ table, recordId: id, type: 'pendingDelete', ts: Date.now() });
+}
+
+export async function markPendingClear(table) {
+    // Clear all entries for this table, add a clear sentinel
+    await db._syncMeta.where({ table }).delete();
+    await db._syncMeta.put({ table, recordId: '__clear__', type: 'pendingClear', ts: Date.now() });
+}
+
+async function getDirtyIds(table) {
+    const rows = await db._syncMeta.where({ table }).filter(r => r.type === 'dirty').toArray();
+    return new Set(rows.map(r => r.recordId));
+}
+
+async function getPendingDeleteIds(table) {
+    const rows = await db._syncMeta.where({ table }).filter(r => r.type === 'pendingDelete').toArray();
+    return new Set(rows.map(r => r.recordId));
+}
+
+async function hasPendingClear(table) {
+    const row = await db._syncMeta.where({ table, recordId: '__clear__' }).first();
+    return !!row;
+}
+
+async function clearSyncMeta(table, recordId) {
+    await db._syncMeta.where({ table, recordId }).delete();
+}
+
+async function clearAllSyncMeta(table) {
+    await db._syncMeta.where({ table }).delete();
 }
 
 // Cached proxy token to avoid DB lookup on every request
@@ -1440,6 +1468,8 @@ export const DailyPlanGenerator = {
         if (finalNewTasks.length > 0) { // Finalize
             finalNewTasks.forEach(t => { t.id = generateId(); });
             await db.tasks.bulkAdd(finalNewTasks);
+            // Mark dirty so pull doesn't overwrite before push completes
+            for (const t of finalNewTasks) await markDirty('tasks', t.id);
             console.log(`DailyPlanGenerator: Generated ${finalNewTasks.length} tasks for model ${modelId}`);
 
             // Mark each account that received tasks as active for the day (tracks consecutiveActiveDays)
@@ -2120,25 +2150,24 @@ export const CloudSyncService = {
             }
         }
 
-        // Tables where local is authoritative for deletions — sync deletions to cloud
-        // NOTE: 'accounts' removed — fresh browsers (VA phones) have 0 local accounts
-        // and would wipe all cloud accounts. Account deletions are handled explicitly
-        // in handleDeleteAccount() which deletes from cloud directly.
-        const ofConfigTables = ['ofModels', 'ofVas', 'ofTrackingLinks'];
-        for (const table of ofConfigTables) {
-            if (!tables.includes(table)) continue;
+        // Process pending deletes from _syncMeta (persistent, survives refresh)
+        for (const table of tables) {
             try {
-                const localData = await db[table].toArray();
-                const localIds = new Set(localData.map(r => r.id));
-                const { data: cloudData } = await supabase.from(table).select('id');
-                if (cloudData && cloudData.length > 0) {
-                    const orphanIds = cloudData.filter(r => !localIds.has(r.id)).map(r => r.id);
-                    for (const oid of orphanIds) {
-                        await supabase.from(table).delete().eq('id', oid);
+                const pendingDels = await getPendingDeleteIds(table);
+                if (pendingDels.size > 0) {
+                    for (const id of pendingDels) {
+                        await supabase.from(table).delete().eq('id', id);
+                        await clearSyncMeta(table, id);
                     }
-                    if (orphanIds.length > 0) console.log(`[CloudSync] Deleted ${orphanIds.length} orphaned cloud rows from ${table}`);
+                    console.log(`[CloudSync] Processed ${pendingDels.size} pending deletes for ${table}`);
                 }
-            } catch (e) { console.warn(`[CloudSync] OF config cloud cleanup failed for ${table}:`, e.message); }
+                // Process pending clears
+                if (await hasPendingClear(table)) {
+                    await supabase.from(table).delete().neq('id', '__impossible__');
+                    await clearAllSyncMeta(table);
+                    console.log(`[CloudSync] Processed pending clear for ${table}`);
+                }
+            } catch (e) { console.warn(`[CloudSync] Pending delete processing failed for ${table}:`, e.message); }
         }
 
         for (const table of tables) {
@@ -2252,6 +2281,11 @@ export const CloudSyncService = {
                     console.error(`Sync Error(${table}): `, error.message);
                     throw new Error(`Failed to push to ${table}: ${error.message}`);
                 }
+            }
+            // Clear dirty marks after successful push — these records are now in cloud
+            const dirtyIds = await getDirtyIds(table);
+            for (const id of dirtyIds) {
+                await clearSyncMeta(table, id);
             }
             console.log(`[CloudSync] Pushed ${cleanData.length} rows for ${table}`);
         }
@@ -2415,25 +2449,24 @@ export const CloudSyncService = {
                 });
             }
 
-            // Respect pending deletes/clears from concurrent user actions (OFConfig)
-            if (_pendingClears.has(table)) {
-                _pendingClears.delete(table);
-                _pendingDeletes.delete(table);
+            // Respect pending clears/deletes from _syncMeta (persistent, survives refresh)
+            if (await hasPendingClear(table)) {
                 console.log(`[CloudSync] Skipped pull for ${table} — user cleared it`);
-                continue;
+                continue; // Don't clear syncMeta here — push will handle the cloud delete
             }
-            const pendingDel = _pendingDeletes.get(table);
-            if (pendingDel && pendingDel.size > 0) {
+            const pendingDel = await getPendingDeleteIds(table);
+            if (pendingDel.size > 0) {
                 cloudData = cloudData.filter(r => !pendingDel.has(r.id));
+            }
+
+            // Protect dirty local records — don't overwrite unpushed edits with stale cloud data
+            const dirtyIds = await getDirtyIds(table);
+            if (dirtyIds.size > 0) {
+                cloudData = cloudData.filter(r => !dirtyIds.has(r.id));
             }
 
             // Merge: upsert cloud data without clearing local
             await db[table].bulkPut(cloudData);
-
-            // Clear pending deletes AFTER bulkPut so they can't be re-added by a concurrent sync
-            if (pendingDel) {
-                _pendingDeletes.delete(table);
-            }
             console.log(`[CloudSync] Merged ${cloudData.length} cloud rows into ${table}`);
 
             // NOTE: No orphan cleanup here. Local records not in cloud may be newly added
@@ -2443,14 +2476,22 @@ export const CloudSyncService = {
 
     async autoPush(onlyTables = null) {
         const settings = await SettingsService.getSettings();
-        if (settings.supabaseUrl && settings.supabaseAnonKey) {
+        if (!settings.supabaseUrl || !settings.supabaseAnonKey) return;
+
+        // Acquire lock to prevent racing with background sync cycle
+        const gotLock = await this.acquireLock();
+        if (!gotLock) {
+            console.log('[CloudSync] autoPush skipped — sync cycle in progress');
+            return;
+        }
+        try {
             console.log(`CloudSync: Auto-pushing ${onlyTables ? onlyTables.join(', ') : 'all tables'}...`);
-            try {
-                await this.pushLocalToCloud(onlyTables);
-            } catch (err) {
-                console.error("CloudSync autoPush error:", err);
-                throw err;
-            }
+            await this.pushLocalToCloud(onlyTables);
+        } catch (err) {
+            console.error("CloudSync autoPush error:", err);
+            throw err;
+        } finally {
+            this.releaseLock();
         }
     },
 
@@ -4472,9 +4513,9 @@ export const OFImportService = {
             totalLinks: 0, totalNewSubs: 0, totalEarningsDelta: 0, createdAt: new Date().toISOString()
         });
 
-        // Check if this is the very first import
-        const allImports = await db.ofBulkImports.toArray();
-        const isFirstEverImport = allImports.length <= 1;
+        // Check if any previous snapshots actually exist (not just import records, which may sync without snapshot data)
+        const prevSnapshotCount = await db.ofLinkSnapshots.where('importId').below(importId).count();
+        const isFirstEverImport = prevSnapshotCount === 0;
 
         const modelResults = [];
         const unmappedLabels = [];
