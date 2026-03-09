@@ -2287,18 +2287,8 @@ export const CloudSyncService = {
         // Phase 2: MERGE cloud data into local (never clear — prevents data loss)
         for (const table of tables) {
             let cloudData = fetched[table] || [];
-            const localAuthTables = ['ofModels', 'ofVas', 'ofTrackingLinks', 'accounts'];
             if (cloudData.length === 0) {
-                // Local-authoritative tables: if cloud is empty, clear local too
-                if (localAuthTables.includes(table)) {
-                    const localCount = await db[table].count();
-                    if (localCount > 0) {
-                        await db[table].clear();
-                        console.log(`[CloudSync] Cleared local ${table} — cloud is empty`);
-                    }
-                } else {
-                    console.log(`[CloudSync] Skipped ${table} — cloud is empty, keeping local data`);
-                }
+                console.log(`[CloudSync] Skipped ${table} — cloud is empty, keeping local data`);
                 continue;
             }
 
@@ -2446,17 +2436,8 @@ export const CloudSyncService = {
             }
             console.log(`[CloudSync] Merged ${cloudData.length} cloud rows into ${table}`);
 
-            // For local-authoritative tables: remove local records that no longer exist in cloud
-            // This ensures deletions propagate properly
-            if (localAuthTables.includes(table)) {
-                const cloudIds = new Set(cloudData.map(r => r.id));
-                const localRecords = await db[table].toArray();
-                const orphanIds = localRecords.filter(r => !cloudIds.has(r.id)).map(r => r.id);
-                if (orphanIds.length > 0) {
-                    await db[table].bulkDelete(orphanIds);
-                    console.log(`[CloudSync] Removed ${orphanIds.length} orphaned local rows from ${table}`);
-                }
-            }
+            // NOTE: No orphan cleanup here. Local records not in cloud may be newly added
+            // and not yet pushed. Deletes propagate via _pendingDeletes guard + cloud delete in push flow.
         }
     },
 
