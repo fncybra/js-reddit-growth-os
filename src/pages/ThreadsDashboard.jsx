@@ -26,6 +26,7 @@ export function ThreadsDashboard() {
     const [patrolResults, setPatrolResults] = useState(null);
     const [patrolError, setPatrolError] = useState(null);
     const [growthDeltas, setGrowthDeltas] = useState({});
+    const [fleetAttrition, setFleetAttrition] = useState(null);
     const autoPatrolDone = useRef(false);
 
     async function handleRunPatrol() {
@@ -63,16 +64,18 @@ export function ThreadsDashboard() {
             const devs = await AirtableService.fetchDevices(forceRefresh);
             setAccounts(accs);
             setDevices(devs);
-            const [va, ai, recs, deltas] = await Promise.allSettled([
+            const [va, ai, recs, deltas, attrition] = await Promise.allSettled([
                 AirtableService.getVAScorecard(accs, devs),
                 AirtableService.getActionItems(accs),
                 ThreadsGrowthService.getRecommendations(accs),
                 ThreadsPatrolService.getGrowthDeltas(),
+                ThreadsPatrolService.getFleetAttrition(),
             ]);
             if (va.status === 'fulfilled') setVAScorecard(va.value);
             if (ai.status === 'fulfilled') setActionItems(ai.value);
             if (recs.status === 'fulfilled') setRecommendations(recs.value);
             if (deltas.status === 'fulfilled') setGrowthDeltas(deltas.value);
+            if (attrition.status === 'fulfilled') setFleetAttrition(attrition.value);
         } catch (e) {
             setError(e.message);
         } finally {
@@ -127,7 +130,14 @@ export function ThreadsDashboard() {
 
     // Growth deltas
     const totalFollowerDelta = Object.values(growthDeltas).reduce((sum, d) => sum + (d.followerDelta || 0), 0);
+    const totalThreadDelta = Object.values(growthDeltas).reduce((sum, d) => sum + (d.threadDelta || 0), 0);
     const hasDeltas = Object.keys(growthDeltas).length > 0;
+
+    // Fleet attrition
+    const deadAccs = accounts.filter(a => a.status === 'Dead/Shadowbanned' || a.status === 'Dead');
+    const newAccsThisWeek = accounts.filter(a => a.daysSinceCreation !== undefined && a.daysSinceCreation <= 7);
+    const deathsThisWeek = fleetAttrition?.deathsThisWeek || 0;
+    const netGrowth = newAccsThisWeek.length - deathsThisWeek;
 
     // Helper to get VA accounts
     const getVAAccounts = (handler) => accounts.filter(a => {
@@ -147,11 +157,17 @@ export function ThreadsDashboard() {
         const vaThreads = vaActive.reduce((sum, a) => sum + (a.threadCount || 0), 0);
         const vaPosting = vaActive.filter(a => a.threadCount > 0 && (!a.lastPostDate || daysSincePost(a) < 1));
         const postingPct = vaActive.length > 0 ? Math.round(vaPosting.length / vaActive.length * 100) : 0;
-        // Sum follower deltas for this VA's accounts
-        const vaFollowerDelta = vaAccounts.reduce((sum, a) => {
+        // Sum follower + thread deltas for this VA's accounts
+        let vaFollowerDelta = 0;
+        let vaThreadDelta = 0;
+        for (const a of vaAccounts) {
             const d = growthDeltas[a.username?.toLowerCase()];
-            return sum + (d?.followerDelta || 0);
-        }, 0);
+            if (d) {
+                vaFollowerDelta += d.followerDelta || 0;
+                vaThreadDelta += d.threadDelta || 0;
+            }
+        }
+        const vaDead = vaAccounts.filter(a => a.status === 'Dead/Shadowbanned' || a.status === 'Dead').length;
         return {
             handler: v.handler, phone: v.phone,
             active: vaActive.length, warmUp: vaWarmUp.length,
@@ -159,6 +175,8 @@ export function ThreadsDashboard() {
             stale: staleAccounts.length, staleAccounts,
             errors: vaErrors, threads: vaThreads, postingPct,
             followerDelta: vaFollowerDelta,
+            threadDelta: vaThreadDelta,
+            dead: vaDead,
         };
     })
     .filter(v => v.active + v.warmUp + v.errors > 0)
@@ -273,15 +291,38 @@ export function ThreadsDashboard() {
                     <span style={{ color: errorAccs.length > 0 ? '#f97316' : COLORS.muted }}><strong>{errorAccs.length}</strong> <span style={{ fontSize: '0.85rem' }}>Errors</span></span>
                     <span style={{ color: 'var(--border-color)' }}>|</span>
                     <span><strong>{fmtThreads(totalThreads)}</strong> <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Total Posts</span></span>
+                    {hasDeltas && totalThreadDelta > 0 && (
+                        <>
+                            <span style={{ color: 'var(--border-color)' }}>|</span>
+                            <span style={{ color: COLORS.success, fontWeight: 600 }}>
+                                +{totalThreadDelta} <span style={{ fontSize: '0.85rem', fontWeight: 400 }}>New Posts</span>
+                            </span>
+                        </>
+                    )}
                     {hasDeltas && totalFollowerDelta !== 0 && (
                         <>
                             <span style={{ color: 'var(--border-color)' }}>|</span>
                             <span style={{ color: totalFollowerDelta > 0 ? COLORS.success : COLORS.danger, fontWeight: 600 }}>
-                                {fmtDelta(totalFollowerDelta)} <span style={{ fontSize: '0.85rem', fontWeight: 400 }}>Followers Today</span>
+                                {fmtDelta(totalFollowerDelta)} <span style={{ fontSize: '0.85rem', fontWeight: 400 }}>Followers</span>
                             </span>
                         </>
                     )}
                 </div>
+
+                {/* Row 1b: Fleet Attrition Strip */}
+                {(deathsThisWeek > 0 || newAccsThisWeek.length > 0 || deadAccs.length > 0) && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '10px 16px', borderRadius: '8px', background: 'var(--bg-surface)', marginBottom: '16px', flexWrap: 'wrap', fontSize: '0.85rem' }}>
+                        <span style={{ color: COLORS.danger }}><strong>{deathsThisWeek}</strong> Deaths This Week</span>
+                        <span style={{ color: 'var(--border-color)' }}>|</span>
+                        <span style={{ color: COLORS.accent }}><strong>{newAccsThisWeek.length}</strong> New Accounts This Week</span>
+                        <span style={{ color: 'var(--border-color)' }}>|</span>
+                        <span style={{ color: netGrowth >= 0 ? COLORS.success : COLORS.danger, fontWeight: 600 }}>
+                            {netGrowth >= 0 ? '+' : ''}{netGrowth} Net Growth
+                        </span>
+                        <span style={{ color: 'var(--border-color)' }}>|</span>
+                        <span style={{ color: COLORS.muted }}><strong>{deadAccs.length}</strong> Total Dead</span>
+                    </div>
+                )}
 
                 {/* Row 2: VA Scorecard */}
                 <div className="card" style={{ marginBottom: '16px' }}>
@@ -298,14 +339,16 @@ export function ThreadsDashboard() {
                                     <th style={thStyleNum}>Stale</th>
                                     <th style={thStyleNum}>Errors</th>
                                     <th style={thStyleNum}>Posts</th>
+                                    {hasDeltas && <th style={thStyleNum}>New Posts</th>}
                                     <th style={thStyleNum}>Posting %</th>
+                                    <th style={thStyleNum}>Dead</th>
                                     {hasDeltas && <th style={thStyleNum}>Growth</th>}
                                 </tr>
                             </thead>
                             <tbody>
                                 {enhancedVA.map(v => {
                                     const borderColor = v.idle > 0 ? COLORS.danger : v.stale > 5 ? COLORS.warning : 'transparent';
-                                    const colSpan = hasDeltas ? 10 : 9;
+                                    const colSpan = hasDeltas ? 12 : 10;
                                     return (
                                         <React.Fragment key={v.handler}>
                                         <tr style={{ borderBottom: '1px solid var(--border-color)', borderLeft: `3px solid ${borderColor}` }}>
@@ -323,6 +366,11 @@ export function ThreadsDashboard() {
                                             </td>
                                             <td style={{ ...tdStyleNum, color: v.errors > 0 ? '#f97316' : 'inherit' }}>{v.errors}</td>
                                             <td style={tdStyleNum}>{fmtThreads(v.threads)}</td>
+                                            {hasDeltas && (
+                                                <td style={{ ...tdStyleNum, color: v.threadDelta > 0 ? COLORS.success : 'var(--text-secondary)', fontWeight: v.threadDelta > 0 ? 600 : 400 }}>
+                                                    {v.threadDelta > 0 ? `+${v.threadDelta}` : v.threadDelta === 0 ? '—' : v.threadDelta}
+                                                </td>
+                                            )}
                                             <td style={tdStyleNum}>
                                                 <span style={{
                                                     display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 600,
@@ -331,6 +379,9 @@ export function ThreadsDashboard() {
                                                 }}>
                                                     {v.postingPct}%
                                                 </span>
+                                            </td>
+                                            <td style={{ ...tdStyleNum, color: v.dead > 0 ? COLORS.danger : 'var(--text-secondary)' }}>
+                                                {v.dead > 0 ? v.dead : '—'}
                                             </td>
                                             {hasDeltas && (
                                                 <td style={{ ...tdStyleNum, color: v.followerDelta > 0 ? COLORS.success : v.followerDelta < 0 ? COLORS.danger : 'inherit', fontWeight: v.followerDelta !== 0 ? 600 : 400 }}>

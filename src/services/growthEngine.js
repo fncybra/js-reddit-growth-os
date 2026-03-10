@@ -3961,6 +3961,32 @@ export const ThreadsPatrolService = {
             };
         }
         return deltas;
+    },
+
+    /**
+     * Fleet attrition: deaths this week from patrol snapshots.
+     * Returns { deathsThisWeek, deadUsernames[] }
+     */
+    async getFleetAttrition() {
+        const now = new Date();
+        const weekAgo = new Date();
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        const weekAgoStr = weekAgo.toISOString().slice(0, 10);
+        const today = now.toISOString().slice(0, 10);
+
+        // Accounts that showed as 'not_found' in patrol snapshots this week
+        const deadSnaps = await db.threadsSnapshots
+            .where('date').between(weekAgoStr, today, true, true)
+            .filter(s => s.status === 'not_found')
+            .toArray();
+
+        // Unique usernames confirmed dead this week
+        const deadThisWeek = new Set(deadSnaps.map(s => s.username));
+
+        return {
+            deathsThisWeek: deadThisWeek.size,
+            deadUsernames: [...deadThisWeek],
+        };
     }
 };
 
