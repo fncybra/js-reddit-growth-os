@@ -980,11 +980,11 @@ app.get('/api/scrape/threads/user/stats/:username', requireAuth, async (req, res
             followerCount = parseFollowerCount(followerMatch[1]);
         }
 
-        // Parse thread/post count from og:description (e.g. "141 Threads")
+        // Parse thread/post count from og:description (e.g. "141 Threads" or "1.6K Threads")
         let threadCount = 0;
-        const threadMatch = ogDesc.match(/(\d+)\s*Threads?/i);
+        const threadMatch = ogDesc.match(/([\d,.]+[KMB]?)\s*Threads?/i);
         if (threadMatch) {
-            threadCount = parseInt(threadMatch[1], 10);
+            threadCount = parseFollowerCount(threadMatch[1]);
         }
 
         // Extract display name from og:title: "Display Name (@user) • Threads, Say more"

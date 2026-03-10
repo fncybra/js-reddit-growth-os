@@ -3590,7 +3590,7 @@ export const AirtableService = {
 
     async fetchActiveAccounts() {
         const { apiKey, baseId, tableName } = await this._getConfig();
-        const filter = "OR({Status}='Active',{Status}='Warm Up',{Status}='Setting Up')";
+        const filter = "OR({Status}='Active',{Status}='Warm Up',{Status}='Setting Up',{Status}='Login Errors')";
         const records = await this._fetchPaginated(baseId, tableName, apiKey, filter);
         return records.map(r => this._mapRecord(r));
     },
@@ -3609,7 +3609,11 @@ export const AirtableService = {
                 handler: f['Handler'] || '',
                 numberOfAccounts: Number(f['Number of Accounts']) || 0,
                 serialNumber: f['Serial Number'] || '',
-                phoneBrandModel: f['Phone Brand/Model'] || '',
+                phoneBrand: f['Phone Brand'] || '',
+                phoneModel: f['Phone Model'] || '',
+                phoneBrandModel: [f['Phone Brand'], f['Phone Model']].filter(Boolean).join(' ') || '',
+                color: f['Color'] || '',
+                storageCapacity: f['Storage Capacity'] || '',
                 fullName: f['Full Name'] || '',
                 workEmail: f['Work Email'] || '',
             };
@@ -3758,16 +3762,58 @@ export const AirtableService = {
         for (let i = 0; i < updates.length; i += 10) {
             batches.push(updates.slice(i, i + 10));
         }
+        const badFields = new Set(); // track fields Airtable rejects
         for (const batch of batches) {
-            const res = await fetch(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`, {
+            // Strip any previously-rejected fields
+            const cleanBatch = badFields.size > 0
+                ? batch.map(r => {
+                    const cleaned = { ...r.fields };
+                    for (const bf of badFields) delete cleaned[bf];
+                    return Object.keys(cleaned).length > 0 ? { id: r.id, fields: cleaned } : null;
+                }).filter(Boolean)
+                : batch;
+            if (cleanBatch.length === 0) continue;
+
+            let res = await fetch(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`, {
                 method: 'PATCH',
                 headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ records: batch })
+                body: JSON.stringify({ records: cleanBatch })
             });
-            if (!res.ok) {
+
+            // If Airtable rejects unknown field names, strip them and retry
+            if (res.status === 422) {
+                const body = await res.text().catch(() => '');
+                const match = body.match(/"Unknown field name: \\"(.+?)\\"/);
+                if (match) {
+                    const fieldName = match[1];
+                    badFields.add(fieldName);
+                    console.warn(`[Airtable] Field "${fieldName}" does not exist — stripping from updates. Create it in Airtable to enable tracking.`);
+                    const retryBatch = cleanBatch.map(r => {
+                        const cleaned = { ...r.fields };
+                        delete cleaned[fieldName];
+                        return Object.keys(cleaned).length > 0 ? { id: r.id, fields: cleaned } : null;
+                    }).filter(Boolean);
+                    if (retryBatch.length > 0) {
+                        res = await fetch(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`, {
+                            method: 'PATCH',
+                            headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ records: retryBatch })
+                        });
+                        if (res.ok) continue;
+                    } else {
+                        continue;
+                    }
+                }
+                if (res.status !== 200) {
+                    throw new Error(`Airtable batch update failed ${res.status}: ${body || await res.text().catch(() => '')}`);
+                }
+            } else if (res.status !== 200) {
                 const body = await res.text().catch(() => '');
                 throw new Error(`Airtable batch update failed ${res.status}: ${body}`);
             }
+        }
+        if (badFields.size > 0) {
+            console.warn(`[Airtable] Missing fields that should be created: ${[...badFields].join(', ')}`);
         }
     },
 
@@ -3898,6 +3944,11 @@ export const ThreadsPatrolService = {
                         if (data.threadCount > prevCount) {
                             fields['Last Post Date'] = today;
                         }
+                    }
+                    // If account was Login Errors but is alive on Threads, recover it
+                    if (acc.status === 'Login Errors') {
+                        fields['Status'] = 'Active';
+                        results.updated.push({ username: acc.username, prevStatus: 'Login Errors', newStatus: 'Active (recovered)' });
                     }
                     results.alive++;
                 }
