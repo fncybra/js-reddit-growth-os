@@ -3833,7 +3833,7 @@ export const ThreadsPatrolService = {
         let checked = 0;
 
         // Load prior dead snapshots for 2-strike rule (dead on a DIFFERENT day = confirmed)
-        const allPriorSnaps = await db.threadsSnapshots.where('status').equals('not_found').toArray();
+        const allPriorSnaps = await db.threadsSnapshots.where('date').below(today).filter(s => s.status === 'not_found').toArray();
         const priorDeadDays = new Map(); // username -> Set of dates they were dead
         for (const s of allPriorSnaps) {
             if (s.date === today) continue; // only count previous days
