@@ -4513,10 +4513,6 @@ export const OFImportService = {
             totalLinks: 0, totalNewSubs: 0, totalEarningsDelta: 0, createdAt: new Date().toISOString()
         });
 
-        // Check if any previous snapshots actually exist (not just import records, which may sync without snapshot data)
-        const prevSnapshotCount = await db.ofLinkSnapshots.where('importId').below(importId).count();
-        const isFirstEverImport = prevSnapshotCount === 0;
-
         const modelResults = [];
         const unmappedLabels = [];
         let totalLinks = 0, totalNewSubs = 0, totalEarningsDelta = 0;
@@ -4606,8 +4602,10 @@ export const OFImportService = {
                     subsDelta = Math.max(0, subsCumulative - prevSnapshot.subsCumulative);
                     earningsDelta = Math.max(0, earningsCumulative - prevSnapshot.earningsCumulative);
                 } else {
-                    subsDelta = isFirstEverImport ? subsCumulative : 0;
-                    earningsDelta = isFirstEverImport ? earningsCumulative : 0;
+                    // No previous snapshot — this is a baseline import, show 0 delta
+                    // The next import will calculate real new subs against this baseline
+                    subsDelta = 0;
+                    earningsDelta = 0;
                 }
 
                 // Global source stats
