@@ -113,9 +113,14 @@ export function Accounts() {
         setSyncing(true);
         try {
             const result = await AccountSyncService.syncAllAccounts();
-            const msg = result.failed > 0
-                ? `Synced ${result.succeeded}/${result.total} accounts. Failed: ${(result.failedHandles || []).join(', ') || result.failed}`
-                : `All ${result.succeeded} accounts synced successfully.`;
+            const parts = [`Synced ${result.succeeded}/${result.total} accounts`];
+            if ((result.retired || 0) > 0) {
+                parts.push(`Marked dead: ${(result.retiredHandles || []).join(', ') || result.retired}`);
+            }
+            if (result.failed > 0) {
+                parts.push(`Failed: ${(result.failedHandles || []).join(', ') || result.failed}`);
+            }
+            const msg = parts.join('. ') + '.';
             alert(msg);
         } catch (e) {
             alert('Sync failed: ' + e.message);
@@ -131,6 +136,12 @@ export function Accounts() {
 
             if (!result) {
                 alert(`SYNC FAIL for ${handle}\n${fresh?.lastSyncError || 'Unknown scrape error'}`);
+                return;
+            }
+
+            if (result.outcome === 'dead_marked') {
+                const deadReason = fresh?.deadReason || fresh?.shadowBanStatus || result.reason || 'missing_from_reddit';
+                alert(`SYNC OK for ${handle}\nMarked dead during sync.\nReason: ${deadReason}\nStatus: ${fresh?.status || 'dead'}`);
                 return;
             }
 

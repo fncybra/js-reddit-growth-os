@@ -4,6 +4,7 @@ import {
     AccountAdminService,
     AccountDeduplicationService,
     canUseStore,
+    classifyAccountSnapshotFailures,
     generateManagerActionItems,
     normalizeRedditHandle,
 } from '../services/growthEngine.js';
@@ -329,6 +330,24 @@ export async function runRedditStressSuite() {
             log.pass('Handle normalization', outputs[0]);
         } catch (err) {
             log.fail('Handle normalization', err.message);
+        }
+    }
+
+    // Test 9: Mixed stats/profile failures still classify missing when profile scrape says 404
+    {
+        try {
+            const reason = classifyAccountSnapshotFailures([
+                'stats:Valerieblooom:500',
+                'profile:Valerieblooom:404',
+                'stats:LisaNova88:500',
+                'profile:LisaNova88:404',
+            ]);
+            if (reason !== 'missing') {
+                throw new Error(`reason=${reason}`);
+            }
+            log.pass('Missing classification fallback', reason);
+        } catch (err) {
+            log.fail('Missing classification fallback', err.message);
         }
     }
 

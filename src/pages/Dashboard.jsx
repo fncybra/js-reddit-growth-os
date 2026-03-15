@@ -737,6 +737,9 @@ export function Dashboard() {
                                                     `${syncResult?.succeeded ?? 0} synced`,
                                                     `${syncResult?.failed ?? 0} failed`,
                                                 ];
+                                                if ((syncResult?.retired ?? 0) > 0) {
+                                                    syncSummary.push(`${syncResult.retired} marked dead`);
+                                                }
                                                 if ((syncResult?.skippedDead ?? 0) > 0) {
                                                     syncSummary.push(`${syncResult.skippedDead} dead skipped`);
                                                 }
@@ -744,6 +747,9 @@ export function Dashboard() {
                                                     syncSummary.push(`${syncResult.deduped} duplicate${syncResult.deduped === 1 ? '' : 's'} merged`);
                                                 }
                                                 parts.push(`Account sync: ${syncSummary.join(', ')}`);
+                                                if ((syncResult?.retiredHandles || []).length > 0) {
+                                                    parts.push(`Marked dead: ${syncResult.retiredHandles.join(', ')}`);
+                                                }
                                                 if ((syncResult?.failedHandles || []).length > 0) {
                                                     parts.push(`Failed handles: ${syncResult.failedHandles.join(', ')}`);
                                                 }

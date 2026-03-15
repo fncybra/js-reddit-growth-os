@@ -155,6 +155,49 @@ const isUsableAccountStats = (data) => {
     );
 };
 
+const parseAccountSnapshotFailure = (failure = '') => {
+    const match = String(failure || '').match(/^(stats|profile):([^:]+):(.*)$/);
+    if (!match) {
+        return { source: 'unknown', variant: '', detail: String(failure || '') };
+    }
+    return {
+        source: match[1],
+        variant: match[2],
+        detail: match[3],
+    };
+};
+
+const MISSING_ACCOUNT_FAILURE_DETAILS = new Set(['404', 'invalid', 'empty']);
+const FORBIDDEN_ACCOUNT_FAILURE_DETAILS = new Set(['403']);
+
+export const classifyAccountSnapshotFailures = (failures = []) => {
+    const parsed = failures
+        .map(parseAccountSnapshotFailure)
+        .filter((item) => item.detail);
+
+    if (parsed.length === 0) return 'unreachable';
+
+    if (parsed.every((item) => MISSING_ACCOUNT_FAILURE_DETAILS.has(item.detail))) {
+        return 'missing';
+    }
+
+    if (parsed.every((item) => FORBIDDEN_ACCOUNT_FAILURE_DETAILS.has(item.detail))) {
+        return 'forbidden';
+    }
+
+    const profileFailures = parsed.filter((item) => item.source === 'profile');
+    if (profileFailures.length > 0) {
+        if (profileFailures.every((item) => MISSING_ACCOUNT_FAILURE_DETAILS.has(item.detail))) {
+            return 'missing';
+        }
+        if (profileFailures.every((item) => FORBIDDEN_ACCOUNT_FAILURE_DETAILS.has(item.detail))) {
+            return 'forbidden';
+        }
+    }
+
+    return 'unreachable';
+};
+
 const buildDeadAccountPatch = (reason, now = new Date().toISOString()) => ({
     status: 'dead',
     deadReason: reason,
@@ -294,9 +337,7 @@ async function fetchBestAccountSnapshot(proxyUrl, rawHandle, existingAccount = {
         }
     }
 
-    const allMissing = failures.length > 0 && failures.every((item) => /:(404|invalid|empty)$/.test(item));
-    const allForbidden = failures.length > 0 && failures.every((item) => /:403$/.test(item));
-    return { ok: false, reason: allMissing ? 'missing' : allForbidden ? 'forbidden' : 'unreachable', failures };
+    return { ok: false, reason: classifyAccountSnapshotFailures(failures), failures };
 }
 
 export const extractRedditPostIdFromUrl = (rawUrl = '') => {
@@ -3202,6 +3243,17 @@ export const AccountSyncService = {
                     });
                 }
                 await db.accounts.update(accountId, patch);
+                if (snapshot.reason === 'missing') {
+                    return {
+                        ok: true,
+                        outcome: 'dead_marked',
+                        reason: snapshot.reason,
+                        failures: snapshot.failures || [],
+                        source: 'profile_missing',
+                        variant: normalizeRedditHandle(account.handle),
+                        data: null,
+                    };
+                }
                 return null;
             }
 
@@ -3240,7 +3292,12 @@ export const AccountSyncService = {
                 });
             }
             await db.accounts.update(accountId, patch);
-            return { ...snapshot, data };
+            return {
+                ...snapshot,
+                data,
+                ok: true,
+                outcome: data.isSuspended ? 'dead_marked' : 'synced',
+            };
         } catch (err) {
             console.error(`Account sync fail(${account.handle}): `, err);
             await db.accounts.update(accountId, {
@@ -3266,10 +3323,15 @@ export const AccountSyncService = {
         );
         let succeeded = 0;
         let failed = 0;
+        let retired = 0;
         const failedHandles = [];
+        const retiredHandles = [];
         for (let i = 0; i < results.length; i++) {
             const r = results[i];
-            if (r.status === 'fulfilled' && r.value) {
+            if (r.status === 'fulfilled' && r.value?.outcome === 'dead_marked') {
+                retired++;
+                retiredHandles.push(eligible[i].handle);
+            } else if (r.status === 'fulfilled' && r.value) {
                 succeeded++;
             } else {
                 failed++;
@@ -3279,10 +3341,23 @@ export const AccountSyncService = {
         if (failedHandles.length > 0) {
             console.warn('[AccountSync] Failed to sync:', failedHandles.join(', '));
         }
+        if (retiredHandles.length > 0) {
+            console.info('[AccountSync] Marked dead during sync:', retiredHandles.join(', '));
+        }
         try { await CloudSyncService.autoPush(); } catch (e) { console.error('[AccountSync] autoPush failed:', e); }
         const skippedNoHandle = accounts.filter(acc => !acc.handle).length;
         const skippedDead = accounts.filter(acc => !!acc.handle && isAccountMarkedDead(acc)).length;
-        return { total: eligible.length, succeeded, failed, failedHandles, skippedNoHandle, skippedDead, deduped: dedupeResult.removed || 0 };
+        return {
+            total: eligible.length,
+            succeeded,
+            failed,
+            failedHandles,
+            retired,
+            retiredHandles,
+            skippedNoHandle,
+            skippedDead,
+            deduped: dedupeResult.removed || 0,
+        };
     },
 
     async checkShadowBan(accountId) {
