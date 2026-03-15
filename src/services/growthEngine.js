@@ -163,6 +163,78 @@ const buildDeadAccountPatch = (reason, now = new Date().toISOString()) => ({
     phaseChangedDate: now,
 });
 
+const DEAD_SHADOW_STATUSES = new Set(['shadow_banned', 'suspended']);
+
+export const isAccountMarkedDead = (account = {}) => {
+    const status = String(account?.status || '').toLowerCase();
+    const phase = String(account?.phase || '').toLowerCase();
+    const shadowBanStatus = String(account?.shadowBanStatus || '').toLowerCase();
+    return status === 'dead'
+        || status === 'burned'
+        || phase === 'burned'
+        || !!account?.isSuspended
+        || DEAD_SHADOW_STATUSES.has(shadowBanStatus);
+};
+
+const getAccountFreshnessTs = (account = {}) => {
+    const candidates = [
+        account.lastShadowCheck,
+        account.lastSyncDate,
+        account.lastProfileAudit,
+        account.lastSyncAttempt,
+        account.phaseChangedDate,
+        account.deadAt,
+    ]
+        .map((value) => new Date(value || 0).getTime())
+        .filter((value) => Number.isFinite(value));
+
+    return candidates.length > 0 ? Math.max(...candidates) : 0;
+};
+
+const getAccountCompletenessScore = (account = {}) => {
+    const flags = [
+        'hasProfileLink',
+        'hasAvatar',
+        'hasBanner',
+        'hasBio',
+        'hasDisplayName',
+        'hasVerifiedEmail',
+    ];
+
+    return flags.reduce((score, field) => score + (Number(account?.[field] || 0) > 0 ? 1 : 0), 0);
+};
+
+const collapseAccountsForManagerActions = (accounts = []) => {
+    const grouped = new Map();
+
+    for (const account of accounts) {
+        const normalizedHandle = normalizeRedditHandle(account?.handle);
+        const key = normalizedHandle || `__id:${account?.id ?? Math.random()}`;
+        if (!grouped.has(key)) grouped.set(key, []);
+        grouped.get(key).push(account);
+    }
+
+    return [...grouped.values()].map((group) => [...group].sort((a, b) => {
+        const aDead = isAccountMarkedDead(a) ? 1 : 0;
+        const bDead = isAccountMarkedDead(b) ? 1 : 0;
+        if (bDead !== aDead) return bDead - aDead;
+
+        const aFresh = getAccountFreshnessTs(a);
+        const bFresh = getAccountFreshnessTs(b);
+        if (bFresh !== aFresh) return bFresh - aFresh;
+
+        const aComplete = getAccountCompletenessScore(a);
+        const bComplete = getAccountCompletenessScore(b);
+        if (bComplete !== aComplete) return bComplete - aComplete;
+
+        const aKarma = Number(a?.totalKarma || 0);
+        const bKarma = Number(b?.totalKarma || 0);
+        if (bKarma !== aKarma) return bKarma - aKarma;
+
+        return Number(a?.id || 0) - Number(b?.id || 0);
+    })[0]);
+};
+
 async function fetchBestAccountSnapshot(proxyUrl, rawHandle, existingAccount = {}) {
     const variants = getRedditHandleVariants(rawHandle);
     const failures = [];
@@ -222,8 +294,9 @@ async function fetchBestAccountSnapshot(proxyUrl, rawHandle, existingAccount = {
         }
     }
 
-    const allMissing = failures.length > 0 && failures.every((item) => /:(404|403|invalid|empty)$/.test(item));
-    return { ok: false, reason: allMissing ? 'missing' : 'unreachable', failures };
+    const allMissing = failures.length > 0 && failures.every((item) => /:(404|invalid|empty)$/.test(item));
+    const allForbidden = failures.length > 0 && failures.every((item) => /:403$/.test(item));
+    return { ok: false, reason: allMissing ? 'missing' : allForbidden ? 'forbidden' : 'unreachable', failures };
 }
 
 export const extractRedditPostIdFromUrl = (rawUrl = '') => {
@@ -2808,9 +2881,29 @@ export const AccountDeduplicationService = {
                     }
                 }
 
+                for (const field of ['hasAvatar', 'hasBanner', 'hasBio', 'hasDisplayName', 'hasVerifiedEmail', 'hasProfileLink']) {
+                    mergePatch[field] = Math.max(Number(canonical[field] || 0), Number(dup[field] || 0));
+                }
+
                 mergePatch.dailyCap = Math.max(Number(canonical.dailyCap || 0), Number(dup.dailyCap || 0), 10);
                 mergePatch.removalRate = Math.max(Number(canonical.removalRate || 0), Number(dup.removalRate || 0));
                 mergePatch.status = canonical.status || dup.status || 'active';
+
+                const canonicalDead = isAccountMarkedDead(canonical);
+                const duplicateDead = isAccountMarkedDead(dup);
+                if (canonicalDead || duplicateDead) {
+                    const deadSource = duplicateDead && (!canonicalDead || getAccountFreshnessTs(dup) >= getAccountFreshnessTs(canonical))
+                        ? dup
+                        : canonical;
+                    const deadAt = deadSource.deadAt || deadSource.phaseChangedDate || new Date().toISOString();
+                    Object.assign(mergePatch, buildDeadAccountPatch(
+                        deadSource.deadReason || deadSource.shadowBanStatus || (deadSource.isSuspended ? 'suspended' : 'dead'),
+                        deadAt
+                    ), {
+                        shadowBanStatus: deadSource.shadowBanStatus || canonical.shadowBanStatus || dup.shadowBanStatus || '',
+                        isSuspended: !!(deadSource.isSuspended || canonical.isSuspended || dup.isSuspended),
+                    });
+                }
 
                 const txTables = [db.accounts, db.tasks, db.subreddits, db._syncMeta];
                 if (canUseVerifications) txTables.push(db.verifications);
@@ -3095,11 +3188,20 @@ export const AccountSyncService = {
                 const now = new Date().toISOString();
                 const reason = snapshot.reason === 'missing'
                     ? 'Account not found via proxy'
+                    : snapshot.reason === 'forbidden'
+                        ? 'Proxy access forbidden while checking Reddit account'
                     : `Proxy scrape failed: ${(snapshot.failures || []).slice(0, 3).join(', ')}`;
-                await db.accounts.update(accountId, {
+                const patch = {
                     lastSyncAttempt: now,
                     lastSyncError: reason,
-                });
+                };
+                if (snapshot.reason === 'missing') {
+                    Object.assign(patch, buildDeadAccountPatch(account.deadReason || 'missing_from_reddit', now), {
+                        shadowBanStatus: account.shadowBanStatus || 'shadow_banned',
+                        lastShadowCheck: now,
+                    });
+                }
+                await db.accounts.update(accountId, patch);
                 return null;
             }
 
@@ -3150,8 +3252,15 @@ export const AccountSyncService = {
     },
 
     async syncAllAccounts() {
+        let dedupeResult = { groups: 0, removed: 0 };
+        try {
+            dedupeResult = await AccountDeduplicationService.dedupeAccounts();
+        } catch (err) {
+            console.warn('[AccountSync] Duplicate cleanup before sync failed:', err.message);
+        }
+
         const accounts = await db.accounts.toArray();
-        const eligible = accounts.filter(acc => !!acc.handle);
+        const eligible = accounts.filter(acc => !!acc.handle && !isAccountMarkedDead(acc));
         const results = await Promise.allSettled(
             eligible.map(acc => this.syncAccountHealth(acc.id))
         );
@@ -3171,8 +3280,9 @@ export const AccountSyncService = {
             console.warn('[AccountSync] Failed to sync:', failedHandles.join(', '));
         }
         try { await CloudSyncService.autoPush(); } catch (e) { console.error('[AccountSync] autoPush failed:', e); }
-        const skippedNoHandle = accounts.length - eligible.length;
-        return { total: eligible.length, succeeded, failed, failedHandles, skippedNoHandle };
+        const skippedNoHandle = accounts.filter(acc => !acc.handle).length;
+        const skippedDead = accounts.filter(acc => !!acc.handle && isAccountMarkedDead(acc)).length;
+        return { total: eligible.length, succeeded, failed, failedHandles, skippedNoHandle, skippedDead, deduped: dedupeResult.removed || 0 };
     },
 
     async checkShadowBan(accountId) {
@@ -3185,13 +3295,16 @@ export const AccountSyncService = {
         try {
             const snapshot = await fetchBestAccountSnapshot(proxyUrl, account.handle, account);
             if (!snapshot.ok) {
-                // 404 or error → likely shadow-banned or suspended
-                await db.accounts.update(accountId, {
-                    shadowBanStatus: 'shadow_banned',
-                    lastShadowCheck: now,
-                    ...buildDeadAccountPatch('shadow_banned', now),
-                });
-                return 'shadow_banned';
+                if (snapshot.reason === 'missing') {
+                    await db.accounts.update(accountId, {
+                        shadowBanStatus: 'shadow_banned',
+                        lastShadowCheck: now,
+                        ...buildDeadAccountPatch('shadow_banned', now),
+                    });
+                    return 'shadow_banned';
+                }
+                await db.accounts.update(accountId, { lastShadowCheck: now });
+                return 'error';
             }
             const data = snapshot.data;
             if (data.isSuspended) {
@@ -3355,17 +3468,16 @@ export async function generateManagerActionItems(accounts) {
 
     const now = Date.now();
     const items = [];
+    const canonicalAccounts = collapseAccountsForManagerActions(accounts);
 
-    for (const account of accounts) {
+    for (const account of canonicalAccounts) {
         const handle = account.handle || `Account #${account.id}`;
         const accountId = account.id;
         const karma = Number(account.totalKarma || 0);
         const removalRate = Number(account.removalRate || 0);
         const phase = (account.phase || '').toLowerCase();
         const isSuspended = !!account.isSuspended;
-        const status = String(account.status || '').toLowerCase();
-        const shadowBanStatus = String(account.shadowBanStatus || '').toLowerCase();
-        const isDead = status === 'dead' || status === 'burned' || ['shadow_banned', 'suspended'].includes(shadowBanStatus);
+        const isDead = isAccountMarkedDead(account);
 
         // Compute account age in days
         let ageDays = null;

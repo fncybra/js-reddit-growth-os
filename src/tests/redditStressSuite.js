@@ -258,7 +258,62 @@ export async function runRedditStressSuite() {
         }
     }
 
-    // Test 6: Normalization guard catches mixed handle formats
+    // Test 6: Duplicate merge keeps the strongest dead-state signal
+    {
+        const ids = { models: [], accounts: [] };
+        try {
+            const modelId = generateId();
+            const activeId = generateId();
+            const deadId = generateId();
+            ids.models.push(modelId);
+            ids.accounts.push(activeId, deadId);
+
+            await db.models.add({ id: modelId, name: stressName('dead-merge-model'), status: 'active' });
+            await db.accounts.bulkAdd([
+                { id: activeId, modelId, handle: 'ValerieBlooom', status: 'active', phase: 'active', dailyCap: 10 },
+                { id: deadId, modelId, handle: 'u/valerieblooom', status: 'dead', phase: 'burned', shadowBanStatus: 'shadow_banned', deadReason: 'shadow_banned', dailyCap: 1 },
+            ]);
+
+            await AccountDeduplicationService.dedupeAccounts();
+            const merged = (await db.accounts.toArray()).filter(
+                (account) => normalizeRedditHandle(account.handle) === 'valerieblooom'
+            );
+            const survivor = merged[0];
+            const ok = merged.length === 1
+                && survivor?.status === 'dead'
+                && survivor?.phase === 'burned'
+                && survivor?.shadowBanStatus === 'shadow_banned';
+            if (!ok) {
+                throw new Error(`merged=${JSON.stringify(merged)}`);
+            }
+            log.pass('Dead duplicate merge', 'Dead state wins when duplicate rows disagree');
+        } catch (err) {
+            log.fail('Dead duplicate merge', err.message);
+        } finally {
+            await cleanupScenario(ids);
+        }
+    }
+
+    // Test 7: Manager items collapse duplicate handles into one source of truth
+    {
+        try {
+            const items = await generateManagerActionItems([
+                { id: generateId(), handle: 'ValerieBlooom', status: 'active', phase: 'active', hasAvatar: 0, hasBanner: 0, hasBio: 0, hasDisplayName: 0 },
+                { id: generateId(), handle: 'u/valerieblooom', status: 'dead', phase: 'burned', shadowBanStatus: 'shadow_banned' },
+            ]);
+            const burnedItems = items.filter((item) => /remove from rotation/i.test(item.message));
+            const profileItems = items.filter((item) => /avatar|banner|bio|display name/i.test(item.message));
+            const ok = burnedItems.length === 1 && profileItems.length === 0;
+            if (!ok) {
+                throw new Error(`items=${JSON.stringify(items)}`);
+            }
+            log.pass('Manager item dedupe', 'Duplicate handles no longer spam profile tasks');
+        } catch (err) {
+            log.fail('Manager item dedupe', err.message);
+        }
+    }
+
+    // Test 8: Normalization guard catches mixed handle formats
     {
         try {
             const inputs = [

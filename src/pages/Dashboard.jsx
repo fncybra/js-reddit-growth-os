@@ -733,7 +733,20 @@ export function Dashboard() {
                                             // 4. Sync Account Health (Reddit)
                                             try {
                                                 const syncResult = await AccountSyncService.syncAllAccounts();
-                                                parts.push(`Account sync: ${syncResult?.succeeded ?? 0} synced, ${syncResult?.failed ?? 0} failed`);
+                                                const syncSummary = [
+                                                    `${syncResult?.succeeded ?? 0} synced`,
+                                                    `${syncResult?.failed ?? 0} failed`,
+                                                ];
+                                                if ((syncResult?.skippedDead ?? 0) > 0) {
+                                                    syncSummary.push(`${syncResult.skippedDead} dead skipped`);
+                                                }
+                                                if ((syncResult?.deduped ?? 0) > 0) {
+                                                    syncSummary.push(`${syncResult.deduped} duplicate${syncResult.deduped === 1 ? '' : 's'} merged`);
+                                                }
+                                                parts.push(`Account sync: ${syncSummary.join(', ')}`);
+                                                if ((syncResult?.failedHandles || []).length > 0) {
+                                                    parts.push(`Failed handles: ${syncResult.failedHandles.join(', ')}`);
+                                                }
                                                 // Re-evaluate phases after sync
                                                 await AccountLifecycleService.evaluateAccountPhases();
                                             } catch (e) { parts.push('Account sync failed: ' + e.message); }
