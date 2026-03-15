@@ -16,23 +16,10 @@ const Library = lazy(() => import('./pages/Library').then(m => ({ default: m.Lib
 const Tasks = lazy(() => import('./pages/Tasks').then(m => ({ default: m.Tasks })));
 const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })));
 const Discovery = lazy(() => import('./pages/Discovery').then(m => ({ default: m.Discovery })));
-const ModelDetail = lazy(() => import('./pages/ModelDetail').then(m => ({ default: m.ModelDetail })));
-const AccountDetail = lazy(() => import('./pages/AccountDetail').then(m => ({ default: m.AccountDetail })));
-const VADashboard = lazy(() => import('./pages/VADashboard').then(m => ({ default: m.VADashboard })));
 const ForceSync = lazy(() => import('./pages/ForceSync').then(m => ({ default: m.ForceSync })));
-const SOP = lazy(() => import('./pages/SOP').then(m => ({ default: m.SOP })));
-const Repurpose = lazy(() => import('./pages/Repurpose').then(m => ({ default: m.Repurpose })));
-const LinkTracker = lazy(() => import('./pages/LinkTracker').then(m => ({ default: m.LinkTracker })));
 const ThreadsDashboard = lazy(() => import('./pages/ThreadsDashboard').then(m => ({ default: m.ThreadsDashboard })));
-const ThreadsSettings = lazy(() => import('./pages/ThreadsSettings').then(m => ({ default: m.ThreadsSettings })));
-const OFDashboard = lazy(() => import('./pages/OFDashboard').then(m => ({ default: m.OFDashboard })));
-const OFImport = lazy(() => import('./pages/OFImport').then(m => ({ default: m.OFImport })));
-const OFReports = lazy(() => import('./pages/OFReports').then(m => ({ default: m.OFReports })));
-const OFConfig = lazy(() => import('./pages/OFConfig').then(m => ({ default: m.OFConfig })));
 const AIChatImport = lazy(() => import('./pages/AIChatImport').then(m => ({ default: m.AIChatImport })));
-const AIChatLeaderboard = lazy(() => import('./pages/AIChatLeaderboard').then(m => ({ default: m.AIChatLeaderboard })));
 const AIChatReport = lazy(() => import('./pages/AIChatReport').then(m => ({ default: m.AIChatReport })));
-const AIChatReplay = lazy(() => import('./pages/AIChatReplay').then(m => ({ default: m.AIChatReplay })));
 
 const PageLoader = () => (
   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
@@ -86,8 +73,6 @@ function App() {
         <AuthProvider>
           <Suspense fallback={<PageLoader />}>
             <Routes>
-              {/* VA Mode: No Internal sidebars, pure robot mode */}
-              <Route path="/va" element={<VADashboard />} />
               <Route path="/force-sync" element={<ForceSync />} />
 
               {/* Admin/Agency Mode: Full dashboard */}
@@ -95,27 +80,15 @@ function App() {
                 <Route path="/" element={<AgencyCommandCenter />} />
                 <Route path="reddit" element={<Dashboard />} />
                 <Route path="threads" element={<ThreadsDashboard />} />
-                <Route path="threads/settings" element={<ThreadsSettings />} />
-                <Route path="of" element={<OFDashboard />} />
-                <Route path="of/import" element={<OFImport />} />
-                <Route path="of/reports" element={<OFReports />} />
-                <Route path="of/config" element={<OFConfig />} />
                 <Route path="of/ai-chat-import" element={<AIChatImport />} />
-                <Route path="of/ai-chat-leaderboard" element={<AIChatLeaderboard />} />
                 <Route path="of/ai-chat-report/:chatterId" element={<AIChatReport />} />
-                <Route path="of/ai-chat-replay/:conversationId" element={<AIChatReplay />} />
                 <Route path="discovery" element={<Discovery />} />
                 <Route path="models" element={<Models />} />
-                <Route path="model/:id" element={<ModelDetail />} />
-                <Route path="account/:id" element={<AccountDetail />} />
                 <Route path="accounts" element={<Accounts />} />
                 <Route path="subreddits" element={<Subreddits />} />
                 <Route path="library" element={<Library />} />
-                <Route path="repurpose" element={<Repurpose />} />
                 <Route path="tasks" element={<Tasks />} />
-                <Route path="links" element={<LinkTracker />} />
                 <Route path="settings" element={<Settings />} />
-                <Route path="sop" element={<SOP />} />
               </Route>
             </Routes>
           </Suspense>

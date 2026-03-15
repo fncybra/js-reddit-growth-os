@@ -85,7 +85,7 @@ export function AgencyCommandCenter() {
                             </div>
                             {threadsConnected === false ? (
                                 <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-                                    Not connected — <Link to="/threads/settings" style={{ color: 'var(--accent-primary)' }} onClick={e => e.stopPropagation()}>Set up</Link>
+                                    Not connected — <Link to="/settings" style={{ color: 'var(--accent-primary)' }} onClick={e => e.stopPropagation()}>Set up</Link>
                                 </div>
                             ) : threadsMetrics ? (
                                 <div style={{ display: 'flex', gap: '32px' }}>

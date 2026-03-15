@@ -16,10 +16,9 @@ const SECTION_ACCESS = {
 // Route whitelist per role (admin = null = all routes allowed)
 const ROUTE_ACCESS = {
   admin: null,
-  threadsManager: ['/', '/threads', '/threads/settings', '/of', '/of/import', '/of/reports', '/of/config', '/of/ai-chat-import', '/of/ai-chat-leaderboard', '/of/ai-chat-report', '/of/ai-chat-replay', '/settings', '/sop'],
-  redditManager: ['/', '/reddit', '/discovery', '/models', '/model', '/account',
-    '/accounts', '/subreddits', '/library', '/repurpose', '/tasks', '/links', '/settings', '/sop'],
-  chatMonitor: ['/of/ai-chat-import', '/of/ai-chat-leaderboard', '/of/ai-chat-report', '/of/ai-chat-replay'],
+  threadsManager: ['/', '/threads', '/of/ai-chat-import', '/of/ai-chat-report', '/settings'],
+  redditManager: ['/', '/reddit', '/discovery', '/models', '/accounts', '/subreddits', '/library', '/tasks', '/settings'],
+  chatMonitor: ['/of/ai-chat-import', '/of/ai-chat-report'],
 };
 
 export function getAllowedSections(role) {
@@ -37,7 +36,7 @@ export function isRouteAllowed(role, pathname) {
 export function getDefaultRoute(role) {
   if (role === 'threadsManager') return '/threads';
   if (role === 'redditManager') return '/reddit';
-  if (role === 'chatMonitor') return '/of/ai-chat-leaderboard';
+  if (role === 'chatMonitor') return '/of/ai-chat-import';
   return '/';
 }
 

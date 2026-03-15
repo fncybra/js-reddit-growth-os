@@ -91,6 +91,20 @@ const normalizeDriveFolderId = (rawValue = '') => {
     return value;
 };
 
+export const normalizeRedditHandle = (rawValue = '') => {
+    let value = String(rawValue || '').trim().toLowerCase();
+    if (!value) return '';
+
+    value = value
+        .replace(/^https?:\/\/(www\.)?reddit\.com\//i, '')
+        .replace(/^user\//i, '')
+        .replace(/^u\//i, '')
+        .replace(/^\/+|\/+$/g, '')
+        .trim();
+
+    return value;
+};
+
 export const extractRedditPostIdFromUrl = (rawUrl = '') => {
     const url = String(rawUrl || '').trim();
     if (!url) return '';
@@ -2603,6 +2617,119 @@ export const DriveSyncService = {
         }
 
         return { newCount, updatedCount, totalFiles: driveFiles.length };
+    }
+};
+
+export const AccountDeduplicationService = {
+    async findDuplicateGroups() {
+        const accounts = await db.accounts.toArray();
+        const grouped = new Map();
+
+        for (const acc of accounts) {
+            const normalizedHandle = normalizeRedditHandle(acc.handle);
+            if (!normalizedHandle) continue;
+            if (!grouped.has(normalizedHandle)) grouped.set(normalizedHandle, []);
+            grouped.get(normalizedHandle).push(acc);
+        }
+
+        return [...grouped.entries()]
+            .filter(([, rows]) => rows.length > 1)
+            .map(([handle, rows]) => ({ normalizedHandle: handle, accounts: rows }));
+    },
+
+    async dedupeAccounts() {
+        const duplicateGroups = await this.findDuplicateGroups();
+        if (duplicateGroups.length === 0) return { groups: 0, removed: 0 };
+
+        let removed = 0;
+        let touchedTables = new Set(['accounts']);
+
+        for (const group of duplicateGroups) {
+            const taskCounts = new Map();
+            const subredditCounts = new Map();
+            const verificationCounts = new Map();
+
+            for (const acc of group.accounts) {
+                taskCounts.set(acc.id, await db.tasks.where('accountId').equals(acc.id).count());
+                subredditCounts.set(acc.id, await db.subreddits.where('accountId').equals(acc.id).count());
+                verificationCounts.set(acc.id, await db.verifications.where('accountId').equals(acc.id).count());
+            }
+
+            const canonical = [...group.accounts].sort((a, b) => {
+                const aRefs = (taskCounts.get(a.id) || 0) + (subredditCounts.get(a.id) || 0) + (verificationCounts.get(a.id) || 0);
+                const bRefs = (taskCounts.get(b.id) || 0) + (subredditCounts.get(b.id) || 0) + (verificationCounts.get(b.id) || 0);
+                if (bRefs !== aRefs) return bRefs - aRefs;
+
+                const aSync = new Date(a.lastSyncDate || a.lastShadowCheck || 0).getTime();
+                const bSync = new Date(b.lastSyncDate || b.lastShadowCheck || 0).getTime();
+                if (bSync !== aSync) return bSync - aSync;
+
+                return Number(a.id) - Number(b.id);
+            })[0];
+
+            const duplicates = group.accounts.filter(acc => acc.id !== canonical.id);
+            if (duplicates.length === 0) continue;
+
+            for (const dup of duplicates) {
+                const mergePatch = {};
+                const preferredFields = [
+                    'handle', 'notes', 'proxyInfo', 'vaPin', 'cqsStatus', 'phase',
+                    'phaseChangedDate', 'warmupStartDate', 'restUntilDate', 'lastSyncDate',
+                    'lastShadowCheck', 'lastActiveDate', 'createdUtc', 'totalKarma',
+                    'linkKarma', 'commentKarma', 'shadowBanStatus'
+                ];
+
+                for (const field of preferredFields) {
+                    const canonicalValue = canonical[field];
+                    const dupValue = dup[field];
+                    if ((canonicalValue === undefined || canonicalValue === null || canonicalValue === '') && dupValue !== undefined && dupValue !== null && dupValue !== '') {
+                        mergePatch[field] = dupValue;
+                    }
+                }
+
+                mergePatch.dailyCap = Math.max(Number(canonical.dailyCap || 0), Number(dup.dailyCap || 0), 10);
+                mergePatch.removalRate = Math.max(Number(canonical.removalRate || 0), Number(dup.removalRate || 0));
+                mergePatch.status = canonical.status || dup.status || 'active';
+
+                await db.transaction('rw', db.accounts, db.tasks, db.subreddits, db.verifications, async () => {
+                    if (Object.keys(mergePatch).length > 0) {
+                        await db.accounts.update(canonical.id, mergePatch);
+                    }
+
+                    const dupTasks = await db.tasks.where('accountId').equals(dup.id).toArray();
+                    if (dupTasks.length > 0) {
+                        touchedTables.add('tasks');
+                        await db.tasks.bulkPut(dupTasks.map(task => ({ ...task, accountId: canonical.id })));
+                    }
+
+                    const dupSubreddits = await db.subreddits.where('accountId').equals(dup.id).toArray();
+                    if (dupSubreddits.length > 0) {
+                        touchedTables.add('subreddits');
+                        await db.subreddits.bulkPut(dupSubreddits.map(sub => ({ ...sub, accountId: canonical.id })));
+                    }
+
+                    const dupVerifications = await db.verifications.where('accountId').equals(dup.id).toArray();
+                    if (dupVerifications.length > 0) {
+                        touchedTables.add('verifications');
+                        await db.verifications.bulkPut(dupVerifications.map(v => ({ ...v, accountId: canonical.id })));
+                    }
+
+                    await markDirty('accounts', canonical.id);
+                    await markPendingDelete('accounts', dup.id);
+                    await db.accounts.delete(dup.id);
+                });
+
+                removed++;
+            }
+        }
+
+        try {
+            await CloudSyncService.autoPush([...touchedTables]);
+        } catch (err) {
+            console.warn('[AccountDeduplication] Cloud sync after dedupe failed:', err.message);
+        }
+
+        return { groups: duplicateGroups.length, removed };
     }
 };
 

@@ -5,21 +5,15 @@ import {
   Users,
   Smartphone,
   Globe,
-  Image as ImageIcon,
+  Image,
   CheckSquare,
   Settings,
-  Settings2,
   Telescope,
   Cloud,
   CloudOff,
-  BookOpen,
-  Repeat,
-  Link2,
   AtSign,
   Lock,
-  BarChart3,
   Upload,
-  FileText,
 } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
@@ -40,39 +34,25 @@ const navSections = [
       { path: '/models', label: 'Models', icon: Users },
       { path: '/accounts', label: 'Accounts', icon: Smartphone },
       { path: '/subreddits', label: 'Subreddits', icon: Globe },
-      { path: '/library', label: 'Content Library', icon: ImageIcon },
-      { path: '/repurpose', label: 'Repurpose Ready', icon: Repeat },
+      { path: '/library', label: 'Content Library', icon: Image },
       { path: '/tasks', label: 'Post Tasks', icon: CheckSquare },
-      { path: '/links', label: 'Link Tracker', icon: Link2 },
     ],
   },
   {
     label: 'THREADS',
     items: [
       { path: '/threads', label: 'Threads Dashboard', icon: AtSign },
-      { path: '/threads/settings', label: 'Threads Settings', icon: Settings2 },
-    ],
-  },
-  {
-    label: 'OF TRACKER',
-    items: [
-      { path: '/of', label: 'OF Dashboard', icon: BarChart3 },
-      { path: '/of/import', label: 'Import Data', icon: Upload },
-      { path: '/of/reports', label: 'Reports', icon: FileText },
-      { path: '/of/config', label: 'Configuration', icon: Settings2 },
     ],
   },
   {
     label: 'AI CHAT',
     items: [
       { path: '/of/ai-chat-import', label: 'Chat Import', icon: Upload },
-      { path: '/of/ai-chat-leaderboard', label: 'Leaderboard', icon: BarChart3 },
     ],
   },
   {
     label: 'SYSTEM',
     items: [
-      { path: '/sop', label: 'Training SOP', icon: BookOpen },
       { path: '/settings', label: 'Settings', icon: Settings },
     ],
   },
@@ -162,7 +142,7 @@ function CloudSyncStatus() {
           const cfg = await SettingsService.getSettings();
           const connected = !!(cfg?.supabaseUrl && cfg?.supabaseAnonKey);
           if (!cancelled) setIsSynced(connected);
-        } catch (_err) {
+        } catch {
           if (!cancelled) setIsSynced(false);
         }
       }
@@ -193,7 +173,7 @@ function CloudSyncStatus() {
             ip: data.currentIp || '',
           });
         }
-      } catch (_err) {
+      } catch {
         if (!cancelled) setProxyState({ checking: false, connected: false, ip: '' });
       }
     }

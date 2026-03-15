@@ -75,13 +75,12 @@ export function Discovery() {
         setSelectedSubs(new Set());
 
         try {
-            const { SettingsService } = await import('../services/growthEngine');
+            const { SettingsService, getProxyHeaders } = await import('../services/growthEngine');
             const proxyUrl = await SettingsService.getProxyUrl();
 
             if (discoveryMode === 'competitor') {
                 if (!username.trim()) return;
                 const cleanUsername = username.replace(/^(u\/|\/u\/|https:\/\/www.reddit.com\/u(ser)?\/)/i, '').split('/')[0].trim();
-                const { getProxyHeaders } = await import('../services/growthEngine');
                 const response = await fetch(`${proxyUrl}/api/scrape/user/${cleanUsername}`, { headers: await getProxyHeaders() });
 
                 if (!response.ok) throw new Error("Competitor not found or proxy error.");
@@ -169,13 +168,13 @@ export function Discovery() {
                 // Fetch deep metadata (Rules & Flairs) from proxy
                 let deepData = {};
                 try {
-                    const { SettingsService } = await import('../services/growthEngine');
+                    const { SettingsService, getProxyHeaders } = await import('../services/growthEngine');
                     const proxyUrl = await SettingsService.getProxyUrl();
                     const res = await fetch(`${proxyUrl}/api/scrape/subreddit/${subName}`, { headers: await getProxyHeaders() });
                     if (res.ok) {
                         deepData = await res.json();
                     }
-                } catch (e) {
+                } catch {
                     console.error("Failed to fetch deep metadata for", subName);
                 }
 

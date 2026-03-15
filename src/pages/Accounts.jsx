@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { db } from '../db/db';
 import { generateId } from '../db/generateId';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { AccountSyncService, AnalyticsEngine, markDirty, markPendingDelete } from '../services/growthEngine';
+import { AccountDeduplicationService, AccountSyncService, AnalyticsEngine, CloudSyncService, markDirty, markPendingDelete, normalizeRedditHandle } from '../services/growthEngine';
 import { Smartphone, RefreshCw, AlertTriangle, Trash2, ShieldCheck } from 'lucide-react';
 
 const PHASE_BADGES = {
@@ -64,12 +64,39 @@ export function Accounts() {
 
     const [syncing, setSyncing] = useState(false);
     const [checkingShadow, setCheckingShadow] = useState(false);
+    const dedupeSignatureRef = useRef('');
 
     React.useEffect(() => {
         if (models && models.length > 0 && !selectedModelId) {
             setSelectedModelId(models[0].id);
         }
     }, [models, selectedModelId]);
+
+    React.useEffect(() => {
+        if (!accounts || accounts.length === 0) return;
+
+        const duplicateSignature = [...accounts]
+            .map(acc => `${acc.id}:${normalizeRedditHandle(acc.handle)}`)
+            .sort()
+            .join('|');
+
+        if (duplicateSignature === dedupeSignatureRef.current) return;
+        dedupeSignatureRef.current = duplicateSignature;
+
+        let cancelled = false;
+        (async () => {
+            const result = await AccountDeduplicationService.dedupeAccounts();
+            if (!cancelled && result.removed > 0) {
+                alert(`Merged ${result.removed} duplicate account(s).`);
+            }
+        })().catch(err => {
+            console.warn('[Accounts] Duplicate cleanup failed:', err.message);
+        });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [accounts]);
 
     const [formData, setFormData] = useState({
         handle: '', dailyCap: 10, status: 'active', cqsStatus: 'High', removalRate: 0, notes: '', proxyInfo: '', vaPin: ''
@@ -134,39 +161,62 @@ export function Accounts() {
         const relatedPerformances = relatedTaskIds.length > 0
             ? await db.performances.where('taskId').anyOf(relatedTaskIds).toArray()
             : [];
+        const relatedVerifications = await db.verifications.where('accountId').equals(acc.id).toArray();
+        const relatedVerificationIds = relatedVerifications.map(v => v.id);
+        const attachedSubreddits = await db.subreddits.where('accountId').equals(acc.id).toArray();
 
         const confirmMsg = relatedTasks.length > 0
-            ? `Delete ${acc.handle}? This will also delete ${relatedTasks.length} tasks and ${relatedPerformances.length} performance records linked to this account.`
-            : `Delete ${acc.handle}?`;
+            ? `Delete ${acc.handle}? This will also delete ${relatedTasks.length} tasks and ${relatedPerformances.length} performance records linked to this account. ${attachedSubreddits.length > 0 ? `It will also unassign ${attachedSubreddits.length} subreddit(s). ` : ''}${relatedVerificationIds.length > 0 ? `It will remove ${relatedVerificationIds.length} verification record(s).` : ''}`
+            : `Delete ${acc.handle}?${attachedSubreddits.length > 0 ? ` This will also unassign ${attachedSubreddits.length} subreddit(s).` : ''}${relatedVerificationIds.length > 0 ? ` It will remove ${relatedVerificationIds.length} verification record(s).` : ''}`;
 
         if (!window.confirm(confirmMsg)) return;
 
-        // Mark as pending delete so in-flight sync won't re-add them
-        await markPendingDelete('accounts', acc.id);
-        for (const tid of relatedTaskIds) await markPendingDelete('tasks', tid);
-        for (const p of relatedPerformances) await markPendingDelete('performances', p.id);
-
-        // Delete from cloud FIRST so sync doesn't pull it back
         try {
-            const { getSupabaseClient } = await import('../db/supabase');
-            const supabase = await getSupabaseClient();
-            if (supabase) {
-                if (relatedPerformances.length > 0) await supabase.from('performances').delete().in('id', relatedPerformances.map(p => p.id));
-                if (relatedTaskIds.length > 0) await supabase.from('tasks').delete().in('id', relatedTaskIds);
-                await supabase.from('accounts').delete().eq('id', acc.id);
-            }
-        } catch (e) {
-            console.error('Cloud delete failed:', e);
-        }
+            // Mark as pending delete so pull sync cannot resurrect them before cloud delete completes.
+            await markPendingDelete('accounts', acc.id);
+            for (const tid of relatedTaskIds) await markPendingDelete('tasks', tid);
+            for (const p of relatedPerformances) await markPendingDelete('performances', p.id);
+            for (const vid of relatedVerificationIds) await markPendingDelete('verifications', vid);
 
-        // Then delete local
-        if (relatedPerformances.length > 0) {
-            await db.performances.bulkDelete(relatedPerformances.map(p => p.id));
+            await db.transaction('rw', db.performances, db.tasks, db.verifications, db.subreddits, db.accounts, async () => {
+                if (relatedPerformances.length > 0) {
+                    await db.performances.bulkDelete(relatedPerformances.map(p => p.id));
+                }
+                if (relatedTaskIds.length > 0) {
+                    await db.tasks.bulkDelete(relatedTaskIds);
+                }
+                if (relatedVerificationIds.length > 0) {
+                    await db.verifications.bulkDelete(relatedVerificationIds);
+                }
+                if (attachedSubreddits.length > 0) {
+                    await db.subreddits.bulkPut(attachedSubreddits.map(sub => ({ ...sub, accountId: null })));
+                }
+                await db.accounts.delete(acc.id);
+            });
+
+            try {
+                const CHUNK_SIZE = 200;
+                for (let i = 0; i < relatedPerformances.length; i += CHUNK_SIZE) {
+                    await CloudSyncService.deleteMultipleFromCloud('performances', relatedPerformances.slice(i, i + CHUNK_SIZE).map(p => p.id));
+                }
+                for (let i = 0; i < relatedTaskIds.length; i += CHUNK_SIZE) {
+                    await CloudSyncService.deleteMultipleFromCloud('tasks', relatedTaskIds.slice(i, i + CHUNK_SIZE));
+                }
+                for (let i = 0; i < relatedVerificationIds.length; i += CHUNK_SIZE) {
+                    await CloudSyncService.deleteMultipleFromCloud('verifications', relatedVerificationIds.slice(i, i + CHUNK_SIZE));
+                }
+                if (attachedSubreddits.length > 0) {
+                    await CloudSyncService.autoPush(['subreddits']);
+                }
+                await CloudSyncService.deleteFromCloud('accounts', acc.id);
+                await CloudSyncService.autoPush(['accounts', 'tasks', 'performances', 'verifications']);
+            } catch (cloudErr) {
+                console.warn('[Accounts] Cloud delete failed:', cloudErr.message);
+            }
+        } catch (err) {
+            console.error('Failed to delete account', err);
+            alert('Delete failed: ' + err.message);
         }
-        if (relatedTaskIds.length > 0) {
-            await db.tasks.bulkDelete(relatedTaskIds);
-        }
-        await db.accounts.delete(acc.id);
     }
 
     if (models === undefined) {
@@ -184,10 +234,23 @@ export function Accounts() {
         e.preventDefault();
         if (!formData.handle || !selectedModelId) return;
 
+        const normalizedHandle = normalizeRedditHandle(formData.handle);
+        if (!normalizedHandle) {
+            alert('Enter a valid Reddit handle.');
+            return;
+        }
+
+        const existingAccount = (accounts || []).find(acc => normalizeRedditHandle(acc.handle) === normalizedHandle);
+        if (existingAccount) {
+            alert(`${existingAccount.handle || normalizedHandle} already exists in the account system.`);
+            return;
+        }
+
         const newId = generateId();
         await db.accounts.add({
             id: newId,
             ...formData,
+            handle: `u/${normalizedHandle}`,
             modelId: Number(selectedModelId),
             dailyCap: Number(formData.dailyCap),
             phase: 'warming',
