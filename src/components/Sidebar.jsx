@@ -11,9 +11,7 @@ import {
   Telescope,
   Cloud,
   CloudOff,
-  AtSign,
   Lock,
-  Upload,
 } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
@@ -30,24 +28,13 @@ const navSections = [
   {
     label: 'REDDIT',
     items: [
+      { path: '/reddit', label: 'Dashboard', icon: LayoutDashboard },
       { path: '/discovery', label: 'Discovery Scraper', icon: Telescope },
       { path: '/models', label: 'Models', icon: Users },
       { path: '/accounts', label: 'Accounts', icon: Smartphone },
       { path: '/subreddits', label: 'Subreddits', icon: Globe },
       { path: '/library', label: 'Content Library', icon: Image },
       { path: '/tasks', label: 'Post Tasks', icon: CheckSquare },
-    ],
-  },
-  {
-    label: 'THREADS',
-    items: [
-      { path: '/threads', label: 'Threads Dashboard', icon: AtSign },
-    ],
-  },
-  {
-    label: 'AI CHAT',
-    items: [
-      { path: '/of/ai-chat-import', label: 'Chat Import', icon: Upload },
     ],
   },
   {
@@ -61,14 +48,18 @@ const navSections = [
 export function Sidebar() {
   const { role, logout } = useAuth();
   const allowedLabels = getAllowedSections(role);
-  const visibleSections = navSections.filter(s => allowedLabels.includes(s.label));
+  const visibleSections = navSections.filter((section) => allowedLabels.includes(section.label));
 
   const [collapsed, setCollapsed] = React.useState(() => {
-    try { return JSON.parse(localStorage.getItem('sidebar_collapsed') || '{}'); } catch { return {}; }
+    try {
+      return JSON.parse(localStorage.getItem('sidebar_collapsed') || '{}');
+    } catch {
+      return {};
+    }
   });
 
   function toggleSection(label) {
-    setCollapsed(prev => {
+    setCollapsed((prev) => {
       const next = { ...prev, [label]: !prev[label] };
       localStorage.setItem('sidebar_collapsed', JSON.stringify(next));
       return next;
@@ -79,8 +70,8 @@ export function Sidebar() {
     <div className="sidebar">
       <div className="sidebar-header">
         <div className="sidebar-logo">
-          <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontWeight: 800, fontSize: '0.7rem', color: '#fff', letterSpacing: '-0.5px' }}>JS</div>
-          <span>JS Media</span>
+          <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: 'linear-gradient(135deg, #ff4500, #ff7a18)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontWeight: 800, fontSize: '0.7rem', color: '#fff', letterSpacing: '-0.5px' }}>RO</div>
+          <span>Reddit OS</span>
         </div>
       </div>
       <nav className="sidebar-nav">
@@ -130,26 +121,28 @@ export function Sidebar() {
 }
 
 function CloudSyncStatus() {
-    const settings = useLiveQuery(() => db.settings.toArray());
-    const [isSynced, setIsSynced] = React.useState(false);
-    const [proxyState, setProxyState] = React.useState({ checking: true, connected: false, ip: '' });
+  const settings = useLiveQuery(() => db.settings.toArray());
+  const [isSynced, setIsSynced] = React.useState(false);
+  const [proxyState, setProxyState] = React.useState({ checking: true, connected: false, ip: '' });
 
-    React.useEffect(() => {
-      let cancelled = false;
+  React.useEffect(() => {
+    let cancelled = false;
 
-      async function checkCloud() {
-        try {
-          const cfg = await SettingsService.getSettings();
-          const connected = !!(cfg?.supabaseUrl && cfg?.supabaseAnonKey);
-          if (!cancelled) setIsSynced(connected);
-        } catch {
-          if (!cancelled) setIsSynced(false);
-        }
+    async function checkCloud() {
+      try {
+        const cfg = await SettingsService.getSettings();
+        const connected = !!(cfg?.supabaseUrl && cfg?.supabaseAnonKey);
+        if (!cancelled) setIsSynced(connected);
+      } catch {
+        if (!cancelled) setIsSynced(false);
       }
+    }
 
-      checkCloud();
-      return () => { cancelled = true; };
-    }, [settings]);
+    checkCloud();
+    return () => {
+      cancelled = true;
+    };
+  }, [settings]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -190,7 +183,7 @@ function CloudSyncStatus() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: isSynced ? 'var(--status-success)' : 'var(--text-secondary)' }}>
         {isSynced ? <Cloud size={14} /> : <CloudOff size={14} />}
-        <span style={{ fontWeight: '500' }}>{isSynced ? "Cloud Live" : "Offline"}</span>
+        <span style={{ fontWeight: '500' }}>{isSynced ? 'Cloud Live' : 'Offline'}</span>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: proxyState.connected ? 'var(--status-success)' : 'var(--text-secondary)' }}>
         {proxyState.connected ? <Cloud size={14} /> : <CloudOff size={14} />}
@@ -216,7 +209,7 @@ function CloudSyncStatus() {
               btn.textContent = 'Done!';
               setTimeout(() => window.location.reload(), 500);
             } catch (err) {
-              btn.textContent = 'FAILED: ' + (err.message || err).substring(0, 40);
+              btn.textContent = `FAILED: ${(err.message || err).substring(0, 40)}`;
               btn.style.color = '#ef4444';
               console.error('[Sync]', err);
             }

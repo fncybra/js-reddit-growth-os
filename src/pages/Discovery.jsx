@@ -19,7 +19,11 @@ export function Discovery() {
 
     const targetModel = models?.find(m => m.id === selectedModelId);
     const modelAccounts = useLiveQuery(
-        () => targetModel ? db.accounts.where({ modelId: targetModel.id }).toArray() : [],
+        async () => {
+            if (!targetModel) return [];
+            const accounts = await db.accounts.where({ modelId: targetModel.id }).toArray();
+            return accounts.filter(acc => String(acc.status || '').toLowerCase() !== 'dead');
+        },
         [targetModel?.id]
     );
 

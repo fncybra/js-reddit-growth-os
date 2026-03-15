@@ -5,20 +5,14 @@ import { db } from '../db/db';
 
 const AuthContext = createContext(null);
 
-// Section visibility per role
 const SECTION_ACCESS = {
-  admin: ['AGENCY', 'REDDIT', 'THREADS', 'OF TRACKER', 'AI CHAT', 'SYSTEM'],
-  threadsManager: ['AGENCY', 'THREADS', 'OF TRACKER', 'AI CHAT', 'SYSTEM'],
+  admin: ['AGENCY', 'REDDIT', 'SYSTEM'],
   redditManager: ['AGENCY', 'REDDIT', 'SYSTEM'],
-  chatMonitor: ['AI CHAT'],
 };
 
-// Route whitelist per role (admin = null = all routes allowed)
 const ROUTE_ACCESS = {
   admin: null,
-  threadsManager: ['/', '/threads', '/of/ai-chat-import', '/of/ai-chat-report', '/settings'],
-  redditManager: ['/', '/reddit', '/discovery', '/models', '/accounts', '/subreddits', '/library', '/tasks', '/settings'],
-  chatMonitor: ['/of/ai-chat-import', '/of/ai-chat-report'],
+  redditManager: ['/', '/reddit', '/discovery', '/models', '/accounts', '/subreddits', '/library', '/tasks', '/settings', '/va'],
 };
 
 export function getAllowedSections(role) {
@@ -28,15 +22,12 @@ export function getAllowedSections(role) {
 export function isRouteAllowed(role, pathname) {
   if (!role) return false;
   const allowed = ROUTE_ACCESS[role];
-  if (allowed === null) return true; // admin sees all
-  // Check exact match or prefix match for dynamic routes like /model/:id, /account/:id
-  return allowed.some(r => pathname === r || pathname.startsWith(r + '/'));
+  if (allowed === null) return true;
+  return allowed.some((route) => pathname === route || pathname.startsWith(`${route}/`));
 }
 
 export function getDefaultRoute(role) {
-  if (role === 'threadsManager') return '/threads';
   if (role === 'redditManager') return '/reddit';
-  if (role === 'chatMonitor') return '/of/ai-chat-import';
   return '/';
 }
 
@@ -47,9 +38,7 @@ export function useAuth() {
 }
 
 export function AuthProvider({ children }) {
-  const [role, setRole] = useState(() => {
-    return sessionStorage.getItem('authRole') || null;
-  });
+  const [role, setRole] = useState(() => sessionStorage.getItem('authRole') || null);
 
   useEffect(() => {
     if (role) {
@@ -59,48 +48,34 @@ export function AuthProvider({ children }) {
     }
   }, [role]);
 
-  // Rate-limit PIN attempts (max 5 per 60s)
   const attemptsRef = React.useRef([]);
-  const MAX_ATTEMPTS = 5;
-  const WINDOW_MS = 60000;
+  const maxAttempts = 5;
+  const windowMs = 60000;
 
   const authenticate = useCallback(async (pin) => {
     const trimmed = pin.trim();
     if (!trimmed) return null;
 
-    // Rate limiting
     const now = Date.now();
-    attemptsRef.current = attemptsRef.current.filter(t => now - t < WINDOW_MS);
-    if (attemptsRef.current.length >= MAX_ATTEMPTS) {
+    attemptsRef.current = attemptsRef.current.filter((ts) => now - ts < windowMs);
+    if (attemptsRef.current.length >= maxAttempts) {
       throw new Error('Too many attempts. Wait 60 seconds.');
     }
     attemptsRef.current.push(now);
 
     try {
       const settings = await SettingsService.getSettings();
-
       const vaPinRow = await db.settings.where({ key: 'vaPin' }).first();
       const masterPin = vaPinRow ? vaPinRow.value : '1234';
 
-      // Priority: master (admin) > threads manager > reddit manager
       if (trimmed === String(masterPin)) {
         setRole('admin');
         return 'admin';
       }
 
-      if (settings.threadsManagerPin && trimmed === String(settings.threadsManagerPin)) {
-        setRole('threadsManager');
-        return 'threadsManager';
-      }
-
       if (settings.redditManagerPin && trimmed === String(settings.redditManagerPin)) {
         setRole('redditManager');
         return 'redditManager';
-      }
-
-      if (settings.chatMonitorPin && trimmed === String(settings.chatMonitorPin)) {
-        setRole('chatMonitor');
-        return 'chatMonitor';
       }
 
       return null;
@@ -141,7 +116,7 @@ export function PinGate({ children }) {
       }
     } catch (err) {
       console.error('Unlock error:', err);
-      setError('Database error — please refresh the page');
+      setError('Database error - please refresh the page');
     } finally {
       setLoading(false);
     }
@@ -151,11 +126,11 @@ export function PinGate({ children }) {
     <div style={{ minHeight: '100vh', backgroundColor: '#0f1115', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#e5e7eb', fontFamily: 'sans-serif' }}>
       <div style={{ backgroundColor: '#1a1d24', padding: '40px', borderRadius: '12px', border: '1px solid #2d313a', width: '320px' }}>
         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-          <div style={{ fontSize: '2rem', marginBottom: '8px' }}>🔐</div>
-          <h2 style={{ fontSize: '1.2rem', margin: 0 }}>Dashboard Access</h2>
+          <div style={{ fontSize: '2rem', marginBottom: '8px' }}>Lock</div>
+          <h2 style={{ fontSize: '1.2rem', margin: 0 }}>Reddit OS Access</h2>
           <p style={{ color: '#9ca3af', fontSize: '0.85rem', marginTop: '8px' }}>Enter your PIN to continue</p>
         </div>
-        <form onSubmit={e => { e.preventDefault(); handleUnlock(); }}>
+        <form onSubmit={(e) => { e.preventDefault(); handleUnlock(); }}>
           <input
             type="password"
             inputMode="numeric"
@@ -164,14 +139,14 @@ export function PinGate({ children }) {
             style={{ textAlign: 'center', marginBottom: '16px', backgroundColor: '#0f1115', width: '100%', boxSizing: 'border-box', fontSize: '1.2rem', letterSpacing: '0.3em' }}
             maxLength={8}
             value={pin}
-            onChange={e => setPin(e.target.value)}
+            onChange={(e) => setPin(e.target.value)}
             autoFocus
           />
           {error && <div style={{ color: '#ef4444', textAlign: 'center', marginBottom: '16px', fontSize: '0.9rem' }}>{error}</div>}
           <button
             type="submit"
             disabled={loading}
-            style={{ width: '100%', backgroundColor: '#6366f1', color: '#fff', border: 'none', padding: '12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', opacity: loading ? 0.7 : 1 }}
+            style={{ width: '100%', backgroundColor: '#ff4500', color: '#fff', border: 'none', padding: '12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', opacity: loading ? 0.7 : 1 }}
           >
             {loading ? 'Checking...' : 'Unlock'}
           </button>

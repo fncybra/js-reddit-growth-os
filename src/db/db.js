@@ -216,6 +216,35 @@ db.version(19).stores({
     _syncMeta: '[table+recordId], table'
 });
 
+// v20: Reddit-only cleanup - drop legacy Threads / OF / AI chat stores
+db.version(20).stores({
+    models: '++id, name, status, driveFolderId, usedFolderId, redgifsProfile, proxyInfo, vaPin',
+    accounts: '++id, modelId, handle, status, proxyInfo, phase',
+    subreddits: '++id, modelId, name, status, lastTestedDate',
+    assets: '++id, modelId, assetType, approved, lastUsedDate, driveFileId, externalUrl',
+    tasks: '++id, date, modelId, accountId, subredditId, assetId, status, redditPostId, taskType',
+    performances: '++id, taskId',
+    settings: '++id, key',
+    verifications: '++id, accountId, subredditId',
+    dailySnapshots: '++id, date',
+    competitors: '++id, modelId, handle',
+    _syncMeta: '[table+recordId], table',
+    ofModels: null,
+    ofVas: null,
+    ofTrackingLinks: null,
+    ofBulkImports: null,
+    ofLinkSnapshots: null,
+    ofDailyStats: null,
+    aiChatImports: null,
+    aiChatters: null,
+    aiChatModels: null,
+    aiChatConversations: null,
+    aiChatMessages: null,
+    aiChatGrades: null,
+    aiChatterReports: null,
+    threadsSnapshots: null
+});
+
 // Seed default settings if empty
 db.on('populate', async () => {
     await db.settings.bulkAdd([

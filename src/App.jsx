@@ -1,25 +1,20 @@
 import React, { Suspense, lazy } from 'react';
-import { HashRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { CloudSyncHandler } from './components/CloudSyncHandler';
-import { AuthProvider } from './components/AuthContext';
-
-// Eager: landing page only
+import { AuthProvider, PinGate, RouteGuard } from './components/AuthContext';
 import { AgencyCommandCenter } from './pages/AgencyCommandCenter';
 
-// Lazy: everything else
-const Dashboard = lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
-const Models = lazy(() => import('./pages/Models').then(m => ({ default: m.Models })));
-const Accounts = lazy(() => import('./pages/Accounts').then(m => ({ default: m.Accounts })));
-const Subreddits = lazy(() => import('./pages/Subreddits').then(m => ({ default: m.Subreddits })));
-const Library = lazy(() => import('./pages/Library').then(m => ({ default: m.Library })));
-const Tasks = lazy(() => import('./pages/Tasks').then(m => ({ default: m.Tasks })));
-const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })));
-const Discovery = lazy(() => import('./pages/Discovery').then(m => ({ default: m.Discovery })));
-const ForceSync = lazy(() => import('./pages/ForceSync').then(m => ({ default: m.ForceSync })));
-const ThreadsDashboard = lazy(() => import('./pages/ThreadsDashboard').then(m => ({ default: m.ThreadsDashboard })));
-const AIChatImport = lazy(() => import('./pages/AIChatImport').then(m => ({ default: m.AIChatImport })));
-const AIChatReport = lazy(() => import('./pages/AIChatReport').then(m => ({ default: m.AIChatReport })));
+const Dashboard = lazy(() => import('./pages/Dashboard').then((m) => ({ default: m.Dashboard })));
+const Models = lazy(() => import('./pages/Models').then((m) => ({ default: m.Models })));
+const Accounts = lazy(() => import('./pages/Accounts').then((m) => ({ default: m.Accounts })));
+const Subreddits = lazy(() => import('./pages/Subreddits').then((m) => ({ default: m.Subreddits })));
+const Library = lazy(() => import('./pages/Library').then((m) => ({ default: m.Library })));
+const Tasks = lazy(() => import('./pages/Tasks').then((m) => ({ default: m.Tasks })));
+const Settings = lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })));
+const Discovery = lazy(() => import('./pages/Discovery').then((m) => ({ default: m.Discovery })));
+const ForceSync = lazy(() => import('./pages/ForceSync').then((m) => ({ default: m.ForceSync })));
+const VADashboard = lazy(() => import('./pages/VADashboard').then((m) => ({ default: m.VADashboard })));
 
 const PageLoader = () => (
   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
@@ -27,19 +22,21 @@ const PageLoader = () => (
   </div>
 );
 
-// Error Boundary to catch runtime crashes and show them instead of a black screen
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
     this.state = { hasError: false, error: null, errorInfo: null };
   }
+
   static getDerivedStateFromError(error) {
     return { hasError: true, error };
   }
+
   componentDidCatch(error, errorInfo) {
     this.setState({ errorInfo });
     console.error('[ErrorBoundary] Caught:', error, errorInfo);
   }
+
   render() {
     if (this.state.hasError) {
       return (
@@ -52,7 +49,9 @@ class ErrorBoundary extends React.Component {
             {this.state.errorInfo?.componentStack}
           </pre>
           <button
-            onClick={() => { this.setState({ hasError: false, error: null, errorInfo: null }); }}
+            onClick={() => {
+              this.setState({ hasError: false, error: null, errorInfo: null });
+            }}
             style={{ marginTop: '16px', padding: '8px 16px', backgroundColor: '#6366f1', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
           >
             Try Again
@@ -60,6 +59,7 @@ class ErrorBoundary extends React.Component {
         </div>
       );
     }
+
     return this.props.children;
   }
 }
@@ -74,14 +74,21 @@ function App() {
           <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route path="/force-sync" element={<ForceSync />} />
-
-              {/* Admin/Agency Mode: Full dashboard */}
+              <Route
+                path="/va"
+                element={(
+                  <PinGate>
+                    <RouteGuard>
+                      <Suspense fallback={<PageLoader />}>
+                        <VADashboard />
+                      </Suspense>
+                    </RouteGuard>
+                  </PinGate>
+                )}
+              />
               <Route element={<Layout />}>
                 <Route path="/" element={<AgencyCommandCenter />} />
                 <Route path="reddit" element={<Dashboard />} />
-                <Route path="threads" element={<ThreadsDashboard />} />
-                <Route path="of/ai-chat-import" element={<AIChatImport />} />
-                <Route path="of/ai-chat-report/:chatterId" element={<AIChatReport />} />
                 <Route path="discovery" element={<Discovery />} />
                 <Route path="models" element={<Models />} />
                 <Route path="accounts" element={<Accounts />} />
@@ -89,6 +96,7 @@ function App() {
                 <Route path="library" element={<Library />} />
                 <Route path="tasks" element={<Tasks />} />
                 <Route path="settings" element={<Settings />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
               </Route>
             </Routes>
           </Suspense>
@@ -116,7 +124,7 @@ function RoutePersistence() {
       if (isReload && location.pathname === '/' && lastRoute && lastRoute !== '/') {
         navigate(lastRoute, { replace: true });
       }
-    } catch (_err) {
+    } catch {
       // no-op
     }
   }, [location.pathname, navigate]);

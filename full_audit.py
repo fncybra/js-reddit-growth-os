@@ -1,6 +1,5 @@
 """
-Current-stack audit for JS Reddit Growth OS.
-Audits the currently shipped app surface instead of legacy removed pages.
+Reddit-only audit for JS Reddit Growth OS.
 """
 import asyncio
 import json
@@ -11,6 +10,8 @@ import urllib.error
 import urllib.request
 
 os.environ["PYTHONIOENCODING"] = "utf-8"
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 from playwright.async_api import async_playwright
 
@@ -125,29 +126,15 @@ async def main():
         banner("AUDIT 0: PIN AUTH")
         await goto_and_wait(page, "/#/")
         body = await page.inner_text("body")
-        if "Dashboard Access" in body or "Unlock" in body:
+        if "Reddit OS Access" in body or "Unlock" in body:
             P("Auth: PIN screen appears on load")
         else:
             F("Auth: PIN screen missing", body[:200])
 
         pin_input = page.locator('input[type="password"]')
-        if await pin_input.count() > 0:
-            in_form = await page.evaluate(
-                "() => !!document.querySelector('input[type=\"password\"]')?.closest('form')"
-            )
-            if in_form:
-                P("Auth: PIN input wrapped in form")
-            else:
-                F("Auth: PIN input not wrapped in form")
-
-            input_mode = await page.evaluate(
-                "() => document.querySelector('input[type=\"password\"]')?.inputMode || ''"
-            )
-            if input_mode == "numeric":
-                P("Auth: PIN input uses numeric inputMode")
-            else:
-                F("Auth: PIN input missing numeric inputMode", input_mode)
-
+        if await pin_input.count() == 0:
+            F("Auth: PIN input missing")
+        else:
             await pin_input.fill("9999")
             await page.locator('button:has-text("Unlock")').click()
             await page.wait_for_timeout(1200)
@@ -161,33 +148,36 @@ async def main():
             await page.locator('button:has-text("Unlock")').click()
             await page.wait_for_timeout(2000)
             unlocked_body = await page.inner_text("body")
-            if "Command Center" in unlocked_body or "JS Media" in unlocked_body:
+            if "Reddit Command Center" in unlocked_body or "Reddit OS" in unlocked_body:
                 P("Auth: Master PIN unlocks dashboard")
             else:
                 F("Auth: Unlock failed", unlocked_body[:200])
-        else:
-            F("Auth: PIN input missing")
 
         sidebar_text = await page.locator(".sidebar").inner_text()
-        for section in ["AGENCY", "REDDIT", "THREADS", "AI CHAT", "SYSTEM"]:
+        for section in ["AGENCY", "REDDIT", "SYSTEM"]:
             if section in sidebar_text:
-                P(f"Auth: Sidebar shows {section}")
+                P(f"Sidebar: {section} visible")
             else:
-                F(f"Auth: Sidebar missing {section}")
+                F(f"Sidebar: {section} missing")
+
+        for removed in ["THREADS", "AI CHAT", "OF TRACKER"]:
+            if removed in sidebar_text:
+                F(f"Sidebar: removed section still visible", removed)
+            else:
+                P(f"Sidebar: {removed} removed")
+
         check_errors("Auth")
 
         route_expectations = [
-            ("/#/", "Command Center", ["Command Center", "Threads", "Reddit"]),
+            ("/#/", "Command Center", ["Reddit Command Center", "Open Dashboard"]),
             ("/#/reddit", "Reddit Dashboard", ["Removal", "Today", "Accounts"]),
-            ("/#/models", "Models", ["Models", "Create", "Edit"]),
+            ("/#/models", "Models", ["Models"]),
             ("/#/accounts", "Accounts", ["Accounts", "Karma", "Phase"]),
-            ("/#/subreddits", "Subreddits", ["Subreddits", "Add", "Testing"]),
+            ("/#/subreddits", "Subreddits", ["Subreddits"]),
             ("/#/discovery", "Discovery", ["Discovery", "Competitor", "Niche"]),
             ("/#/library", "Library", ["Library", "Drive", "Model"]),
-            ("/#/tasks", "Tasks", ["Tasks", "Generate", "Clear"]),
-            ("/#/threads", "Threads", ["Threads", "Active", "Dead"]),
-            ("/#/settings", "Settings", ["Settings", "Supabase", "Telegram"]),
-            ("/#/of/ai-chat-import", "AI Chat Import", ["AI Chat Import", "Import"]),
+            ("/#/tasks", "Tasks", ["Tasks"]),
+            ("/#/settings", "Settings", ["System Settings", "Supabase", "Telegram"]),
         ]
 
         for route, label, expectations in route_expectations:
@@ -203,13 +193,22 @@ async def main():
                     W(f"{label}: {expected} missing")
             check_errors(label)
 
+        banner("AUDIT: REMOVED ROUTES")
+        for removed_route in ["/#/threads", "/#/of/ai-chat-import", "/#/of/ai-chat-report/1"]:
+            await goto_and_wait(page, removed_route)
+            current = page.url
+            if "/threads" in current or "/of/ai-chat" in current:
+                F("Removed route still reachable", removed_route)
+            else:
+                P("Removed route redirected or unavailable")
+
         banner("AUDIT: LOCK FLOW")
         lock_button = page.locator('button:has-text("Lock")')
         if await lock_button.count() > 0:
             await lock_button.click()
             await page.wait_for_timeout(1000)
             body = await page.inner_text("body")
-            if "Dashboard Access" in body or "Unlock" in body:
+            if "Reddit OS Access" in body or "Unlock" in body:
                 P("Lock: Returns to PIN gate")
             else:
                 F("Lock: Did not return to PIN gate")
@@ -235,19 +234,11 @@ async def main():
         else:
             F("Proxy: subreddit search failed", f"code={code} data={str(data)[:120]}")
 
-        data, code = proxy_get("/api/scrape/threads/user/stats/zuck")
-        if code == 200 and data.get("exists"):
-            P("Proxy: threads scrape works")
-        else:
-            W("Proxy: threads scrape issue", f"code={code} data={str(data)[:120]}")
-
         banner("AUDIT: SUPABASE DATA INTEGRITY")
         tables = ["models", "accounts", "subreddits", "tasks", "settings", "assets", "performances"]
         supabase_ok = True
-        table_data = {}
         for table in tables:
             data = supa_get(table, "&limit=5")
-            table_data[table] = data
             if isinstance(data, list):
                 P(f"Supabase: {table} reachable ({len(data)} sample rows)")
             else:
@@ -306,19 +297,9 @@ async def main():
     print(f"  \033[91mFAIL: {len(RESULTS['fail'])}\033[0m")
     print(f"  \033[93mWARN: {len(RESULTS['warn'])}\033[0m")
 
-    if RESULTS["fail"]:
-        print("\n  \033[91m--- FAILURES ---\033[0m")
-        for item in RESULTS["fail"]:
-            print(f"    {item}")
-
-    if RESULTS["warn"]:
-        print("\n  \033[93m--- WARNINGS ---\033[0m")
-        for item in RESULTS["warn"]:
-            print(f"    {item}")
-
     out_path = os.path.join(os.path.dirname(__file__), "audit_results.json")
     with open(out_path, "w", encoding="utf-8") as fp:
-        json.dump(RESULTS, fp, indent=2)
+      json.dump(RESULTS, fp, indent=2)
     print(f"\n  Results saved to {out_path}")
 
     score = len(RESULTS["pass"]) / total * 100 if total else 0

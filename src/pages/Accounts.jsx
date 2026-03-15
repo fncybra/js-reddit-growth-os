@@ -13,6 +13,13 @@ const PHASE_BADGES = {
     burned:  { label: 'Burned',  bg: '#ffebee', color: '#c62828', border: '#ef9a9a' },
 };
 
+function isDeadAccount(account) {
+    if (!account) return false;
+    return String(account.status || '').toLowerCase() === 'dead'
+        || !!account.isSuspended
+        || ['suspended', 'shadow_banned'].includes(String(account.shadowBanStatus || '').toLowerCase());
+}
+
 function PhaseBadge({ phase }) {
     const key = phase || 'ready';
     const badge = PHASE_BADGES[key] || PHASE_BADGES.ready;
@@ -119,28 +126,18 @@ export function Accounts() {
     async function handleSyncSingleAccount(acc) {
         const handle = acc.handle || `Account #${acc.id}`;
         try {
-            const { SettingsService } = await import('../services/growthEngine');
-            const proxyUrl = await SettingsService.getProxyUrl();
-            const cleanHandle = handle.replace(/^(u\/|\/u\/)/i, '').trim();
-            const url = `${proxyUrl}/api/scrape/user/stats/${cleanHandle}`;
+            const result = await AccountSyncService.syncAccountHealth(acc.id);
+            const fresh = await db.accounts.get(acc.id);
 
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10000);
-            const res = await fetch(url, { signal: controller.signal });
-            clearTimeout(timeoutId);
-
-            if (!res.ok) {
-                const body = await res.text().catch(() => '');
-                alert(`SYNC FAIL for ${handle}\nHTTP ${res.status}: ${body || res.statusText}\nURL: ${url}`);
+            if (!result) {
+                alert(`SYNC FAIL for ${handle}\n${fresh?.lastSyncError || 'Unknown scrape error'}`);
                 return;
             }
 
-            const data = await res.json();
-            // Write to DB directly
-            await AccountSyncService.syncAccountHealth(acc.id);
-            alert(`SYNC OK for ${handle}\nKarma: ${data.totalKarma}, Suspended: ${data.isSuspended}\nAvatar: ${data.has_custom_avatar}, Banner: ${data.has_banner}\nBio: ${!!data.description}, Link: ${data.has_profile_link}\nCreated: ${data.created ? new Date(data.created * 1000).toLocaleDateString() : 'N/A'}`);
+            const data = result.data || {};
+            alert(`SYNC OK for ${handle}\nSource: ${result.source} (${result.variant})\nKarma: ${data.totalKarma ?? fresh?.totalKarma ?? 0}, Suspended: ${!!data.isSuspended}\nAvatar: ${fresh?.hasAvatar ? 'yes' : 'no'}, Banner: ${fresh?.hasBanner ? 'yes' : 'no'}\nBio: ${fresh?.hasBio ? 'yes' : 'no'}, Link: ${fresh?.hasProfileLink ? 'yes' : 'no'}\nStatus: ${fresh?.status || acc.status || 'active'}`);
         } catch (err) {
-            alert(`SYNC ERROR for ${handle}\n${err.name}: ${err.message}\n\nThis could mean:\n- Proxy is down or unreachable\n- Request timed out (10s)\n- Network/CORS issue`);
+            alert(`SYNC ERROR for ${handle}\n${err.name}: ${err.message}`);
         }
     }
 
@@ -283,6 +280,10 @@ export function Accounts() {
         }
     }
 
+    const allAccounts = accounts || [];
+    const operationalAccounts = allAccounts.filter(acc => !isDeadAccount(acc));
+    const deadAccounts = allAccounts.filter(isDeadAccount);
+
     return (
         <>
             <header className="page-header">
@@ -379,7 +380,7 @@ export function Accounts() {
 
                 <div className="card">
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                        <h2 style={{ fontSize: '1.1rem', margin: 0 }}>Active Accounts ({accounts?.length || 0})</h2>
+                        <h2 style={{ fontSize: '1.1rem', margin: 0 }}>Operational Accounts ({operationalAccounts.length})</h2>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Phase:</label>
                             <select
@@ -397,7 +398,7 @@ export function Accounts() {
                             </select>
                         </div>
                     </div>
-                    {accounts?.length === 0 ? (
+                    {operationalAccounts.length === 0 ? (
                         <div style={{ color: 'var(--text-secondary)' }}>No accounts registered for this model.</div>
                     ) : (
                         <div className="data-table-container">
@@ -415,7 +416,7 @@ export function Accounts() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {accounts?.filter(a => phaseFilter === 'all' || (a.phase || 'ready') === phaseFilter).map(acc => {
+                                    {operationalAccounts.filter(a => phaseFilter === 'all' || (a.phase || 'ready') === phaseFilter).map(acc => {
                                         const model = models?.find(m => m.id === acc.modelId);
                                         const combinedScore = Math.round((AnalyticsEngine.computeProfileScore(acc) + AnalyticsEngine.computeAccountHealthScore(acc)) / 2);
                                         return (
@@ -509,6 +510,69 @@ export function Accounts() {
                                                         );
                                                     })()}
                                                 </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+
+                <div className="card" style={{ marginTop: '24px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                        <h2 style={{ fontSize: '1.1rem', margin: 0 }}>Dead Accounts ({deadAccounts.length})</h2>
+                        <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                            Suspended and shadow-banned accounts are parked here automatically.
+                        </div>
+                    </div>
+                    {deadAccounts.length === 0 ? (
+                        <div style={{ color: 'var(--text-secondary)' }}>No dead accounts right now.</div>
+                    ) : (
+                        <div className="data-table-container">
+                            <table className="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Handle</th>
+                                        <th>Reason</th>
+                                        <th>Model</th>
+                                        <th>Karma</th>
+                                        <th>Last Sync</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {deadAccounts.map(acc => {
+                                        const model = models?.find(m => m.id === acc.modelId);
+                                        const reason = acc.deadReason || acc.shadowBanStatus || (acc.isSuspended ? 'suspended' : 'dead');
+                                        return (
+                                            <tr key={`dead-${acc.id}`}>
+                                                <td style={{ fontWeight: 500 }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                        <a href={`https://reddit.com/user/${acc.handle.replace(/^(u\/|\/u\/)/i, '')}`} target="_blank" rel="noreferrer" style={{ color: 'var(--primary-color)', textDecoration: 'none' }}>
+                                                            {acc.handle}
+                                                        </a>
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-outline"
+                                                            style={{ padding: '2px 6px', fontSize: '0.7rem' }}
+                                                            onClick={() => handleSyncSingleAccount(acc)}
+                                                            title="Re-check this account"
+                                                        >
+                                                            <RefreshCw size={12} />
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                                <td>
+                                                    <span style={{
+                                                        display: 'inline-block', padding: '2px 8px', borderRadius: '12px', fontSize: '0.7rem',
+                                                        fontWeight: 600, backgroundColor: '#ffebee', color: '#c62828', border: '1px solid #ef9a9a'
+                                                    }}>
+                                                        {String(reason).replace(/_/g, ' ')}
+                                                    </span>
+                                                </td>
+                                                <td>{model ? model.name : 'Unassigned'}</td>
+                                                <td>{(acc.totalKarma || 0).toLocaleString()}</td>
+                                                <td>{acc.lastSyncDate ? new Date(acc.lastSyncDate).toLocaleString() : 'Never'}</td>
                                             </tr>
                                         );
                                     })}
