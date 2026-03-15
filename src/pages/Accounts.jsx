@@ -2,7 +2,7 @@ import React, { useRef, useState } from 'react';
 import { db } from '../db/db';
 import { generateId } from '../db/generateId';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { AccountDeduplicationService, AccountSyncService, AnalyticsEngine, CloudSyncService, markDirty, markPendingDelete, normalizeRedditHandle } from '../services/growthEngine';
+import { AccountAdminService, AccountDeduplicationService, AccountSyncService, AnalyticsEngine, canUseStore, markDirty, normalizeRedditHandle } from '../services/growthEngine';
 import { Smartphone, RefreshCw, AlertTriangle, Trash2, ShieldCheck } from 'lucide-react';
 
 const PHASE_BADGES = {
@@ -153,63 +153,22 @@ export function Accounts() {
     }
 
     async function handleDeleteAccount(acc) {
+        const hasVerificationsStore = await canUseStore('verifications');
         const relatedTasks = await db.tasks.filter(t => t.accountId === acc.id).toArray();
-        const relatedTaskIds = relatedTasks.map(t => t.id);
-        const relatedPerformances = relatedTaskIds.length > 0
-            ? await db.performances.where('taskId').anyOf(relatedTaskIds).toArray()
+        const relatedPerformances = relatedTasks.length > 0
+            ? await db.performances.where('taskId').anyOf(relatedTasks.map(t => t.id)).toArray()
             : [];
-        const relatedVerifications = await db.verifications.where('accountId').equals(acc.id).toArray();
-        const relatedVerificationIds = relatedVerifications.map(v => v.id);
-        const attachedSubreddits = await db.subreddits.where('accountId').equals(acc.id).toArray();
+        const relatedVerifications = hasVerificationsStore ? await db.verifications.where('accountId').equals(acc.id).toArray() : [];
+        const attachedSubreddits = await db.subreddits.filter(sub => sub.accountId === acc.id).toArray();
 
         const confirmMsg = relatedTasks.length > 0
-            ? `Delete ${acc.handle}? This will also delete ${relatedTasks.length} tasks and ${relatedPerformances.length} performance records linked to this account. ${attachedSubreddits.length > 0 ? `It will also unassign ${attachedSubreddits.length} subreddit(s). ` : ''}${relatedVerificationIds.length > 0 ? `It will remove ${relatedVerificationIds.length} verification record(s).` : ''}`
-            : `Delete ${acc.handle}?${attachedSubreddits.length > 0 ? ` This will also unassign ${attachedSubreddits.length} subreddit(s).` : ''}${relatedVerificationIds.length > 0 ? ` It will remove ${relatedVerificationIds.length} verification record(s).` : ''}`;
+            ? `Delete ${acc.handle}? This will also delete ${relatedTasks.length} tasks and ${relatedPerformances.length} performance records linked to this account. ${attachedSubreddits.length > 0 ? `It will also unassign ${attachedSubreddits.length} subreddit(s). ` : ''}${relatedVerifications.length > 0 ? `It will remove ${relatedVerifications.length} verification record(s).` : ''}`
+            : `Delete ${acc.handle}?${attachedSubreddits.length > 0 ? ` This will also unassign ${attachedSubreddits.length} subreddit(s).` : ''}${relatedVerifications.length > 0 ? ` It will remove ${relatedVerifications.length} verification record(s).` : ''}`;
 
         if (!window.confirm(confirmMsg)) return;
 
         try {
-            // Mark as pending delete so pull sync cannot resurrect them before cloud delete completes.
-            await markPendingDelete('accounts', acc.id);
-            for (const tid of relatedTaskIds) await markPendingDelete('tasks', tid);
-            for (const p of relatedPerformances) await markPendingDelete('performances', p.id);
-            for (const vid of relatedVerificationIds) await markPendingDelete('verifications', vid);
-
-            await db.transaction('rw', db.performances, db.tasks, db.verifications, db.subreddits, db.accounts, async () => {
-                if (relatedPerformances.length > 0) {
-                    await db.performances.bulkDelete(relatedPerformances.map(p => p.id));
-                }
-                if (relatedTaskIds.length > 0) {
-                    await db.tasks.bulkDelete(relatedTaskIds);
-                }
-                if (relatedVerificationIds.length > 0) {
-                    await db.verifications.bulkDelete(relatedVerificationIds);
-                }
-                if (attachedSubreddits.length > 0) {
-                    await db.subreddits.bulkPut(attachedSubreddits.map(sub => ({ ...sub, accountId: null })));
-                }
-                await db.accounts.delete(acc.id);
-            });
-
-            try {
-                const CHUNK_SIZE = 200;
-                for (let i = 0; i < relatedPerformances.length; i += CHUNK_SIZE) {
-                    await CloudSyncService.deleteMultipleFromCloud('performances', relatedPerformances.slice(i, i + CHUNK_SIZE).map(p => p.id));
-                }
-                for (let i = 0; i < relatedTaskIds.length; i += CHUNK_SIZE) {
-                    await CloudSyncService.deleteMultipleFromCloud('tasks', relatedTaskIds.slice(i, i + CHUNK_SIZE));
-                }
-                for (let i = 0; i < relatedVerificationIds.length; i += CHUNK_SIZE) {
-                    await CloudSyncService.deleteMultipleFromCloud('verifications', relatedVerificationIds.slice(i, i + CHUNK_SIZE));
-                }
-                if (attachedSubreddits.length > 0) {
-                    await CloudSyncService.autoPush(['subreddits']);
-                }
-                await CloudSyncService.deleteFromCloud('accounts', acc.id);
-                await CloudSyncService.autoPush(['accounts', 'tasks', 'performances', 'verifications']);
-            } catch (cloudErr) {
-                console.warn('[Accounts] Cloud delete failed:', cloudErr.message);
-            }
+            await AccountAdminService.deleteAccountCascade(acc.id);
         } catch (err) {
             console.error('Failed to delete account', err);
             alert('Delete failed: ' + err.message);

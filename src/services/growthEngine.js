@@ -59,6 +59,25 @@ export async function getProxyHeaders(extra = {}) {
 }
 // Reset cached token when settings change
 function invalidateProxyTokenCache() { _cachedProxyApiToken = ''; }
+const hasStore = (name) => db.tables.some(table => table.name === name);
+const _usableStoreCache = new Map();
+
+export async function canUseStore(name) {
+    if (!hasStore(name)) return false;
+    if (_usableStoreCache.has(name)) return _usableStoreCache.get(name);
+
+    try {
+        await db.transaction('r', db.table(name), async () => {});
+        _usableStoreCache.set(name, true);
+        return true;
+    } catch (err) {
+        if (/object store.*not found|specified object store was not found|notfounderror/i.test(String(err?.message || err))) {
+            _usableStoreCache.set(name, false);
+            return false;
+        }
+        throw err;
+    }
+}
 
 const fetchWithTimeout = async (url, options = {}, timeoutMs = 5000) => {
     const controller = new AbortController();
@@ -97,6 +116,7 @@ export const normalizeRedditHandle = (rawValue = '') => {
 
     value = value
         .replace(/^https?:\/\/(www\.)?reddit\.com\//i, '')
+        .replace(/^\/+/, '')
         .replace(/^user\//i, '')
         .replace(/^u\//i, '')
         .replace(/^\/+|\/+$/g, '')
@@ -935,6 +955,7 @@ export const SubredditGuardService = {
 
 export const VerificationService = {
     async isVerified(accountId, subredditId) {
+        if (!await canUseStore('verifications')) return false;
         const record = await db.verifications
             .where('accountId').equals(accountId)
             .and(v => v.subredditId === subredditId)
@@ -943,6 +964,7 @@ export const VerificationService = {
     },
 
     async markVerified(accountId, subredditId) {
+        if (!await canUseStore('verifications')) return;
         const existing = await db.verifications
             .where('accountId').equals(accountId)
             .and(v => v.subredditId === subredditId)
@@ -956,6 +978,7 @@ export const VerificationService = {
     },
 
     async markUnverified(accountId, subredditId) {
+        if (!await canUseStore('verifications')) return;
         const existing = await db.verifications
             .where('accountId').equals(accountId)
             .and(v => v.subredditId === subredditId)
@@ -967,6 +990,7 @@ export const VerificationService = {
     },
 
     async getVerifiedAccountIds(subredditId) {
+        if (!await canUseStore('verifications')) return [];
         const records = await db.verifications
             .where('subredditId').equals(subredditId)
             .filter(v => v.verified === 1)
@@ -2212,6 +2236,18 @@ export const CloudSyncService = {
         return this._syncLock;
     },
 
+    async _deleteIdsFromCloud(supabase, table, ids) {
+        if (!ids || ids.length === 0) return;
+        const uniqueIds = [...new Set(ids.filter(id => id !== undefined && id !== null))];
+        if (uniqueIds.length === 0) return;
+        const { error } = uniqueIds.length === 1
+            ? await supabase.from(table).delete().eq('id', uniqueIds[0])
+            : await supabase.from(table).delete().in('id', uniqueIds);
+        if (error) {
+            throw new Error(error.message || `Failed deleting ${uniqueIds.length} row(s) from ${table}`);
+        }
+    },
+
     async pushLocalToCloud(onlyTables = null) {
         const { getSupabaseClient } = await import('../db/supabase.js');
         const supabase = await getSupabaseClient();
@@ -2239,14 +2275,17 @@ export const CloudSyncService = {
                 const pendingDels = await getPendingDeleteIds(table);
                 if (pendingDels.size > 0) {
                     for (const id of pendingDels) {
-                        await supabase.from(table).delete().eq('id', id);
+                        await this._deleteIdsFromCloud(supabase, table, [id]);
                         await clearSyncMeta(table, id);
                     }
                     console.log(`[CloudSync] Processed ${pendingDels.size} pending deletes for ${table}`);
                 }
                 // Process pending clears
                 if (await hasPendingClear(table)) {
-                    await supabase.from(table).delete().neq('id', '__impossible__');
+                    const { error } = await supabase.from(table).delete().neq('id', '__impossible__');
+                    if (error) {
+                        throw new Error(error.message || `Failed clearing ${table}`);
+                    }
                     await clearAllSyncMeta(table);
                     console.log(`[CloudSync] Processed pending clear for ${table}`);
                 }
@@ -2485,7 +2524,8 @@ export const CloudSyncService = {
                     'hasAvatar', 'hasBanner', 'hasBio', 'hasDisplayName', 'hasVerifiedEmail', 'hasProfileLink',
                     'lastProfileAudit', 'removalRate', 'lastActiveDate', 'shadowBanStatus', 'lastShadowCheck',
                     // Lifecycle phase fields — cloud schema may not have these columns yet
-                    'phase', 'phaseChangedDate', 'warmupStartDate', 'restUntilDate', 'consecutiveActiveDays'
+                    'phase', 'phaseChangedDate', 'warmupStartDate', 'restUntilDate', 'consecutiveActiveDays',
+                    'lastSyncAttempt', 'lastSyncError', 'lastSyncSource', 'lastSyncVariant', 'deadReason'
                 ];
                 cloudData = cloudData.map(remote => {
                     const local = localById.get(remote.id);
@@ -2496,6 +2536,19 @@ export const CloudSyncService = {
                             if ((merged[field] === undefined || merged[field] === null) && local[field] !== undefined && local[field] !== null) {
                                 merged[field] = local[field];
                             }
+                        }
+                        const localStatus = String(local.status || '').toLowerCase();
+                        const remoteStatus = String(remote.status || '').toLowerCase();
+                        const localShadow = String(local.shadowBanStatus || '').toLowerCase();
+                        const remoteShadow = String(remote.shadowBanStatus || '').toLowerCase();
+                        const localIsDead = localStatus === 'dead' || localStatus === 'burned' || local.isSuspended || ['shadow_banned', 'suspended'].includes(localShadow);
+                        const remoteIsDead = remoteStatus === 'dead' || remoteStatus === 'burned' || remote.isSuspended || ['shadow_banned', 'suspended'].includes(remoteShadow);
+                        if (localIsDead && !remoteIsDead) {
+                            merged.status = local.status;
+                            merged.isSuspended = local.isSuspended;
+                            merged.shadowBanStatus = local.shadowBanStatus;
+                            merged.lastShadowCheck = local.lastShadowCheck ?? merged.lastShadowCheck;
+                            merged.deadReason = local.deadReason ?? merged.deadReason;
                         }
                     }
                     // Default phase for accounts that have never had one set (fresh from cloud)
@@ -2583,8 +2636,7 @@ export const CloudSyncService = {
         const { getSupabaseClient } = await import('../db/supabase.js');
         const supabase = await getSupabaseClient();
         if (supabase) {
-            const { error } = await supabase.from(table).delete().eq('id', id);
-            if (error) console.error(`[CloudSync] Error deleting ${id} from ${table}:`, error.message);
+            await this._deleteIdsFromCloud(supabase, table, [id]);
         }
     },
 
@@ -2593,8 +2645,7 @@ export const CloudSyncService = {
         const { getSupabaseClient } = await import('../db/supabase.js');
         const supabase = await getSupabaseClient();
         if (supabase) {
-            const { error } = await supabase.from(table).delete().in('id', ids);
-            if (error) console.error(`[CloudSync] Error bulk deleting from ${table}:`, error.message);
+            await this._deleteIdsFromCloud(supabase, table, ids);
         }
     },
 
@@ -2717,11 +2768,12 @@ export const AccountDeduplicationService = {
             const taskCounts = new Map();
             const subredditCounts = new Map();
             const verificationCounts = new Map();
+            const canUseVerifications = await canUseStore('verifications');
 
             for (const acc of group.accounts) {
                 taskCounts.set(acc.id, await db.tasks.where('accountId').equals(acc.id).count());
-                subredditCounts.set(acc.id, await db.subreddits.where('accountId').equals(acc.id).count());
-                verificationCounts.set(acc.id, await db.verifications.where('accountId').equals(acc.id).count());
+                subredditCounts.set(acc.id, await db.subreddits.filter(sub => sub.accountId === acc.id).count());
+                verificationCounts.set(acc.id, canUseVerifications ? await db.verifications.where('accountId').equals(acc.id).count() : 0);
             }
 
             const canonical = [...group.accounts].sort((a, b) => {
@@ -2760,7 +2812,9 @@ export const AccountDeduplicationService = {
                 mergePatch.removalRate = Math.max(Number(canonical.removalRate || 0), Number(dup.removalRate || 0));
                 mergePatch.status = canonical.status || dup.status || 'active';
 
-                await db.transaction('rw', db.accounts, db.tasks, db.subreddits, db.verifications, async () => {
+                const txTables = [db.accounts, db.tasks, db.subreddits, db._syncMeta];
+                if (canUseVerifications) txTables.push(db.verifications);
+                await db.transaction('rw', ...txTables, async () => {
                     if (Object.keys(mergePatch).length > 0) {
                         await db.accounts.update(canonical.id, mergePatch);
                     }
@@ -2771,13 +2825,13 @@ export const AccountDeduplicationService = {
                         await db.tasks.bulkPut(dupTasks.map(task => ({ ...task, accountId: canonical.id })));
                     }
 
-                    const dupSubreddits = await db.subreddits.where('accountId').equals(dup.id).toArray();
+                    const dupSubreddits = await db.subreddits.filter(sub => sub.accountId === dup.id).toArray();
                     if (dupSubreddits.length > 0) {
                         touchedTables.add('subreddits');
                         await db.subreddits.bulkPut(dupSubreddits.map(sub => ({ ...sub, accountId: canonical.id })));
                     }
 
-                    const dupVerifications = await db.verifications.where('accountId').equals(dup.id).toArray();
+                    const dupVerifications = canUseVerifications ? await db.verifications.where('accountId').equals(dup.id).toArray() : [];
                     if (dupVerifications.length > 0) {
                         touchedTables.add('verifications');
                         await db.verifications.bulkPut(dupVerifications.map(v => ({ ...v, accountId: canonical.id })));
@@ -2799,6 +2853,84 @@ export const AccountDeduplicationService = {
         }
 
         return { groups: duplicateGroups.length, removed };
+    }
+};
+
+export const AccountAdminService = {
+    async deleteAccountCascade(accountId, options = {}) {
+        const account = typeof accountId === 'object' ? accountId : await db.accounts.get(accountId);
+        if (!account?.id) {
+            throw new Error('Account not found');
+        }
+        const canUseVerifications = await canUseStore('verifications');
+
+        const relatedTasks = await db.tasks.filter(t => t.accountId === account.id).toArray();
+        const relatedTaskIds = relatedTasks.map(t => t.id);
+        const relatedPerformances = relatedTaskIds.length > 0
+            ? await db.performances.where('taskId').anyOf(relatedTaskIds).toArray()
+            : [];
+        const relatedVerifications = canUseVerifications ? await db.verifications.where('accountId').equals(account.id).toArray() : [];
+        const relatedVerificationIds = relatedVerifications.map(v => v.id);
+        const attachedSubreddits = await db.subreddits.filter(sub => sub.accountId === account.id).toArray();
+
+        await markPendingDelete('accounts', account.id);
+        for (const taskId of relatedTaskIds) await markPendingDelete('tasks', taskId);
+        for (const perf of relatedPerformances) await markPendingDelete('performances', perf.id);
+        for (const verificationId of relatedVerificationIds) await markPendingDelete('verifications', verificationId);
+
+        const txTables = [db.performances, db.tasks, db.subreddits, db.accounts];
+        if (canUseVerifications) txTables.push(db.verifications);
+        await db.transaction('rw', ...txTables, async () => {
+            if (relatedPerformances.length > 0) {
+                await db.performances.bulkDelete(relatedPerformances.map(perf => perf.id));
+            }
+            if (relatedTaskIds.length > 0) {
+                await db.tasks.bulkDelete(relatedTaskIds);
+            }
+            if (canUseVerifications && relatedVerificationIds.length > 0) {
+                await db.verifications.bulkDelete(relatedVerificationIds);
+            }
+            if (attachedSubreddits.length > 0) {
+                await db.subreddits.bulkPut(attachedSubreddits.map(sub => ({ ...sub, accountId: null })));
+            }
+            await db.accounts.delete(account.id);
+        });
+
+        if (options.skipCloud) {
+            return {
+                accountId: account.id,
+                deletedTasks: relatedTaskIds.length,
+                deletedPerformances: relatedPerformances.length,
+                deletedVerifications: relatedVerificationIds.length,
+                unassignedSubreddits: attachedSubreddits.length,
+                cloudSkipped: true
+            };
+        }
+
+        const chunkSize = 200;
+        for (let i = 0; i < relatedPerformances.length; i += chunkSize) {
+            await CloudSyncService.deleteMultipleFromCloud('performances', relatedPerformances.slice(i, i + chunkSize).map(perf => perf.id));
+        }
+        for (let i = 0; i < relatedTaskIds.length; i += chunkSize) {
+            await CloudSyncService.deleteMultipleFromCloud('tasks', relatedTaskIds.slice(i, i + chunkSize));
+        }
+        for (let i = 0; i < relatedVerificationIds.length; i += chunkSize) {
+            await CloudSyncService.deleteMultipleFromCloud('verifications', relatedVerificationIds.slice(i, i + chunkSize));
+        }
+        if (attachedSubreddits.length > 0) {
+            await CloudSyncService.autoPush(['subreddits']);
+        }
+        await CloudSyncService.deleteFromCloud('accounts', account.id);
+        await CloudSyncService.autoPush(['accounts', 'tasks', 'performances', 'verifications']);
+
+        return {
+            accountId: account.id,
+            deletedTasks: relatedTaskIds.length,
+            deletedPerformances: relatedPerformances.length,
+            deletedVerifications: relatedVerificationIds.length,
+            unassignedSubreddits: attachedSubreddits.length,
+            cloudSkipped: false
+        };
     }
 };
 
@@ -3231,6 +3363,9 @@ export async function generateManagerActionItems(accounts) {
         const removalRate = Number(account.removalRate || 0);
         const phase = (account.phase || '').toLowerCase();
         const isSuspended = !!account.isSuspended;
+        const status = String(account.status || '').toLowerCase();
+        const shadowBanStatus = String(account.shadowBanStatus || '').toLowerCase();
+        const isDead = status === 'dead' || status === 'burned' || ['shadow_banned', 'suspended'].includes(shadowBanStatus);
 
         // Compute account age in days
         let ageDays = null;
@@ -3239,7 +3374,7 @@ export async function generateManagerActionItems(accounts) {
         }
 
         // Rule 13: Burned/suspended — short-circuit, only this rule applies
-        if (isSuspended || phase === 'burned') {
+        if (isSuspended || phase === 'burned' || isDead) {
             items.push({
                 accountId,
                 handle,

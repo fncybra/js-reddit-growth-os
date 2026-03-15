@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertCircle, AlertTriangle, Info, CheckCircle, ChevronDown, ChevronRight } from 'lucide-react';
 import { generateManagerActionItems } from '../services/growthEngine';
@@ -16,8 +16,26 @@ export function ManagerActionItems({ accounts }) {
     const [allItems, setAllItems] = useState([]);
 
     useEffect(() => {
-        if (!accounts || !accounts.length) { setAllItems([]); return; }
-        generateManagerActionItems(accounts).then(setAllItems).catch(() => setAllItems([]));
+        let cancelled = false;
+
+        async function loadItems() {
+            if (!accounts || !accounts.length) {
+                if (!cancelled) setAllItems([]);
+                return;
+            }
+
+            try {
+                const nextItems = await generateManagerActionItems(accounts);
+                if (!cancelled) setAllItems(nextItems);
+            } catch {
+                if (!cancelled) setAllItems([]);
+            }
+        }
+
+        loadItems();
+        return () => {
+            cancelled = true;
+        };
     }, [accounts]);
 
     // Filter out dismissed success items
@@ -96,7 +114,7 @@ export function ManagerActionItems({ accounts }) {
                             >
                                 <Icon size={16} style={{ color: config.color, flexShrink: 0 }} />
                                 <Link
-                                    to={`/account/${item.accountId}`}
+                                    to="/accounts"
                                     style={{
                                         flex: 1,
                                         color: 'var(--text-primary)',
@@ -123,7 +141,7 @@ export function ManagerActionItems({ accounts }) {
                                         }}
                                         title="Dismiss"
                                     >
-                                        ✕
+                                        x
                                     </button>
                                 )}
                             </div>
@@ -134,3 +152,4 @@ export function ManagerActionItems({ accounts }) {
         </div>
     );
 }
+

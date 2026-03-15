@@ -485,7 +485,7 @@ export function Dashboard() {
                                     {accountSubredditLeaders.map((row) => (
                                         <tr key={`${row.accountId}-${row.subredditId}`}>
                                             <td>
-                                                <Link to={`/account/${row.accountId}`} style={{ color: 'var(--primary-color)', textDecoration: 'none' }}>
+                                                <Link to="/accounts" style={{ color: 'var(--primary-color)', textDecoration: 'none' }}>
                                                     {row.accountHandle}
                                                 </Link>
                                             </td>
@@ -523,7 +523,7 @@ export function Dashboard() {
                                     {accountNicheLeaders.map((row) => (
                                         <tr key={`${row.accountId}-${row.niche}`}>
                                             <td>
-                                                <Link to={`/account/${row.accountId}`} style={{ color: 'var(--primary-color)', textDecoration: 'none' }}>
+                                                <Link to="/accounts" style={{ color: 'var(--primary-color)', textDecoration: 'none' }}>
                                                     {row.accountHandle}
                                                 </Link>
                                             </td>
@@ -733,7 +733,7 @@ export function Dashboard() {
                                             // 4. Sync Account Health (Reddit)
                                             try {
                                                 const syncResult = await AccountSyncService.syncAllAccounts();
-                                                parts.push(`Account sync: ${syncResult?.synced ?? 0} synced, ${syncResult?.failed ?? 0} failed`);
+                                                parts.push(`Account sync: ${syncResult?.succeeded ?? 0} synced, ${syncResult?.failed ?? 0} failed`);
                                                 // Re-evaluate phases after sync
                                                 await AccountLifecycleService.evaluateAccountPhases();
                                             } catch (e) { parts.push('Account sync failed: ' + e.message); }
@@ -741,7 +741,7 @@ export function Dashboard() {
                                             // 5. Sync Post Performance
                                             try {
                                                 const perfResult = await PerformanceSyncService.syncAllPendingPerformance();
-                                                parts.push(`Perf sync: ${perfResult?.synced ?? 0} synced`);
+                                                parts.push(`Perf sync: ${perfResult?.succeeded ?? 0} synced`);
                                             } catch (e) { parts.push('Perf sync failed: ' + e.message); }
 
                                             // 6. Take Snapshot

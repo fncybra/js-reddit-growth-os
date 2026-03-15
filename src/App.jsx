@@ -2,7 +2,7 @@ import React, { Suspense, lazy } from 'react';
 import { HashRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { CloudSyncHandler } from './components/CloudSyncHandler';
-import { AuthProvider, PinGate, RouteGuard } from './components/AuthContext';
+import { AuthProvider } from './components/AuthContext';
 import { AgencyCommandCenter } from './pages/AgencyCommandCenter';
 
 const Dashboard = lazy(() => import('./pages/Dashboard').then((m) => ({ default: m.Dashboard })));
@@ -74,18 +74,7 @@ function App() {
           <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route path="/force-sync" element={<ForceSync />} />
-              <Route
-                path="/va"
-                element={(
-                  <PinGate>
-                    <RouteGuard>
-                      <Suspense fallback={<PageLoader />}>
-                        <VADashboard />
-                      </Suspense>
-                    </RouteGuard>
-                  </PinGate>
-                )}
-              />
+              <Route path="/va" element={<VADashboard />} />
               <Route element={<Layout />}>
                 <Route path="/" element={<AgencyCommandCenter />} />
                 <Route path="reddit" element={<Dashboard />} />
