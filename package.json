@@ -9,7 +9,8 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "stress:reddit": "node run_reddit_stress.js"
+    "stress:reddit": "node run_reddit_stress.js",
+    "crawl:reddit:deep": "python crawl_reddit_deep.py"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
