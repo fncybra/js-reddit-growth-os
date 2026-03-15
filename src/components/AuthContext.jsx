@@ -12,7 +12,7 @@ const SECTION_ACCESS = {
 
 const ROUTE_ACCESS = {
   admin: null,
-  redditManager: ['/', '/reddit', '/discovery', '/models', '/accounts', '/subreddits', '/library', '/tasks', '/settings'],
+  redditManager: ['/', '/reddit', '/discovery', '/models', '/accounts', '/account', '/subreddits', '/library', '/tasks', '/settings'],
 };
 
 export function getAllowedSections(role) {

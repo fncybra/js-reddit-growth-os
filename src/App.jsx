@@ -8,6 +8,7 @@ import { AgencyCommandCenter } from './pages/AgencyCommandCenter';
 const Dashboard = lazy(() => import('./pages/Dashboard').then((m) => ({ default: m.Dashboard })));
 const Models = lazy(() => import('./pages/Models').then((m) => ({ default: m.Models })));
 const Accounts = lazy(() => import('./pages/Accounts').then((m) => ({ default: m.Accounts })));
+const AccountDetail = lazy(() => import('./pages/AccountDetail').then((m) => ({ default: m.AccountDetail })));
 const Subreddits = lazy(() => import('./pages/Subreddits').then((m) => ({ default: m.Subreddits })));
 const Library = lazy(() => import('./pages/Library').then((m) => ({ default: m.Library })));
 const Tasks = lazy(() => import('./pages/Tasks').then((m) => ({ default: m.Tasks })));
@@ -81,6 +82,7 @@ function App() {
                 <Route path="discovery" element={<Discovery />} />
                 <Route path="models" element={<Models />} />
                 <Route path="accounts" element={<Accounts />} />
+                <Route path="account/:id" element={<AccountDetail />} />
                 <Route path="subreddits" element={<Subreddits />} />
                 <Route path="library" element={<Library />} />
                 <Route path="tasks" element={<Tasks />} />

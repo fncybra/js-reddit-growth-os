@@ -4,7 +4,7 @@ import { generateId } from '../db/generateId';
 import { AnalyticsEngine, SnapshotService, SettingsService } from '../services/growthEngine';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Link } from 'react-router-dom';
-import { ArrowUp, Users, Shield, AlertTriangle, Cloud, RefreshCcw, Smartphone, CheckCircle, XCircle } from 'lucide-react';
+import { ArrowUp, Users, Shield, AlertTriangle, Cloud, RefreshCcw, Smartphone, CheckCircle, XCircle, Sparkles, Trophy } from 'lucide-react';
 import { ManagerActionItems } from '../components/ManagerActionItems';
 
 export function Dashboard() {
@@ -94,7 +94,7 @@ export function Dashboard() {
                                 alert("Failed to seed: " + err.message);
                             }
                         }}>
-                            ✨ Auto-Seed Demo Data
+                            Auto-Seed Demo Data
                         </button>
                     </div>
                 </div>
@@ -120,7 +120,7 @@ export function Dashboard() {
     const activeAccounts = filteredAccounts.filter(a => a.status === 'active').length;
     const totalAccounts = filteredAccounts.length;
 
-    // Health score breakdown — exclude burned/suspended from "healthy" count
+    // Health score breakdown -- exclude burned/suspended from "healthy" count
     const healthCounts = (() => {
         if (!filteredAccounts.length) return { healthy: 0, warning: 0, critical: 0, burned: 0 };
         let healthy = 0, warning = 0, critical = 0, burned = 0;
@@ -222,6 +222,85 @@ export function Dashboard() {
             .slice(0, 12);
     })();
 
+    const accountFlightDeck = (() => {
+        if (!leaderboard || !accountsAll) return [];
+
+        const accountsById = new Map((accountsAll || []).map((account) => [account.id, account]));
+        const bestSubByAccount = new Map();
+        const bestNicheByAccount = new Map();
+        const lastPostByAccount = new Map();
+
+        for (const row of accountSubredditLeaders) {
+            if (!bestSubByAccount.has(row.accountId)) bestSubByAccount.set(row.accountId, row);
+        }
+        for (const row of accountNicheLeaders) {
+            if (!bestNicheByAccount.has(row.accountId)) bestNicheByAccount.set(row.accountId, row);
+        }
+        for (const task of tasksAll || []) {
+            if (!task.accountId) continue;
+            if (hideWarming && warmingIds.has(task.accountId)) continue;
+            const stamp = task.postedAt || task.date || '';
+            if (!stamp) continue;
+            const previous = lastPostByAccount.get(task.accountId);
+            if (!previous || stamp > previous) lastPostByAccount.set(task.accountId, stamp);
+        }
+
+        const rows = [];
+        for (const model of leaderboard) {
+            for (const ranking of model.metrics?.accountRankings || []) {
+                const account = accountsById.get(ranking.id);
+                if (!account) continue;
+
+                const status = String(account.status || '').toLowerCase();
+                const shadow = String(account.shadowBanStatus || '').toLowerCase();
+                const isDead = status === 'dead'
+                    || status === 'burned'
+                    || account.isSuspended
+                    || shadow === 'shadow_banned'
+                    || shadow === 'suspended';
+                if (isDead) continue;
+                if (hideWarming && warmingIds.has(account.id)) continue;
+
+                const healthScore = AnalyticsEngine.computeAccountHealthScore(account);
+                const profileScore = AnalyticsEngine.computeProfileScore(account);
+                const signalScore = Math.max(
+                    0,
+                    Math.min(
+                        100,
+                        Math.round(
+                            Math.min(45, ranking.avgUpsPerPost * 0.45)
+                            + Math.min(20, ranking.totalPosts * 2)
+                            + Math.min(20, (100 - ranking.removalRate) * 0.2)
+                            + Math.min(15, healthScore * 0.15)
+                            + Math.min(10, profileScore * 0.1)
+                        )
+                    )
+                );
+
+                rows.push({
+                    ...ranking,
+                    modelName: model.name,
+                    signalScore,
+                    healthScore,
+                    profileScore,
+                    bestSubreddit: bestSubByAccount.get(account.id)?.subredditName || 'No winner yet',
+                    bestNiche: bestNicheByAccount.get(account.id)?.niche || 'No niche data',
+                    lastPost: lastPostByAccount.get(account.id) || '',
+                });
+            }
+        }
+
+        return rows.sort((a, b) => {
+            if (b.signalScore !== a.signalScore) return b.signalScore - a.signalScore;
+            if (b.avgUpsPerPost !== a.avgUpsPerPost) return b.avgUpsPerPost - a.avgUpsPerPost;
+            return b.totalUps - a.totalUps;
+        }).slice(0, 12);
+    })();
+
+    const hottestAccount = accountFlightDeck[0] || null;
+    const hottestSubreddit = accountSubredditLeaders[0] || null;
+    const hottestNiche = accountNicheLeaders[0] || null;
+
     return (
         <>
             {/* Header */}
@@ -244,6 +323,48 @@ export function Dashboard() {
             </header>
 
             <div className="page-content">
+                <section className="dashboard-hero" style={{ marginBottom: '20px' }}>
+                    <div>
+                        <div className="subtle-kicker">Growth Radar</div>
+                        <h2 style={{ fontSize: '2rem', lineHeight: 1.02, marginBottom: '12px', fontFamily: 'var(--font-display)' }}>
+                            See what is winning, what is slipping, and where to scale next.
+                        </h2>
+                        <p style={{ color: 'var(--text-secondary)', maxWidth: '62ch' }}>
+                            This view is now account-first: performance, removals, best subreddit lanes, and best niche patterns all in one place.
+                        </p>
+                    </div>
+                    <div className="dashboard-hero__grid">
+                        <div className="glass-panel">
+                            <div className="subtle-kicker">Hottest Account</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                                <Trophy size={16} color="var(--status-success)" />
+                                <strong>{hottestAccount ? hottestAccount.handle : 'No ranking yet'}</strong>
+                            </div>
+                            <div style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
+                                {hottestAccount ? `${hottestAccount.avgUpsPerPost} avg views | ${hottestAccount.bestSubreddit}` : 'Sync performance to unlock rankings'}
+                            </div>
+                        </div>
+                        <div className="glass-panel">
+                            <div className="subtle-kicker">Winning Subreddit Pair</div>
+                            <div style={{ fontWeight: 700, marginBottom: '6px' }}>
+                                {hottestSubreddit ? `${hottestSubreddit.accountHandle} x r/${hottestSubreddit.subredditName}` : 'No winner yet'}
+                            </div>
+                            <div style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
+                                {hottestSubreddit ? `${hottestSubreddit.avgUps} avg views | ${hottestSubreddit.posts} posts tested` : 'Need more synced posts'}
+                            </div>
+                        </div>
+                        <div className="glass-panel">
+                            <div className="subtle-kicker">Winning Niche Pair</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                                <Sparkles size={16} color="var(--status-info)" />
+                                <strong>{hottestNiche ? `${hottestNiche.accountHandle} x ${hottestNiche.niche}` : 'No niche data yet'}</strong>
+                            </div>
+                            <div style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
+                                {hottestNiche ? `${hottestNiche.avgUps} avg views | ${hottestNiche.removalPct}% removal` : 'Tag more assets to reveal patterns'}
+                            </div>
+                        </div>
+                    </div>
+                </section>
 
                 {/* Today's Progress Bar */}
                 <div className="card" style={{ marginBottom: '20px', padding: '12px 20px' }}>
@@ -286,7 +407,7 @@ export function Dashboard() {
                             {totalAccounts}
                         </div>
                         <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                            {activeAccounts} active · {totalModels} model{totalModels !== 1 ? 's' : ''}
+                            {activeAccounts} active | {totalModels} model{totalModels !== 1 ? 's' : ''}
                         </div>
                     </div>
 
@@ -316,7 +437,7 @@ export function Dashboard() {
                             {agencyRemovalRate}%
                         </div>
                         <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                            {agencyRemovalRate > 20 ? 'High risk — review subs' : agencyRemovalRate > 10 ? 'Monitor closely' : 'Looking good'}
+                            {agencyRemovalRate > 20 ? 'High risk - review subs' : agencyRemovalRate > 10 ? 'Monitor closely' : 'Looking good'}
                         </div>
                     </div>
                 </div>
@@ -408,6 +529,69 @@ export function Dashboard() {
                     </div>
                 )}
 
+                {accountFlightDeck.length > 0 && (
+                    <div className="card" style={{ marginBottom: '20px' }}>
+                        <div className="section-heading">
+                            <div>
+                                <div className="subtle-kicker">Account Performance</div>
+                                <h2 style={{ fontSize: '1.1rem' }}>Account Flight Deck</h2>
+                            </div>
+                            <div style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
+                                Click into an account to see what is winning and what is not.
+                            </div>
+                        </div>
+                        <div className="data-table-container" style={{ marginTop: '14px' }}>
+                            <table className="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Account</th>
+                                        <th>Model</th>
+                                        <th>Signal</th>
+                                        <th>Posts</th>
+                                        <th>Avg / Post</th>
+                                        <th>Removal</th>
+                                        <th>Best Sub</th>
+                                        <th>Best Niche</th>
+                                        <th>Last Post</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {accountFlightDeck.map((row, index) => (
+                                        <tr key={row.id}>
+                                            <td style={{ fontWeight: 700, color: index === 0 ? '#f59e0b' : 'var(--text-secondary)' }}>{index + 1}</td>
+                                            <td>
+                                                <Link to={`/account/${row.id}`} style={{ color: 'var(--accent-primary)', textDecoration: 'none', fontWeight: 600 }}>
+                                                    {row.handle}
+                                                </Link>
+                                            </td>
+                                            <td>{row.modelName}</td>
+                                            <td>
+                                                <span className="badge" style={{
+                                                    backgroundColor: row.signalScore >= 75 ? 'var(--status-success-bg)' : row.signalScore >= 55 ? 'var(--status-warning-bg)' : 'var(--status-danger-bg)',
+                                                    color: row.signalScore >= 75 ? 'var(--status-success)' : row.signalScore >= 55 ? 'var(--status-warning)' : 'var(--status-danger)',
+                                                }}>
+                                                    {row.signalScore}
+                                                </span>
+                                            </td>
+                                            <td>{row.totalPosts}</td>
+                                            <td style={{ fontWeight: 600 }}>{row.avgUpsPerPost.toLocaleString()}</td>
+                                            <td style={{ color: row.removalRate > 20 ? 'var(--status-danger)' : row.removalRate > 10 ? 'var(--status-warning)' : 'var(--status-success)' }}>
+                                                {row.removalRate}%
+                                            </td>
+                                            <td>r/{row.bestSubreddit}</td>
+                                            <td><span className="badge badge-info">{row.bestNiche}</span></td>
+                                            <td style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
+                                                {row.lastPost ? new Date(row.lastPost).toLocaleDateString() : 'Never'}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
+
                 {/* Model Leaderboard - Clean Table */}
                 <div className="card" style={{ marginBottom: '20px' }}>
                     <h2 style={{ fontSize: '1.1rem', marginBottom: '16px', fontWeight: '600' }}>Models</h2>
@@ -449,8 +633,8 @@ export function Dashboard() {
                                                 {m.tasksCompleted > 0 && <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '4px' }}>Score {ms.healthScore}</div>}
                                             </td>
                                             <td>
-                                                <Link to={`/model/${model.id}`} className="btn btn-outline" style={{ padding: '4px 10px', fontSize: '0.8rem' }}>
-                                                    Details
+                                                <Link to="/models" className="btn btn-outline" style={{ padding: '4px 10px', fontSize: '0.8rem' }}>
+                                                    Open Models
                                                 </Link>
                                             </td>
                                         </tr>
@@ -485,7 +669,7 @@ export function Dashboard() {
                                     {accountSubredditLeaders.map((row) => (
                                         <tr key={`${row.accountId}-${row.subredditId}`}>
                                             <td>
-                                                <Link to="/accounts" style={{ color: 'var(--primary-color)', textDecoration: 'none' }}>
+                                                <Link to={`/account/${row.accountId}`} style={{ color: 'var(--accent-primary)', textDecoration: 'none' }}>
                                                     {row.accountHandle}
                                                 </Link>
                                             </td>
@@ -686,7 +870,7 @@ export function Dashboard() {
                                                 </td>
                                                 <td>{va.avgViews.toLocaleString()}</td>
                                                 <td>{va.totalViews.toLocaleString()}</td>
-                                                <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{va.lastPost ? new Date(va.lastPost).toLocaleDateString() : '—'}</td>
+                                                <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{va.lastPost ? new Date(va.lastPost).toLocaleDateString() : '--'}</td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -841,3 +1025,4 @@ export function Dashboard() {
         </>
     );
 }
+

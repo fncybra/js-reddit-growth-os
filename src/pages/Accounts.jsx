@@ -1,9 +1,10 @@
 import React, { useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { db } from '../db/db';
 import { generateId } from '../db/generateId';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { AccountAdminService, AccountDeduplicationService, AccountSyncService, AnalyticsEngine, canUseStore, markDirty, normalizeRedditHandle } from '../services/growthEngine';
-import { Smartphone, RefreshCw, AlertTriangle, Trash2, ShieldCheck } from 'lucide-react';
+import { Smartphone, RefreshCw, AlertTriangle, Trash2, ShieldCheck, ExternalLink } from 'lucide-react';
 
 const PHASE_BADGES = {
     warming: { label: 'Warming', bg: '#fff3e0', color: '#e65100', border: '#ffcc80' },
@@ -393,8 +394,17 @@ export function Accounts() {
                                             <tr key={acc.id}>
                                                 <td style={{ fontWeight: '500' }}>
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                        <a href={`https://reddit.com/user/${acc.handle.replace(/^(u\/|\/u\/)/i, '')}`} target="_blank" rel="noreferrer" style={{ color: 'var(--primary-color)', textDecoration: 'none' }}>
+                                                        <Link to={`/account/${acc.id}`} style={{ color: 'var(--accent-primary)', textDecoration: 'none', fontWeight: 600 }}>
                                                             {acc.handle}
+                                                        </Link>
+                                                        <a
+                                                            href={`https://reddit.com/user/${acc.handle.replace(/^(u\/|\/u\/)/i, '')}`}
+                                                            target="_blank"
+                                                            rel="noreferrer"
+                                                            title="Open on Reddit"
+                                                            style={{ color: 'var(--text-secondary)', display: 'inline-flex', alignItems: 'center' }}
+                                                        >
+                                                            <ExternalLink size={12} />
                                                         </a>
                                                         <button
                                                             type="button"
@@ -518,8 +528,17 @@ export function Accounts() {
                                             <tr key={`dead-${acc.id}`}>
                                                 <td style={{ fontWeight: 500 }}>
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                        <a href={`https://reddit.com/user/${acc.handle.replace(/^(u\/|\/u\/)/i, '')}`} target="_blank" rel="noreferrer" style={{ color: 'var(--primary-color)', textDecoration: 'none' }}>
+                                                        <Link to={`/account/${acc.id}`} style={{ color: 'var(--accent-primary)', textDecoration: 'none', fontWeight: 600 }}>
                                                             {acc.handle}
+                                                        </Link>
+                                                        <a
+                                                            href={`https://reddit.com/user/${acc.handle.replace(/^(u\/|\/u\/)/i, '')}`}
+                                                            target="_blank"
+                                                            rel="noreferrer"
+                                                            title="Open on Reddit"
+                                                            style={{ color: 'var(--text-secondary)', display: 'inline-flex', alignItems: 'center' }}
+                                                        >
+                                                            <ExternalLink size={12} />
                                                         </a>
                                                         <button
                                                             type="button"
