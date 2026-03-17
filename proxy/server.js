@@ -200,6 +200,15 @@ app.use('/api/scrape/', scrapeLimiter);
 const SAFE_USERNAME = /^[a-zA-Z0-9_-]{1,30}$/;
 const SAFE_SUBREDDIT = /^[a-zA-Z0-9_]{1,30}$/;
 const ALLOWED_AI_HOSTS = ['openrouter.ai', 'api.openai.com', 'generativelanguage.googleapis.com', 'api.anthropic.com'];
+const ALLOWED_SUBREDDIT_SORTS = new Set(['hot', 'new', 'top']);
+const ALLOWED_USER_SORTS = new Set(['new', 'hot', 'top', 'controversial']);
+const ALLOWED_TIME_WINDOWS = new Set(['hour', 'day', 'week', 'month', 'year', 'all']);
+
+function toBoundedInt(value, fallback, min, max) {
+    const numeric = Number.parseInt(value, 10);
+    if (!Number.isFinite(numeric)) return fallback;
+    return Math.max(min, Math.min(max, numeric));
+}
 
 app.post('/api/proxy/rotate', requireAuth, (req, res) => {
     const sourceProxy = req.body?.proxyInfo || req.headers['x-proxy-info'] || getNextProxyInfo();
@@ -387,7 +396,18 @@ app.get('/api/scrape/user/:username', requireAuth, async (req, res) => {
         const { username } = req.params;
         if (!SAFE_USERNAME.test(username)) return res.status(400).json({ error: 'Invalid username' });
         const proxyInfo = getRequestProxyInfo(req);
-        const response = await axiosWithRetry(`https://old.reddit.com/user/${username}/submitted.json?limit=100`, { 'Accept-Language': 'en-US,en;q=0.9' }, { proxyInfo });
+        const limit = toBoundedInt(req.query.limit, 100, 1, 100);
+        const sort = ALLOWED_USER_SORTS.has(String(req.query.sort || '').toLowerCase())
+            ? String(req.query.sort).toLowerCase()
+            : 'new';
+        const after = String(req.query.after || '').trim();
+        const timeWindow = ALLOWED_TIME_WINDOWS.has(String(req.query.t || '').toLowerCase())
+            ? String(req.query.t).toLowerCase()
+            : 'week';
+        const params = new URLSearchParams({ limit: String(limit), sort });
+        if (after) params.set('after', after);
+        if (sort === 'top' || sort === 'controversial') params.set('t', timeWindow);
+        const response = await axiosWithRetry(`https://old.reddit.com/user/${username}/submitted.json?${params.toString()}`, { 'Accept-Language': 'en-US,en;q=0.9' }, { proxyInfo });
         res.json(response.data);
     } catch (error) {
         console.error("Scraper Error:", error.message);
@@ -395,6 +415,31 @@ app.get('/api/scrape/user/:username', requireAuth, async (req, res) => {
             return res.status(error.response.status).json({ error: error.response.data || "Reddit API Error" });
         }
         res.status(500).json({ error: "Failed to scrape user profile" });
+    }
+});
+
+app.get('/api/scrape/subreddit/posts/:name', requireAuth, async (req, res) => {
+    try {
+        const { name } = req.params;
+        if (!SAFE_SUBREDDIT.test(name)) return res.status(400).json({ error: 'Invalid subreddit name' });
+        const proxyInfo = getRequestProxyInfo(req);
+        const sort = ALLOWED_SUBREDDIT_SORTS.has(String(req.query.sort || '').toLowerCase())
+            ? String(req.query.sort).toLowerCase()
+            : 'hot';
+        const limit = toBoundedInt(req.query.limit, 25, 1, 100);
+        const timeWindow = ALLOWED_TIME_WINDOWS.has(String(req.query.t || '').toLowerCase())
+            ? String(req.query.t).toLowerCase()
+            : 'week';
+        const params = new URLSearchParams({ limit: String(limit) });
+        if (sort === 'top') params.set('t', timeWindow);
+        const response = await axiosWithRetry(`https://old.reddit.com/r/${name}/${sort}.json?${params.toString()}`, { 'Accept-Language': 'en-US,en;q=0.9' }, { proxyInfo });
+        res.json(response.data);
+    } catch (error) {
+        console.error("Subreddit Posts Scrape Error:", error.message);
+        if (error.response) {
+            return res.status(error.response.status).json({ error: error.response.data || "Reddit API Error" });
+        }
+        res.status(500).json({ error: "Failed to fetch subreddit posts" });
     }
 });
 

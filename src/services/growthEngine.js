@@ -251,7 +251,7 @@ const NON_EXPLICIT_SUBREDDIT_PATTERNS = [
     /no explicit/i,
     /no porn/i,
     /no hardcore/i,
-    /sfw/i,
+    /\bsfw\b/i,
     /safe for work/i,
     /non[- ]?nude/i,
     /no nudity/i,
@@ -341,6 +341,465 @@ const EXPLICIT_DISCOVERY_PATTERNS = [
     /\bhorny\b/i,
     /\bbreed/i,
 ];
+
+const ONLY_GUIDER_DISCOVERY_TAGS = [
+    'alt',
+    'alt girl',
+    'alternative',
+    'alternative model',
+    'amateur',
+    'big ass',
+    'big tits',
+    'blonde milf',
+    'breeding',
+    'busty',
+    'curvy',
+    'cute',
+    'fit milf',
+    'freaky',
+    'freckles',
+    'gfe',
+    'girl next door',
+    'goth',
+    'gothic',
+    'inked',
+    'innocent',
+    'latina',
+    'latina milf',
+    'light skin',
+    'lingerie',
+    'milf',
+    'natural',
+    'pawg',
+    'petite',
+    'petite skinny',
+    'piercing',
+    'preggo',
+    'pregnant',
+    'pregnant milf',
+    'pregnant petite',
+    'red hair',
+    'redhead',
+    'selfie',
+    'sexting',
+    'slim',
+    'tattoo',
+    'tattooed girl',
+    'tattooed milf',
+    'thick',
+    'thick milf',
+];
+
+const ONLY_GUIDER_ARCHETYPE_HINTS = {
+    milf: ['milf', 'thick milf', 'fit milf'],
+    pregnant: ['pregnant', 'preggo', 'pregnant milf', 'pregnant petite', 'breeding'],
+    'girl-next-door': ['girl next door', 'cute', 'innocent', 'amateur'],
+    alt: ['alt', 'alt girl', 'alternative', 'alternative model', 'goth', 'gothic', 'inked', 'tattooed girl'],
+};
+
+const NSFW_DISCOVERY_SEARCH_EXPANSIONS = {
+    pregnant: ['preggo', 'pregnant porn', 'pregnant gonewild', 'pregnant nsfw', 'pregnant milf', 'breeding'],
+    preggo: ['pregnant porn', 'pregnant gonewild', 'pregnant nsfw', 'pregnant milf'],
+    milf: ['milf nsfw', 'milf gonewild', 'mature nsfw'],
+    goth: ['goth girl nsfw', 'goth gonewild', 'alt nsfw', 'inked nsfw'],
+    'alt girl': ['alt girl nsfw', 'goth nsfw', 'tattooed girl nsfw'],
+    alt: ['alt girl nsfw', 'alternative nsfw', 'goth nsfw', 'inked nsfw'],
+    alternative: ['alternative nsfw', 'alt girl nsfw', 'goth nsfw'],
+    redhead: ['redhead nsfw', 'redhead gonewild'],
+    lingerie: ['lingerie nsfw', 'lingerie gonewild'],
+    tattoo: ['tattooed girl nsfw', 'inked nsfw'],
+    'tattooed girl': ['tattooed girl nsfw', 'inked nsfw'],
+    inked: ['inked nsfw', 'tattooed girl nsfw'],
+};
+
+const ADVICE_DISCOVERY_PATTERNS = [
+    /\badvice\b/i,
+    /\bsupport\b/i,
+    /\bhelp\b/i,
+    /\bquestions?\b/i,
+    /\btips\b/i,
+    /\bjourney\b/i,
+    /\bdoctor\b/i,
+    /\bmedical\b/i,
+    /\bnurse\b/i,
+    /\bmidwife\b/i,
+    /\bultrasound\b/i,
+    /\bprenatal\b/i,
+    /\bpostpartum\b/i,
+    /\bdue date\b/i,
+    /\btrimester\b/i,
+    /\bfertility\b/i,
+    /\bivf\b/i,
+    /\btrying for\b/i,
+    /\bttc\b/i,
+    /\bbaby names?\b/i,
+    /\bparent(?:ing|s)?\b/i,
+    /\bmotherhood\b/i,
+    /\bnewborn\b/i,
+    /\bbreastfeed(?:ing)?\b/i,
+    /\bhealth\b/i,
+    /\bcheck in\b/i,
+    /\bdiagnostic\b/i,
+];
+
+const ADVICE_DISCOVERY_NAME_PATTERNS = [
+    /babybumps/i,
+    /pregnan(?:cy|t)$/i,
+    /pregnancyadvice/i,
+    /tryingforababy/i,
+    /beyondthebump/i,
+    /newparents/i,
+    /parenting/i,
+    /mommit/i,
+    /askdocs/i,
+    /whatismycqs/i,
+    /amishadowbanned/i,
+];
+
+const PROMO_HOSTILE_DISCOVERY_PATTERNS = [
+    /no promotion/i,
+    /no advertising/i,
+    /no self[- ]?promo/i,
+    /no onlyfans/i,
+    /no sellers?/i,
+    /no selling/i,
+    /no paid content/i,
+    /no commercial/i,
+];
+
+const NSFW_DISCOVERY_NAME_PATTERNS = [
+    /gonewild/i,
+    /\bgw\b/i,
+    /\bnsfw\b/i,
+    /\bporn\b/i,
+    /\bnudes?\b/i,
+    /\bnaked\b/i,
+    /\bsex\b/i,
+    /\bhorny\b/i,
+    /\bmilf\b/i,
+    /\bbreeding\b/i,
+    /\bpreggo\b/i,
+    /\bslut/i,
+    /\bboobs?\b/i,
+    /\bpussy\b/i,
+];
+
+const hasDiscoveryTokenOverlap = (candidate = '', term = '') => {
+    const normalizedCandidate = normalizeDiscoveryPhrase(candidate);
+    const normalizedTerm = normalizeDiscoveryPhrase(term);
+    if (!normalizedCandidate || !normalizedTerm) return false;
+    if (normalizedCandidate.includes(normalizedTerm) || normalizedTerm.includes(normalizedCandidate)) return true;
+
+    const candidateTokens = normalizedCandidate.split(' ').filter((token) => token.length >= 3);
+    const termTokens = normalizedTerm.split(' ').filter((token) => token.length >= 3);
+    if (candidateTokens.length === 0 || termTokens.length === 0) return false;
+    return termTokens.every((token) => candidateTokens.includes(token))
+        || candidateTokens.every((token) => termTokens.includes(token))
+        || candidateTokens.some((token) => termTokens.includes(token));
+};
+
+const matchOnlyGuiderTags = (values = [], limit = 10) => {
+    const normalizedValues = splitDiscoveryPhrases(values);
+    const matches = [];
+    const seen = new Set();
+
+    for (const tag of ONLY_GUIDER_DISCOVERY_TAGS) {
+        if (normalizedValues.some((value) => hasDiscoveryTokenOverlap(tag, value))) {
+            const normalized = normalizeDiscoveryPhrase(tag);
+            if (!seen.has(normalized)) {
+                seen.add(normalized);
+                matches.push(normalized);
+                if (matches.length >= limit) return matches;
+            }
+        }
+    }
+
+    return matches;
+};
+
+const blobToDataUrl = (blob) => new Promise((resolve, reject) => {
+    if (!(blob instanceof Blob)) {
+        reject(new Error('Not a blob'));
+        return;
+    }
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('Failed reading blob'));
+    reader.readAsDataURL(blob);
+});
+
+const buildDiscoveryCandidateText = (candidate = {}) => [
+    candidate?.name,
+    candidate?.title,
+    candidate?.description,
+    candidate?.rulesSummary,
+    candidate?.requiredFlair,
+].filter(Boolean).join(' ').toLowerCase();
+
+const classifyModelDiscoveryLane = (score, subscribers = 0) => {
+    if (score >= 80 || subscribers >= 500000) return 'goal';
+    if (score >= 55 || subscribers >= 50000) return 'testing';
+    return 'starter';
+};
+
+const buildDiscoveryQueryPlan = (profile = {}) => {
+    const prioritizedTerms = uniqueDiscoveryPhrases([
+        ...(profile.onlyGuiderTags || []),
+        profile.primaryNiche,
+        ...(profile.secondaryNiches || []),
+        ...(profile.riskyKeywords || []),
+        ...(profile.crawlKeywords || []),
+    ], 12);
+
+    const expanded = [];
+    for (const term of prioritizedTerms) {
+        expanded.push(term);
+        if (profile.nsfwFit === 'nsfw') {
+            Object.entries(NSFW_DISCOVERY_SEARCH_EXPANSIONS).forEach(([anchor, phrases]) => {
+                if (hasDiscoveryTokenOverlap(term, anchor)) expanded.push(...phrases);
+            });
+        }
+    }
+
+    if (profile.nsfwFit === 'nsfw') {
+        expanded.push(...(profile.riskyKeywords || []));
+    }
+
+    return uniqueDiscoveryPhrases(expanded, profile.nsfwFit === 'nsfw' ? 10 : 8);
+};
+
+const DISCOVERY_MAX_SEED_SUBREDDITS = 12;
+const DISCOVERY_MAX_POSTERS_PER_SEED = 10;
+const DISCOVERY_MAX_USER_PAGES = 3;
+const DISCOVERY_MIN_PROMO_POSTERS = 3;
+const DISCOVERY_PROMO_PATTERNS = [
+    /onlyfans/i,
+    /only fans/i,
+    /fansly/i,
+    /fanvue/i,
+    /linktr/i,
+    /beacons/i,
+    /allmylinks/i,
+    /manyvids/i,
+    /bio/i,
+];
+
+const isDiscoverySkippableAuthor = (author = '') => {
+    const value = String(author || '').trim();
+    if (!value) return true;
+    if (value === '[deleted]' || /^automoderator$/i.test(value)) return true;
+    return /^bot[_-]/i.test(value);
+};
+
+const isLikelyPromoDiscoveryPost = (post = {}) => {
+    const text = [
+        post?.selftext,
+        post?.url,
+        post?.title,
+        post?.permalink,
+    ].filter(Boolean).join(' ');
+    return post?.is_self === false || DISCOVERY_PROMO_PATTERNS.some((pattern) => pattern.test(String(text || '')));
+};
+
+const collectDiscoverySeedPosters = (listings = [], maxUsers = DISCOVERY_MAX_POSTERS_PER_SEED) => {
+    const promoUsers = [];
+    const fallbackUsers = [];
+    const promoSeen = new Set();
+    const fallbackSeen = new Set();
+
+    for (const listing of listings) {
+        const posts = Array.isArray(listing?.data?.children) ? listing.data.children : [];
+        for (const row of posts) {
+            const post = row?.data || {};
+            const author = String(post.author || '').trim();
+            if (isDiscoverySkippableAuthor(author)) continue;
+
+            if (!fallbackSeen.has(author.toLowerCase())) {
+                fallbackSeen.add(author.toLowerCase());
+                fallbackUsers.push(author);
+            }
+
+            if (isLikelyPromoDiscoveryPost(post) && !promoSeen.has(author.toLowerCase())) {
+                promoSeen.add(author.toLowerCase());
+                promoUsers.push(author);
+                if (promoUsers.length >= maxUsers) return promoUsers;
+            }
+        }
+    }
+
+    return promoUsers.length >= DISCOVERY_MIN_PROMO_POSTERS
+        ? promoUsers.slice(0, maxUsers)
+        : fallbackUsers.slice(0, maxUsers);
+};
+
+const accumulatePosterOverlapCandidate = (existing = {}, post = {}, username = '') => {
+    const nextUsers = new Set(Array.isArray(existing.foundViaUsers) ? existing.foundViaUsers : []);
+    if (username) nextUsers.add(username);
+    const totalUps = Number(existing.totalUps || 0) + Number(post?.ups || 0);
+    const postCount = Number(existing.postCount || 0) + 1;
+
+    return {
+        ...existing,
+        name: post?.subreddit || existing.name,
+        nsfw: Boolean(post?.over_18 ?? existing.nsfw),
+        subscribers: existing.subscribers || null,
+        title: existing.title || '',
+        description: existing.description || '',
+        rulesSummary: existing.rulesSummary || '',
+        requiredFlair: existing.requiredFlair || '',
+        foundViaUsers: [...nextUsers],
+        postCount,
+        totalUps,
+        avgUpvotes: Math.round(totalUps / Math.max(postCount, 1)),
+        postsSeen: postCount,
+    };
+};
+
+const rankModelDiscoveryCandidate = (candidate = {}, profile = {}) => {
+    const normalizedName = normalizeSeedSubreddit(candidate.name);
+    const text = buildDiscoveryCandidateText(candidate);
+    const matchTerms = uniqueDiscoveryPhrases([
+        profile.primaryNiche,
+        ...(profile.secondaryNiches || []),
+        ...(profile.onlyGuiderTags || []),
+        ...(profile.riskyKeywords || []),
+        ...(profile.crawlKeywords || []),
+    ], 16);
+    const seedSet = new Set((profile.seedSubreddits || []).map((name) => normalizeSeedSubreddit(name)));
+
+    let score = 0;
+    const reasons = [];
+    const rejectionReasons = [];
+    const policy = inferSubredditContentPolicy({
+        name: candidate.name,
+        nsfw: candidate.nsfw,
+        rulesSummary: candidate.rulesSummary,
+        hiddenRuleNotes: candidate.description,
+    });
+    const subscribers = Number(candidate.subscribers || 0);
+    const overlapUsers = Array.isArray(candidate.foundViaUsers) ? candidate.foundViaUsers.length : 0;
+    const postCount = Number(candidate.postCount || candidate.postsSeen || 0) || 0;
+    const promoBlocked = PROMO_HOSTILE_DISCOVERY_PATTERNS.some((pattern) => pattern.test(text));
+    const adviceLike = ADVICE_DISCOVERY_NAME_PATTERNS.some((pattern) => pattern.test(normalizedName))
+        || ADVICE_DISCOVERY_PATTERNS.some((pattern) => pattern.test(text));
+    const explicitCue = NSFW_DISCOVERY_NAME_PATTERNS.some((pattern) => pattern.test(text));
+
+    if (seedSet.has(normalizedName)) {
+        score += 28;
+        reasons.push('seed');
+    }
+
+    if (candidate.searchMatches) {
+        score += Math.min(Number(candidate.searchMatches || 0) * 8, 24);
+        reasons.push(`${candidate.searchMatches} hits`);
+    }
+
+    if (overlapUsers > 0) {
+        score += Math.min(overlapUsers * 9, 36);
+        reasons.push(`via ${overlapUsers} users`);
+    }
+
+    if (postCount > 0) {
+        score += Math.min(postCount * 2, 12);
+    }
+
+    if (profile.nsfwFit === 'nsfw') {
+        if (candidate.nsfw) {
+            score += 35;
+            reasons.push('nsfw');
+        } else {
+            score -= 55;
+            rejectionReasons.push('sfw');
+        }
+
+        if (explicitCue) {
+            score += 18;
+            reasons.push('explicit match');
+        }
+    } else if (candidate.nsfw) {
+        score += 8;
+    }
+
+    if (policy.isDiagnostic) {
+        score -= 140;
+        rejectionReasons.push('diagnostic');
+    }
+    if (policy.clothedOnly) {
+        score -= 70;
+        rejectionReasons.push('clothed only');
+    }
+    if (policy.disallowExplicit && profile.nsfwFit === 'nsfw') {
+        score -= 35;
+        rejectionReasons.push('non-explicit');
+    }
+    if (promoBlocked) {
+        score -= 28;
+        rejectionReasons.push('promo hostile');
+    }
+    if (adviceLike) {
+        score -= profile.nsfwFit === 'nsfw' ? 120 : 45;
+        rejectionReasons.push('advice/support');
+    }
+
+    for (const term of matchTerms) {
+        if (!term || term.length < 3) continue;
+        if (text.includes(term)) {
+            score += term === normalizeDiscoveryPhrase(profile.primaryNiche) ? 12 : 6;
+        }
+    }
+
+    if (subscribers >= 1000000) score += 18;
+    else if (subscribers >= 250000) score += 14;
+    else if (subscribers >= 50000) score += 10;
+    else if (subscribers >= 10000) score += 6;
+    else if (subscribers >= 1000) score += 3;
+    else if (subscribers > 0) score -= 4;
+
+    const blocked = rejectionReasons.length > 0 || score < 20;
+
+    return {
+        ...candidate,
+        relevanceScore: score,
+        lane: classifyModelDiscoveryLane(score, subscribers),
+        matchSummary: reasons.slice(0, 3).join(' • ') || 'keyword fit',
+        rejectionReasons,
+        blocked,
+    };
+};
+
+const resolveDiscoveryVisionImageUrl = (asset = {}, proxyUrl = '') => {
+    if (asset?.driveFileId && proxyUrl) return `${String(proxyUrl).replace(/\/$/, '')}/api/drive/thumb/${asset.driveFileId}`;
+    return asset?.thumbnailUrl || asset?.originalUrl || '';
+};
+
+const loadDiscoveryVisionSample = async (asset = {}, proxyUrl = '') => {
+    if (!asset || String(asset.assetType || '').toLowerCase() !== 'image') return null;
+
+    try {
+        if (asset.fileBlob instanceof Blob) {
+            return {
+                assetId: Number(asset.id),
+                dataUrl: await blobToDataUrl(asset.fileBlob),
+                label: asset.fileName || asset.angleTag || `asset-${asset.id}`,
+            };
+        }
+
+        const imageUrl = resolveDiscoveryVisionImageUrl(asset, proxyUrl);
+        if (!imageUrl) return null;
+
+        const response = await fetchWithTimeout(imageUrl, {}, 12000);
+        if (!response.ok) return null;
+        const blob = await response.blob();
+        return {
+            assetId: Number(asset.id),
+            dataUrl: await blobToDataUrl(blob),
+            label: asset.fileName || asset.angleTag || `asset-${asset.id}`,
+        };
+    } catch (err) {
+        console.warn('[ModelDiscoveryProfile] Failed loading vision sample:', err.message);
+        return null;
+    }
+};
 
 const extractJsonBlock = (rawText = '') => {
     const text = String(rawText || '').trim();
@@ -893,11 +1352,41 @@ export const ModelDiscoveryProfileService = {
             ),
             counts: {
                 assets: assets.length,
+                images: assets.filter((asset) => String(asset.assetType || '').toLowerCase() === 'image').length,
                 subreddits: subreddits.length,
                 competitors: competitors.length,
                 tasks: tasks.length,
             },
         };
+    },
+
+    async getVisionSamples(modelId, options = {}) {
+        const numericModelId = Number(modelId);
+        if (!numericModelId) return [];
+
+        const limit = Number(options.limit || 3);
+        const proxyUrl = await SettingsService.getProxyUrl();
+        const assets = await db.assets.where('modelId').equals(numericModelId).toArray();
+        const candidates = assets
+            .filter((asset) => String(asset.assetType || '').toLowerCase() === 'image')
+            .sort((a, b) => {
+                const approvedDelta = Number(Boolean(b.approved)) - Number(Boolean(a.approved));
+                if (approvedDelta !== 0) return approvedDelta;
+                const sourceDelta = Number(Boolean(b.fileBlob || b.driveFileId || b.thumbnailUrl || b.originalUrl))
+                    - Number(Boolean(a.fileBlob || a.driveFileId || a.thumbnailUrl || a.originalUrl));
+                if (sourceDelta !== 0) return sourceDelta;
+                return Number(b.id || 0) - Number(a.id || 0);
+            })
+            .slice(0, 6);
+
+        const samples = [];
+        for (const asset of candidates) {
+            const sample = await loadDiscoveryVisionSample(asset, proxyUrl);
+            if (sample?.dataUrl) samples.push(sample);
+            if (samples.length >= limit) break;
+        }
+
+        return samples;
     },
 
     buildFallbackProfile(signals) {
@@ -921,6 +1410,16 @@ export const ModelDiscoveryProfileService = {
             ...(signals.winningAngles || []),
             ...(signals.subredditNiches || []),
         ], 10);
+        const onlyGuiderTags = uniqueDiscoveryPhrases([
+            ...matchOnlyGuiderTags([
+                model.primaryNiche,
+                ...traitKeywords,
+                ...(signals.assetAngles || []),
+                ...(signals.winningAngles || []),
+                ...(signals.subredditNiches || []),
+            ], 10),
+            ...(ONLY_GUIDER_ARCHETYPE_HINTS[model.voiceArchetype] || []),
+        ], 10);
 
         const starterKeywords = uniqueDiscoveryPhrases(
             crawlKeywords.filter((keyword) => !EXPLICIT_DISCOVERY_PATTERNS.some((pattern) => pattern.test(keyword))),
@@ -935,12 +1434,20 @@ export const ModelDiscoveryProfileService = {
         const primaryNiche = normalizeDiscoveryPhrase(model.primaryNiche || crawlKeywords[0] || model.voiceArchetype || 'general');
         const secondaryNiches = uniqueDiscoveryPhrases([
             ...crawlKeywords.filter((keyword) => keyword !== primaryNiche),
+            ...onlyGuiderTags.filter((keyword) => keyword !== primaryNiche),
             ...(signals.winningAngles || []),
         ], 5);
 
-        const nsfwFit = riskyKeywords.length > 0 || model.redgifsProfile ? 'nsfw' : 'mixed';
+        const nsfwFit = riskyKeywords.length > 0
+            || model.redgifsProfile
+            || onlyGuiderTags.some((tag) => EXPLICIT_DISCOVERY_PATTERNS.some((pattern) => pattern.test(tag)))
+            || onlyGuiderTags.includes('pregnant milf')
+            || onlyGuiderTags.includes('breeding')
+            ? 'nsfw'
+            : 'mixed';
         const summary = [
             `${model.name || 'This model'} leans ${primaryNiche || 'general'}.`,
+            onlyGuiderTags.length > 0 ? `OnlyGuider-style tags: ${onlyGuiderTags.slice(0, 3).join(', ')}.` : '',
             secondaryNiches.length > 0 ? `Secondary lanes: ${secondaryNiches.slice(0, 3).join(', ')}.` : '',
             starterKeywords.length > 0 ? `Start crawling with ${starterKeywords.slice(0, 3).join(', ')}.` : '',
         ].filter(Boolean).join(' ');
@@ -951,6 +1458,7 @@ export const ModelDiscoveryProfileService = {
             summary,
             primaryNiche,
             secondaryNiches,
+            onlyGuiderTags,
             crawlKeywords,
             starterKeywords: starterKeywords.length > 0 ? starterKeywords : crawlKeywords.slice(0, 4),
             riskyKeywords,
@@ -965,6 +1473,7 @@ export const ModelDiscoveryProfileService = {
             ]),
             nsfwFit,
             confidence: signals?.counts?.assets > 0 || signals?.counts?.subreddits > 0 ? 'medium' : 'low',
+            analysisMode: 'heuristic',
             source: 'heuristic',
             generatedAt: new Date().toISOString(),
             inputsUsed: {
@@ -997,16 +1506,28 @@ export const ModelDiscoveryProfileService = {
             ...(profile.riskyKeywords || []),
             ...(fallback.riskyKeywords || []),
         ], 4);
+        const secondaryNiches = uniqueDiscoveryPhrases([
+            ...(profile.secondaryNiches || []),
+            ...(fallback.secondaryNiches || []),
+        ], 5);
+        const onlyGuiderTags = uniqueDiscoveryPhrases([
+            ...(profile.onlyGuiderTags || []),
+            ...(fallback.onlyGuiderTags || []),
+            ...matchOnlyGuiderTags([
+                primaryNiche,
+                ...secondaryNiches,
+                ...(profile.crawlKeywords || []),
+                ...(fallback.crawlKeywords || []),
+            ], 10),
+        ], 10);
 
         return {
             modelId: Number(model.id),
             modelName: model.name || '',
             summary: String(profile.summary || fallback.summary || `${model.name || 'Model'} crawl profile ready.`).trim(),
             primaryNiche: primaryNiche || crawlKeywords[0] || 'general',
-            secondaryNiches: uniqueDiscoveryPhrases([
-                ...(profile.secondaryNiches || []),
-                ...(fallback.secondaryNiches || []),
-            ], 5),
+            secondaryNiches,
+            onlyGuiderTags,
             crawlKeywords,
             starterKeywords: starterKeywords.length > 0 ? starterKeywords : crawlKeywords.slice(0, 4),
             riskyKeywords,
@@ -1020,16 +1541,28 @@ export const ModelDiscoveryProfileService = {
             ]),
             nsfwFit: ['sfw', 'mixed', 'nsfw'].includes(profile.nsfwFit) ? profile.nsfwFit : (fallback.nsfwFit || 'mixed'),
             confidence: ['low', 'medium', 'high'].includes(profile.confidence) ? profile.confidence : (fallback.confidence || 'medium'),
+            analysisMode: profile.analysisMode || fallback.analysisMode || 'heuristic',
             source: profile.source || fallback.source || 'heuristic',
             generatedAt: new Date().toISOString(),
             inputsUsed: fallback.inputsUsed || {},
         };
     },
 
-    async generateProfileWithAI(signals, fallbackProfile) {
+    async generateProfileWithAI(signals, fallbackProfile, options = {}) {
         const settings = await SettingsService.getSettings();
         const apiKey = String(settings.openRouterApiKey || '').trim();
         if (!apiKey) return null;
+        const visionSamples = Array.isArray(options.visionSamples) ? options.visionSamples.filter((sample) => sample?.dataUrl) : [];
+        const candidateOnlyGuiderTags = uniqueDiscoveryPhrases([
+            ...(fallbackProfile?.onlyGuiderTags || []),
+            ...matchOnlyGuiderTags([
+                signals?.model?.primaryNiche,
+                signals?.model?.identityNicheKeywords,
+                ...(signals?.assetAngles || []),
+                ...(signals?.winningAngles || []),
+                ...(signals?.subredditNiches || []),
+            ], 12),
+        ], 12);
 
         const proxyUrl = await SettingsService.getProxyUrl();
         let aiBaseUrl = String(settings.aiBaseUrl || '').trim() || 'https://openrouter.ai/api/v1';
@@ -1046,6 +1579,7 @@ Return exactly this shape:
   "summary": "short operator summary",
   "primaryNiche": "one niche phrase",
   "secondaryNiches": ["up to 5"],
+  "onlyGuiderTags": ["up to 8 tags from the allowed tag catalog"],
   "crawlKeywords": ["up to 10 short search phrases"],
   "starterKeywords": ["up to 6 safer starter search phrases"],
   "riskyKeywords": ["up to 4 riskier expansion phrases"],
@@ -1057,10 +1591,16 @@ Return exactly this shape:
 
 Rules:
 - Use lowercase phrases where possible.
+- If photos are attached, visually analyze them first and match the model to OnlyGuider-style adult creator tags.
 - Prefer the model's real traits, asset angles, and proven subreddit patterns.
 - Do not invent unsupported traits.
 - Keep search phrases short and practical for subreddit discovery.
+- Bias discovery toward adult promo-capable / NSFW lanes when the model clearly fits them.
+- Avoid support, parenting, advice, medical, or diagnostic communities.
 - Seed subreddits must be bare subreddit names, no prefixes or URLs.
+
+Allowed OnlyGuider-style tags:
+${JSON.stringify(candidateOnlyGuiderTags.length > 0 ? candidateOnlyGuiderTags : (fallbackProfile?.onlyGuiderTags || []), null, 2)}
 
 Signals:
 ${JSON.stringify(signals, null, 2)}
@@ -1069,6 +1609,16 @@ Fallback profile:
 ${JSON.stringify(fallbackProfile, null, 2)}
 `.trim();
 
+        const messageContent = visionSamples.length > 0
+            ? [
+                { type: 'text', text: prompt },
+                ...visionSamples.map((sample) => ({
+                    type: 'image_url',
+                    image_url: { url: sample.dataUrl },
+                })),
+            ]
+            : prompt;
+
         const response = await fetch(`${proxyUrl}/api/ai/generate`, {
             method: 'POST',
             headers: await getProxyHeaders({ 'Content-Type': 'application/json' }),
@@ -1076,7 +1626,7 @@ ${JSON.stringify(fallbackProfile, null, 2)}
                 aiBaseUrl: aiBaseUrl.endsWith('/') ? aiBaseUrl.slice(0, -1) : aiBaseUrl,
                 apiKey,
                 model: (settings.openRouterModel || '').trim() || 'z-ai/glm-5',
-                messages: [{ role: 'user', content: prompt }],
+                messages: [{ role: 'user', content: messageContent }],
                 temperature: 0.3,
             }),
         });
@@ -1100,9 +1650,14 @@ ${JSON.stringify(fallbackProfile, null, 2)}
 
         if (options.preferAI !== false) {
             try {
-                const aiProfile = await this.generateProfileWithAI(signals, fallbackProfile);
+                const visionSamples = await this.getVisionSamples(modelId, { limit: 3 });
+                const aiProfile = await this.generateProfileWithAI(signals, fallbackProfile, { visionSamples });
                 if (aiProfile) {
-                    profile = this.sanitizeProfile({ ...aiProfile, source: 'ai' }, fallbackProfile, signals);
+                    profile = this.sanitizeProfile({
+                        ...aiProfile,
+                        source: visionSamples.length > 0 ? 'vision+ai' : 'ai',
+                        analysisMode: visionSamples.length > 0 ? 'visual' : 'text',
+                    }, fallbackProfile, signals);
                 }
             } catch (err) {
                 console.warn('[ModelDiscoveryProfile] AI generation failed, using fallback:', err.message);
@@ -1122,6 +1677,249 @@ ${JSON.stringify(fallbackProfile, null, 2)}
             || profile.crawlKeywords?.[0]
             || profile.primaryNiche
             || '';
+    },
+
+    rankCandidates(profile, candidates = []) {
+        return (candidates || [])
+            .map((candidate) => rankModelDiscoveryCandidate(candidate, profile))
+            .sort((a, b) => Number(b.relevanceScore || 0) - Number(a.relevanceScore || 0) || (Number(b.subscribers || 0) - Number(a.subscribers || 0)));
+    },
+
+    collectSeedPostersFromListings(listings = [], options = {}) {
+        return collectDiscoverySeedPosters(listings, options.maxUsers || DISCOVERY_MAX_POSTERS_PER_SEED);
+    },
+
+    buildPosterOverlapCandidates(userListingGroups = []) {
+        const candidatesByName = new Map();
+
+        for (const group of userListingGroups) {
+            const username = String(group?.username || '').trim();
+            const listings = Array.isArray(group?.listings) ? group.listings : [];
+
+            for (const listing of listings) {
+                const posts = Array.isArray(listing?.data?.children) ? listing.data.children : [];
+                for (const row of posts) {
+                    const post = row?.data || {};
+                    const normalizedName = normalizeSeedSubreddit(post?.subreddit);
+                    if (!normalizedName) continue;
+
+                    const existing = candidatesByName.get(normalizedName) || {
+                        name: post?.subreddit,
+                        nsfw: Boolean(post?.over_18),
+                        foundViaUsers: [],
+                        postCount: 0,
+                        totalUps: 0,
+                        avgUpvotes: 0,
+                        postsSeen: 0,
+                    };
+                    candidatesByName.set(normalizedName, accumulatePosterOverlapCandidate(existing, post, username));
+                }
+            }
+        }
+
+        return [...candidatesByName.values()];
+    },
+
+    async crawlModelSubreddits(modelId, options = {}) {
+        const profile = options.profile || await this.generateProfile(modelId, {
+            save: options.saveProfile !== false,
+            push: options.push,
+        });
+        if (!profile) return { profile: null, queries: [], results: [] };
+
+        const proxyUrl = await SettingsService.getProxyUrl();
+        const queries = buildDiscoveryQueryPlan(profile);
+        const seedSubreddits = uniqueSeedSubreddits(profile.seedSubreddits || [], DISCOVERY_MAX_SEED_SUBREDDITS);
+        const resolvedSeeds = [...seedSubreddits];
+
+        if (resolvedSeeds.length === 0) {
+            for (const query of queries.slice(0, 3)) {
+                try {
+                    const response = await fetchWithTimeout(`${proxyUrl}/api/scrape/search/subreddits?q=${encodeURIComponent(query)}`, {}, 10000);
+                    if (!response.ok) continue;
+                    const data = await response.json().catch(() => []);
+                    data
+                        .filter((row) => Boolean(row?.over18))
+                        .slice(0, 3)
+                        .forEach((row) => resolvedSeeds.push(row.name));
+                    if (resolvedSeeds.length >= 6) break;
+                } catch (err) {
+                    console.warn('[ModelDiscoveryProfile] Seed search fallback failed:', query, err.message);
+                }
+            }
+        }
+
+        const finalSeeds = uniqueSeedSubreddits(resolvedSeeds, DISCOVERY_MAX_SEED_SUBREDDITS);
+        const posterSet = new Set();
+        const userListingGroups = [];
+
+        for (const subreddit of finalSeeds) {
+            const listings = [];
+            for (const sort of ['hot', 'new', 'top']) {
+                try {
+                    const params = new URLSearchParams({
+                        sort,
+                        limit: '25',
+                        ...(sort === 'top' ? { t: 'week' } : {}),
+                    });
+                    const response = await fetchWithTimeout(`${proxyUrl}/api/scrape/subreddit/posts/${encodeURIComponent(subreddit)}?${params.toString()}`, {}, 10000);
+                    if (!response.ok) continue;
+                    const data = await response.json().catch(() => null);
+                    if (data) listings.push(data);
+                } catch (err) {
+                    console.warn('[ModelDiscoveryProfile] Seed subreddit scrape failed:', subreddit, sort, err.message);
+                }
+            }
+
+            const posters = this.collectSeedPostersFromListings(listings);
+            posters.forEach((username) => {
+                if (posterSet.size < DISCOVERY_MAX_SEED_SUBREDDITS * DISCOVERY_MAX_POSTERS_PER_SEED) {
+                    posterSet.add(username);
+                }
+            });
+        }
+
+        for (const username of [...posterSet]) {
+            const listings = [];
+            let after = '';
+
+            for (let page = 0; page < DISCOVERY_MAX_USER_PAGES; page++) {
+                try {
+                    const params = new URLSearchParams({ limit: '100', sort: 'new' });
+                    if (after) params.set('after', after);
+                    const response = await fetchWithTimeout(`${proxyUrl}/api/scrape/user/${encodeURIComponent(username)}?${params.toString()}`, {}, 10000);
+                    if (!response.ok) break;
+                    const data = await response.json().catch(() => null);
+                    const posts = Array.isArray(data?.data?.children) ? data.data.children : [];
+                    if (posts.length === 0) break;
+                    listings.push(data);
+                    after = String(data?.data?.after || '').trim();
+                    if (!after) break;
+                } catch (err) {
+                    console.warn('[ModelDiscoveryProfile] User crawl failed:', username, err.message);
+                    break;
+                }
+            }
+
+            if (listings.length > 0) {
+                userListingGroups.push({ username, listings });
+            }
+        }
+
+        const candidatesByName = new Map();
+        const registerCandidate = (raw = {}, extra = {}) => {
+            const normalizedName = normalizeSeedSubreddit(raw.name);
+            if (!normalizedName) return;
+            const existing = candidatesByName.get(normalizedName) || {
+                name: raw.name,
+                subscribers: Number(raw.subscribers || 0) || null,
+                nsfw: Boolean(raw.nsfw ?? raw.over18),
+                avgUpvotes: raw.avgUpvotes ?? 0,
+                postsSeen: raw.postsSeen ?? 0,
+                title: raw.title || '',
+                description: raw.description || '',
+                searchMatches: 0,
+                queryHits: [],
+                foundViaUsers: raw.foundViaUsers || [],
+                postCount: raw.postCount || 0,
+                totalUps: raw.totalUps || 0,
+            };
+
+            candidatesByName.set(normalizedName, {
+                ...existing,
+                ...extra,
+                name: raw.name || existing.name,
+                subscribers: Number(raw.subscribers || existing.subscribers || 0) || null,
+                nsfw: Boolean(raw.nsfw ?? raw.over18 ?? existing.nsfw),
+                title: raw.title || existing.title || '',
+                description: raw.description || existing.description || '',
+                postsSeen: raw.postsSeen ?? existing.postsSeen,
+                avgUpvotes: raw.avgUpvotes ?? existing.avgUpvotes,
+                searchMatches: Number(existing.searchMatches || 0) + Number(extra.searchMatches || 0),
+                queryHits: uniqueDiscoveryPhrases([
+                    ...(existing.queryHits || []),
+                    ...(extra.queryHits || []),
+                ], 6),
+                foundViaUsers: Array.from(new Set([...(existing.foundViaUsers || []), ...(raw.foundViaUsers || []), ...(extra.foundViaUsers || [])])),
+                postCount: Number(raw.postCount ?? existing.postCount ?? 0),
+                totalUps: Number(raw.totalUps ?? existing.totalUps ?? 0),
+            });
+        };
+
+        this.buildPosterOverlapCandidates(userListingGroups).forEach((candidate) => {
+            registerCandidate(candidate, { queryHits: ['poster-overlap'] });
+        });
+
+        finalSeeds.forEach((subreddit) => {
+            registerCandidate({ name: subreddit, postsSeen: 'seed', avgUpvotes: 'N/A' }, { queryHits: ['seed'] });
+        });
+
+        const candidates = [...candidatesByName.values()]
+            .sort((a, b) => {
+                const overlapDelta = (Array.isArray(b.foundViaUsers) ? b.foundViaUsers.length : 0)
+                    - (Array.isArray(a.foundViaUsers) ? a.foundViaUsers.length : 0);
+                if (overlapDelta !== 0) return overlapDelta;
+                const countDelta = Number(b.postCount || 0) - Number(a.postCount || 0);
+                if (countDelta !== 0) return countDelta;
+                return Number(b.subscribers || 0) - Number(a.subscribers || 0);
+            })
+            .slice(0, 80);
+
+        const promisingTerms = uniqueDiscoveryPhrases([
+            profile.primaryNiche,
+            ...(profile.secondaryNiches || []),
+            ...(profile.onlyGuiderTags || []),
+        ], 12);
+
+        for (const candidate of candidates) {
+            const overlapUsers = Array.isArray(candidate.foundViaUsers) ? candidate.foundViaUsers.length : 0;
+            const shouldDeepFetch = finalSeeds.includes(normalizeSeedSubreddit(candidate.name))
+                || overlapUsers >= 2
+                || promisingTerms.some((term) => hasDiscoveryTokenOverlap(candidate.name, term));
+            if (!shouldDeepFetch) continue;
+
+            try {
+                const response = await fetchWithTimeout(`${proxyUrl}/api/scrape/subreddit/${encodeURIComponent(candidate.name)}`, {}, 10000);
+                if (!response.ok) continue;
+                const deepData = await response.json().catch(() => null);
+                if (!deepData) continue;
+                candidate.subscribers = Number(deepData.subscribers || candidate.subscribers || 0) || null;
+                candidate.nsfw = Boolean(deepData.over18 ?? candidate.nsfw);
+                candidate.title = deepData.title || candidate.title || '';
+                candidate.description = deepData.publicDescription || candidate.description || '';
+                candidate.rulesSummary = (deepData.rules || []).map((rule) => `${rule.title}: ${rule.description}`).filter(Boolean).join(' | ');
+                candidate.requiredFlair = deepData.flairRequired ? 'flair required' : '';
+            } catch (err) {
+                console.warn('[ModelDiscoveryProfile] Deep subreddit fetch failed:', candidate.name, err.message);
+            }
+        }
+
+        const ranked = candidates
+            .map((candidate) => rankModelDiscoveryCandidate(candidate, profile))
+            .filter((candidate) => !candidate.blocked)
+            .sort((a, b) => Number(b.relevanceScore || 0) - Number(a.relevanceScore || 0) || (Number(b.subscribers || 0) - Number(a.subscribers || 0)))
+            .slice(0, 30);
+
+        return {
+            profile,
+            queries,
+            seedSubreddits: finalSeeds,
+            crawledUsers: [...posterSet],
+            results: ranked.map((candidate) => ({
+                name: candidate.name,
+                subscribers: candidate.subscribers,
+                postsSeen: candidate.postsSeen,
+                nsfw: candidate.nsfw,
+                avgUpvotes: candidate.avgUpvotes,
+                relevanceScore: candidate.relevanceScore,
+                lane: candidate.lane,
+                matchSummary: candidate.matchSummary,
+                queryHits: candidate.queryHits || [],
+                foundViaUsers: candidate.foundViaUsers || [],
+                rulesSummary: candidate.rulesSummary || '',
+                flairRequired: candidate.requiredFlair ? 1 : 0,
+            })),
+        };
     },
 };
 

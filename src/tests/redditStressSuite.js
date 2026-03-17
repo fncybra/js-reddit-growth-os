@@ -659,6 +659,7 @@ export async function runRedditStressSuite() {
 
             const ok = profile?.primaryNiche?.includes('pregnant')
                 && profile?.crawlKeywords?.some((keyword) => keyword.includes('pregnant'))
+                && profile?.onlyGuiderTags?.some((tag) => tag.includes('pregnant') || tag.includes('milf'))
                 && profile?.seedSubreddits?.includes('pregnantgonewild')
                 && storedSetting?.value;
 
@@ -670,6 +671,126 @@ export async function runRedditStressSuite() {
             log.fail('Model crawl profile', err.message);
         } finally {
             await cleanupScenario(ids);
+        }
+    }
+
+    // Test 16: Model crawl should keep the old seed-sub -> posters pipeline
+    {
+        try {
+            const listings = [
+                {
+                    data: {
+                        children: [
+                            { data: { author: 'promoA', is_self: false, url: 'https://example.com/promo', selftext: '' } },
+                            { data: { author: 'promoB', is_self: true, url: 'https://reddit.com/r/test', selftext: 'my onlyfans is in bio' } },
+                            { data: { author: 'promoC', is_self: true, url: 'https://reddit.com/r/test', selftext: 'linktr.ee/me' } },
+                            { data: { author: 'AutoModerator', is_self: true, url: '', selftext: '' } },
+                        ],
+                    },
+                },
+            ];
+
+            const posters = ModelDiscoveryProfileService.collectSeedPostersFromListings(listings, { maxUsers: 10 });
+            const ok = posters.includes('promoA') && posters.includes('promoB') && posters.includes('promoC') && !posters.includes('AutoModerator');
+
+            if (!ok) {
+                throw new Error(`posters=${JSON.stringify(posters)}`);
+            }
+            log.pass('Model crawl seed posters', 'Seed subreddit listings resolve likely promo posters before profile crawl');
+        } catch (err) {
+            log.fail('Model crawl seed posters', err.message);
+        }
+    }
+
+    // Test 17: Poster overlap crawl should discover shared NSFW lanes
+    {
+        try {
+            const candidates = ModelDiscoveryProfileService.buildPosterOverlapCandidates([
+                {
+                    username: 'promoA',
+                    listings: [{
+                        data: {
+                            children: [
+                                { data: { subreddit: 'PregnantPorn', over_18: true, ups: 120 } },
+                                { data: { subreddit: 'PregnantPorn', over_18: true, ups: 80 } },
+                                { data: { subreddit: 'BabyBumps', over_18: false, ups: 20 } },
+                            ],
+                        },
+                    }],
+                },
+                {
+                    username: 'promoB',
+                    listings: [{
+                        data: {
+                            children: [
+                                { data: { subreddit: 'PregnantPorn', over_18: true, ups: 60 } },
+                                { data: { subreddit: 'PregnantPetite', over_18: true, ups: 45 } },
+                            ],
+                        },
+                    }],
+                },
+            ]);
+
+            const pregPorn = candidates.find((row) => row.name === 'PregnantPorn');
+            const ok = pregPorn
+                && pregPorn.postCount === 3
+                && pregPorn.avgUpvotes === 87
+                && pregPorn.foundViaUsers.length === 2;
+
+            if (!ok) {
+                throw new Error(`candidates=${JSON.stringify(candidates)}`);
+            }
+            log.pass('Model crawl poster overlap', 'User history crawl accumulates shared subreddit evidence correctly');
+        } catch (err) {
+            log.fail('Model crawl poster overlap', err.message);
+        }
+    }
+
+    // Test 18: NSFW model crawl should reject advice subs and keep adult lanes
+    {
+        try {
+            const profile = {
+                primaryNiche: 'pregnant milf',
+                secondaryNiches: ['preggo', 'breeding'],
+                onlyGuiderTags: ['pregnant', 'pregnant milf', 'milf'],
+                crawlKeywords: ['pregnant milf', 'preggo', 'breeding'],
+                riskyKeywords: ['pregnant nsfw', 'pregnant porn'],
+                seedSubreddits: ['pregnantgonewild'],
+                nsfwFit: 'nsfw',
+            };
+            const ranked = ModelDiscoveryProfileService.rankCandidates(profile, [
+                {
+                    name: 'pregnantporn',
+                    nsfw: true,
+                    subscribers: 52000,
+                    title: 'Pregnant Porn',
+                    description: 'NSFW pregnant content',
+                    rulesSummary: 'No spam. No minors.',
+                    searchMatches: 2,
+                },
+                {
+                    name: 'BabyBumps',
+                    nsfw: false,
+                    subscribers: 880000,
+                    title: 'Pregnancy support',
+                    description: 'Advice and support for expecting moms',
+                    rulesSummary: 'Medical questions and support only.',
+                    searchMatches: 3,
+                },
+            ]);
+
+            const adultLane = ranked.find((candidate) => candidate.name === 'pregnantporn');
+            const adviceLane = ranked.find((candidate) => candidate.name === 'BabyBumps');
+            const ok = adultLane && !adultLane.blocked
+                && adviceLane && adviceLane.blocked
+                && adviceLane.rejectionReasons.includes('advice/support');
+
+            if (!ok) {
+                throw new Error(`ranked=${JSON.stringify(ranked)}`);
+            }
+            log.pass('Model crawl NSFW filter', 'Advice/support pregnancy subs are rejected while adult lanes stay available');
+        } catch (err) {
+            log.fail('Model crawl NSFW filter', err.message);
         }
     }
 

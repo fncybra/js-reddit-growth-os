@@ -209,16 +209,22 @@ export function Discovery() {
             }
 
             if (options.runSearch) {
-                const keyword = ModelDiscoveryProfileService.getPreferredSearchKeyword(profile);
-                if (keyword) {
-                    setDiscoveryMode('niche');
-                    setQuery(keyword);
-                    await runDiscoverySearch({ mode: 'niche', searchQuery: keyword });
-                }
+                setLoading(true);
+                setError(null);
+                setResults([]);
+                setSelectedSubs(new Set());
+                const crawl = await ModelDiscoveryProfileService.crawlModelSubreddits(targetModel.id, {
+                    profile,
+                    saveProfile: false,
+                });
+                setDiscoveryMode('niche');
+                setQuery((crawl.queries || []).join(', '));
+                setResults(crawl.results || []);
             }
         } catch (err) {
             alert(`Failed to generate model crawl profile: ${err.message}`);
         } finally {
+            setLoading(false);
             setGeneratingProfile(false);
         }
     }
@@ -414,7 +420,7 @@ export function Discovery() {
                                 <h2 style={{ fontSize: '1.05rem', margin: 0 }}>Model Crawl Profile</h2>
                             </div>
                             <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: modelDiscoveryProfile ? '12px' : 0 }}>
-                                Let the OS turn this model into a crawl plan first. It reads the model niche, identity, asset angles, winners, and tracked competitor evidence, then gives you the best search lanes to crawl.
+                                Let the OS turn this model into a crawl plan first. It uses model traits, approved image samples when available, and OnlyGuider-style tags to pick seed subreddits, then crawls posters in those lanes to find where else they actually post.
                             </p>
                             {modelDiscoveryProfile && (
                                 <>
@@ -424,9 +430,24 @@ export function Discovery() {
                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
                                         <span className="badge badge-info">Primary: {modelDiscoveryProfile.primaryNiche || 'general'}</span>
                                         <span className="badge badge-success">Source: {modelDiscoveryProfile.source || 'heuristic'}</span>
+                                        <span className="badge badge-info">Analysis: {modelDiscoveryProfile.analysisMode || 'heuristic'}</span>
                                         <span className="badge badge-warning">Confidence: {modelDiscoveryProfile.confidence || 'medium'}</span>
                                         <span className="badge badge-danger">Fit: {modelDiscoveryProfile.nsfwFit || 'mixed'}</span>
                                     </div>
+                                    {(modelDiscoveryProfile.onlyGuiderTags || []).length > 0 && (
+                                        <div style={{ marginBottom: '10px' }}>
+                                            <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                                                OnlyGuider Match Tags
+                                            </div>
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                                {(modelDiscoveryProfile.onlyGuiderTags || []).map((tag) => (
+                                                    <span key={tag} className="badge badge-warning" style={{ fontSize: '0.75rem' }}>
+                                                        {tag}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
                                     {(modelDiscoveryProfile.crawlKeywords || []).length > 0 && (
                                         <div style={{ marginBottom: '10px' }}>
                                             <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-secondary)', marginBottom: '8px' }}>
@@ -472,7 +493,7 @@ export function Discovery() {
                                 onClick={() => handleGenerateCrawlProfile()}
                             >
                                 {generatingProfile ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-                                {modelDiscoveryProfile ? 'Refresh Profile' : 'Generate Profile'}
+                                {modelDiscoveryProfile ? 'Refresh Analysis' : 'Analyze Model'}
                             </button>
                             <button
                                 type="button"
@@ -481,7 +502,7 @@ export function Discovery() {
                                 onClick={() => handleGenerateCrawlProfile({ runSearch: true })}
                             >
                                 {loading && discoveryMode === 'niche' ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
-                                Start Model Crawl
+                                Run Model Crawl
                             </button>
                         </div>
                     </div>
@@ -506,7 +527,7 @@ export function Discovery() {
                     <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '16px' }}>
                         {discoveryMode === 'competitor'
                             ? "Enter a competitor's Reddit username to see where they post."
-                            : "Enter a niche keyword (e.g. 'fitness') to find relevant subreddits."}
+                            : "Enter a niche keyword to search manually, or use Run Model Crawl for the full seed-sub -> posters -> overlap crawl."}
                     </p>
 
                     <form onSubmit={handleSearch} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
@@ -716,6 +737,8 @@ export function Discovery() {
                                         <th>Avg Upvotes</th>
                                         <th>NSFW</th>
                                         <th>Subscribers</th>
+                                        <th>Lane</th>
+                                        <th>Match</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -743,11 +766,21 @@ export function Discovery() {
                                             <td>{sub.avgUpvotes}</td>
                                             <td>{sub.nsfw ? <span style={{ color: 'var(--status-danger)' }}>Yes</span> : <span style={{ color: 'var(--text-secondary)' }}>No</span>}</td>
                                             <td>{sub.subscribers ? sub.subscribers.toLocaleString() : 'N/A'}</td>
+                                            <td>
+                                                {sub.lane ? (
+                                                    <span className={`badge ${sub.lane === 'goal' ? 'badge-success' : sub.lane === 'testing' ? 'badge-info' : 'badge-warning'}`}>
+                                                        {sub.lane}
+                                                    </span>
+                                                ) : '—'}
+                                            </td>
+                                            <td style={{ maxWidth: '240px', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                                                {sub.matchSummary || (sub.queryHits || []).slice(0, 2).join(', ') || '—'}
+                                            </td>
                                         </tr>
                                     ))}
                                     {validResults.length === 0 && (
                                         <tr>
-                                            <td colSpan="6" style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '32px' }}>
+                                            <td colSpan="8" style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '32px' }}>
                                                 All subreddits found for this user are already in your OS.
                                             </td>
                                         </tr>
