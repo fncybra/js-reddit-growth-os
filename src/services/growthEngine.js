@@ -4662,6 +4662,7 @@ export const CloudSyncService = {
             }
             const pendingDel = await getPendingDeleteIds(table);
             if (pendingDel.size > 0) {
+                await db[table].bulkDelete([...pendingDel]);
                 cloudData = cloudData.filter(r => !pendingDel.has(r.id));
             }
 
@@ -4673,6 +4674,10 @@ export const CloudSyncService = {
 
             // Merge: upsert cloud data without clearing local
             await db[table].bulkPut(cloudData);
+            const latestPendingDel = await getPendingDeleteIds(table);
+            if (latestPendingDel.size > 0) {
+                await db[table].bulkDelete([...latestPendingDel]);
+            }
             console.log(`[CloudSync] Merged ${cloudData.length} cloud rows into ${table}`);
 
             // NOTE: No orphan cleanup here. Local records not in cloud may be newly added
