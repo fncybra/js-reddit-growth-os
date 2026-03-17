@@ -2,13 +2,14 @@ import React, { useState } from 'react';
 import { db } from '../db/db';
 import { generateId } from '../db/generateId';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Search, Loader2, Download, RefreshCw, Trash2, Plus, Eye } from 'lucide-react';
-import { CompetitorService } from '../services/growthEngine';
+import { Search, Loader2, Download, RefreshCw, Trash2, Plus, Eye, Sparkles } from 'lucide-react';
+import { CompetitorService, getAssignmentAccountRoster, ModelDiscoveryProfileService, SubredditAssignmentService } from '../services/growthEngine';
 
 export function Discovery() {
     const models = useLiveQuery(() => db.models.toArray());
     const [selectedModelId, setSelectedModelId] = useState(null);
     const [selectedAccountId, setSelectedAccountId] = useState('');
+    const cleanupSignatureRef = React.useRef('');
 
     // Auto-select first model available if none selected
     React.useEffect(() => {
@@ -18,11 +19,21 @@ export function Discovery() {
     }, [models, selectedModelId]);
 
     const targetModel = models?.find(m => m.id === selectedModelId);
-    const modelAccounts = useLiveQuery(
+    const rawModelAccounts = useLiveQuery(
         async () => {
             if (!targetModel) return [];
-            const accounts = await db.accounts.where({ modelId: targetModel.id }).toArray();
-            return accounts.filter(acc => String(acc.status || '').toLowerCase() !== 'dead');
+            return db.accounts.where({ modelId: targetModel.id }).toArray();
+        },
+        [targetModel?.id]
+    );
+    const modelAccounts = React.useMemo(
+        () => getAssignmentAccountRoster(rawModelAccounts || []),
+        [rawModelAccounts]
+    );
+    const modelDiscoveryProfile = useLiveQuery(
+        async () => {
+            if (!targetModel?.id) return null;
+            return ModelDiscoveryProfileService.getProfile(targetModel.id);
         },
         [targetModel?.id]
     );
@@ -39,10 +50,49 @@ export function Discovery() {
         }
     }, [modelAccounts, selectedAccountId]);
 
+    React.useEffect(() => {
+        if (!modelDiscoveryProfile?.primaryNiche) return;
+        if (!importNiche || importNiche === 'general') {
+            setImportNiche(modelDiscoveryProfile.primaryNiche);
+        }
+    }, [modelDiscoveryProfile, importNiche]);
+
     const existingSubreddits = useLiveQuery(
         () => targetModel ? db.subreddits.where({ modelId: targetModel.id }).toArray() : [],
         [targetModel?.id]
     );
+
+    React.useEffect(() => {
+        if (!targetModel?.id || rawModelAccounts === undefined || existingSubreddits === undefined) return;
+
+        const signature = JSON.stringify({
+            modelId: Number(targetModel.id),
+            accounts: (rawModelAccounts || [])
+                .map(account => `${account.id}:${account.handle || ''}:${account.status || ''}:${account.phase || ''}:${account.shadowBanStatus || ''}:${account.isSuspended ? 1 : 0}`)
+                .sort(),
+            subreddits: (existingSubreddits || [])
+                .filter(subreddit => subreddit?.accountId)
+                .map(subreddit => `${subreddit.id}:${subreddit.accountId}`)
+                .sort(),
+        });
+
+        if (signature === cleanupSignatureRef.current) return;
+        cleanupSignatureRef.current = signature;
+
+        let cancelled = false;
+        (async () => {
+            const result = await SubredditAssignmentService.cleanupInvalidAccountLinks(targetModel.id);
+            if (!cancelled && result.cleaned > 0) {
+                console.info(`[Discovery] Cleaned ${result.cleaned} stale subreddit account links for model ${targetModel.id}.`);
+            }
+        })().catch(err => {
+            console.warn('[Discovery] Failed to clean stale subreddit account links:', err.message);
+        });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [targetModel?.id, rawModelAccounts, existingSubreddits]);
 
     const competitors = useLiveQuery(
         () => targetModel ? db.competitors.where('modelId').equals(targetModel.id).toArray() : [],
@@ -56,6 +106,7 @@ export function Discovery() {
     const [username, setUsername] = useState('');
     const [query, setQuery] = useState('');
     const [loading, setLoading] = useState(false);
+    const [generatingProfile, setGeneratingProfile] = useState(false);
     const [error, setError] = useState(null);
     const [results, setResults] = useState([]);
     const [selectedSubs, setSelectedSubs] = useState(new Set());
@@ -70,9 +121,10 @@ export function Discovery() {
 
     const existingSubNames = new Set(existingSubreddits?.map(s => s.name.toLowerCase()) || []);
 
-    async function handleSearch(e) {
-        e.preventDefault();
-
+    async function runDiscoverySearch(options = {}) {
+        const mode = options.mode || discoveryMode;
+        const competitorUsername = String(options.competitorUsername ?? username);
+        const searchQuery = String(options.searchQuery ?? query);
         setLoading(true);
         setError(null);
         setResults([]);
@@ -82,9 +134,9 @@ export function Discovery() {
             const { SettingsService, getProxyHeaders } = await import('../services/growthEngine');
             const proxyUrl = await SettingsService.getProxyUrl();
 
-            if (discoveryMode === 'competitor') {
-                if (!username.trim()) return;
-                const cleanUsername = username.replace(/^(u\/|\/u\/|https:\/\/www.reddit.com\/u(ser)?\/)/i, '').split('/')[0].trim();
+            if (mode === 'competitor') {
+                if (!competitorUsername.trim()) return;
+                const cleanUsername = competitorUsername.replace(/^(u\/|\/u\/|https:\/\/www.reddit.com\/u(ser)?\/)/i, '').split('/')[0].trim();
                 const response = await fetch(`${proxyUrl}/api/scrape/user/${cleanUsername}`, { headers: await getProxyHeaders() });
 
                 if (!response.ok) throw new Error("Competitor not found or proxy error.");
@@ -110,8 +162,8 @@ export function Discovery() {
                 }
                 setResults(Array.from(subMap.values()).sort((a, b) => b.postsSeen - a.postsSeen));
             } else {
-                if (!query.trim()) return;
-                const response = await fetch(`${proxyUrl}/api/scrape/search/subreddits?q=${encodeURIComponent(query)}`, { headers: await getProxyHeaders() });
+                if (!searchQuery.trim()) return;
+                const response = await fetch(`${proxyUrl}/api/scrape/search/subreddits?q=${encodeURIComponent(searchQuery)}`, { headers: await getProxyHeaders() });
                 if (!response.ok) throw new Error("Failed to search subreddits.");
                 const data = await response.json();
 
@@ -129,6 +181,46 @@ export function Discovery() {
         } finally {
             setLoading(false);
         }
+    }
+
+    async function handleSearch(e) {
+        e.preventDefault();
+        await runDiscoverySearch();
+    }
+
+    async function handleGenerateCrawlProfile(options = {}) {
+        if (!targetModel?.id) return;
+        setGeneratingProfile(true);
+        try {
+            const shouldReuseExisting = options.runSearch && modelDiscoveryProfile && !options.forceRefresh;
+            const profile = shouldReuseExisting
+                ? modelDiscoveryProfile
+                : await ModelDiscoveryProfileService.generateProfile(targetModel.id);
+            if (profile?.primaryNiche && (!importNiche || importNiche === 'general')) {
+                setImportNiche(profile.primaryNiche);
+            }
+
+            if (options.runSearch) {
+                const keyword = ModelDiscoveryProfileService.getPreferredSearchKeyword(profile);
+                if (keyword) {
+                    setDiscoveryMode('niche');
+                    setQuery(keyword);
+                    await runDiscoverySearch({ mode: 'niche', searchQuery: keyword });
+                }
+            }
+        } catch (err) {
+            alert(`Failed to generate model crawl profile: ${err.message}`);
+        } finally {
+            setGeneratingProfile(false);
+        }
+    }
+
+    async function handleUseProfileKeyword(keyword) {
+        const cleanKeyword = String(keyword || '').trim();
+        if (!cleanKeyword) return;
+        setDiscoveryMode('niche');
+        setQuery(cleanKeyword);
+        await runDiscoverySearch({ mode: 'niche', searchQuery: cleanKeyword });
     }
 
     function toggleSelection(subName) {
@@ -306,6 +398,87 @@ export function Discovery() {
             </header>
 
             <div className="page-content">
+                <div className="card mb-6" style={{ marginBottom: '24px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
+                        <div style={{ maxWidth: '720px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                                <Sparkles size={16} style={{ color: 'var(--primary-color)' }} />
+                                <h2 style={{ fontSize: '1.05rem', margin: 0 }}>Model Crawl Profile</h2>
+                            </div>
+                            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: modelDiscoveryProfile ? '12px' : 0 }}>
+                                Let the OS turn this model into a crawl plan first. It reads the model niche, identity, asset angles, winners, and tracked competitor evidence, then gives you the best search lanes to crawl.
+                            </p>
+                            {modelDiscoveryProfile && (
+                                <>
+                                    <div style={{ fontSize: '0.92rem', fontWeight: 600, marginBottom: '10px' }}>
+                                        {modelDiscoveryProfile.summary}
+                                    </div>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
+                                        <span className="badge badge-info">Primary: {modelDiscoveryProfile.primaryNiche || 'general'}</span>
+                                        <span className="badge badge-success">Source: {modelDiscoveryProfile.source || 'heuristic'}</span>
+                                        <span className="badge badge-warning">Confidence: {modelDiscoveryProfile.confidence || 'medium'}</span>
+                                        <span className="badge badge-danger">Fit: {modelDiscoveryProfile.nsfwFit || 'mixed'}</span>
+                                    </div>
+                                    {(modelDiscoveryProfile.crawlKeywords || []).length > 0 && (
+                                        <div style={{ marginBottom: '10px' }}>
+                                            <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                                                Best Crawl Keywords
+                                            </div>
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                                {(modelDiscoveryProfile.crawlKeywords || []).map((keyword) => (
+                                                    <button
+                                                        key={keyword}
+                                                        type="button"
+                                                        className="btn btn-outline"
+                                                        style={{ padding: '5px 10px', fontSize: '0.8rem' }}
+                                                        onClick={() => handleUseProfileKeyword(keyword)}
+                                                    >
+                                                        {keyword}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {(modelDiscoveryProfile.seedSubreddits || []).length > 0 && (
+                                        <div>
+                                            <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                                                Seed Subreddits
+                                            </div>
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                                {modelDiscoveryProfile.seedSubreddits.slice(0, 8).map((subreddit) => (
+                                                    <span key={subreddit} className="badge badge-info" style={{ fontSize: '0.75rem' }}>
+                                                        r/{subreddit}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            <button
+                                type="button"
+                                className="btn btn-outline"
+                                disabled={generatingProfile || !targetModel}
+                                onClick={() => handleGenerateCrawlProfile()}
+                            >
+                                {generatingProfile ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                                {modelDiscoveryProfile ? 'Refresh Profile' : 'Generate Profile'}
+                            </button>
+                            <button
+                                type="button"
+                                className="btn btn-primary"
+                                disabled={generatingProfile || loading || !targetModel}
+                                onClick={() => handleGenerateCrawlProfile({ runSearch: true })}
+                            >
+                                {loading && discoveryMode === 'niche' ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+                                Start Model Crawl
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
                 <div className="card mb-6" style={{ marginBottom: '24px' }}>
                     <div style={{ display: 'flex', gap: '20px', marginBottom: '20px', borderBottom: '1px solid #2d313a' }}>
                         <button

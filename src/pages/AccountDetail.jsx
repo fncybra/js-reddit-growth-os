@@ -144,7 +144,8 @@ export function AccountDetail() {
 
     const handle = String(account.handle || '').replace(/^u\//i, '');
     const profileScore = AnalyticsEngine.computeProfileScore(account);
-    const healthScore = AnalyticsEngine.computeAccountHealthScore(account);
+    const healthBreakdown = AnalyticsEngine.computeAccountHealthBreakdown(account);
+    const healthScore = healthBreakdown.score;
     const profileColor = scoreTone(profileScore);
     const healthColor = scoreTone(healthScore);
     const tone = statusTone(account);
@@ -307,6 +308,33 @@ export function AccountDetail() {
                         <div className="metric-label">Karma</div>
                         <div className="metric-value">{(account.totalKarma || 0).toLocaleString()}</div>
                         <div style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>Profile trust signal</div>
+                    </div>
+                </section>
+
+                <section className="card" style={{ marginBottom: '24px' }}>
+                    <div className="section-heading">
+                        <div>
+                            <div className="subtle-kicker">Operating Readout</div>
+                            <h2 style={{ fontSize: '1.1rem' }}>Why this account scores the way it does</h2>
+                        </div>
+                        <div style={{ color: healthColor, fontWeight: 700 }}>{healthBreakdown.status}</div>
+                    </div>
+                    <div className="glass-panel" style={{ marginTop: '14px', marginBottom: '14px' }}>
+                        <div style={{ fontWeight: 700, marginBottom: '6px' }}>Next move</div>
+                        <div style={{ color: 'var(--text-secondary)' }}>{healthBreakdown.nextAction}</div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
+                        {healthBreakdown.components.slice(0, 6).map((item) => (
+                            <div key={`${item.label}-${item.detail}`} className="glass-panel">
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
+                                    <strong style={{ fontSize: '0.88rem' }}>{item.label}</strong>
+                                    <span style={{ fontWeight: 700, color: item.delta >= 0 ? 'var(--status-success)' : 'var(--status-danger)' }}>
+                                        {item.delta >= 0 ? `+${item.delta}` : item.delta}
+                                    </span>
+                                </div>
+                                <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>{item.detail}</div>
+                            </div>
+                        ))}
                     </div>
                 </section>
 

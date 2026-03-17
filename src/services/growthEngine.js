@@ -219,6 +219,213 @@ export const isAccountMarkedDead = (account = {}) => {
         || DEAD_SHADOW_STATUSES.has(shadowBanStatus);
 };
 
+const normalizeSubredditName = (rawValue = '') => String(rawValue || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^(r\/|\/r\/)/i, '')
+    .replace(/[^a-z0-9]/g, '');
+
+const NON_POSTING_SUBREDDIT_NAMES = new Set([
+    'whatismycqs',
+    'amishadowbanned',
+    'shadowban',
+    'shadowbanned',
+]);
+
+const CLOTHED_ONLY_SUBREDDIT_PATTERNS = [
+    /shirt\s*(?:and|&)\s*tie/i,
+    /shirtandtie/i,
+    /fully clothed/i,
+    /clothed only/i,
+    /dressed only/i,
+    /business attire/i,
+    /office wear/i,
+    /no nudity/i,
+    /no nudes?/i,
+    /non[- ]?nude/i,
+    /sfw only/i,
+    /safe for work/i,
+];
+
+const NON_EXPLICIT_SUBREDDIT_PATTERNS = [
+    /no explicit/i,
+    /no porn/i,
+    /no hardcore/i,
+    /sfw/i,
+    /safe for work/i,
+    /non[- ]?nude/i,
+    /no nudity/i,
+    /no nudes?/i,
+    /clothed only/i,
+];
+
+const MODEL_DISCOVERY_PROFILE_KEY_PREFIX = 'modelDiscoveryProfile:';
+
+const normalizeDiscoveryPhrase = (rawValue = '') => String(rawValue || '')
+    .toLowerCase()
+    .replace(/[_/]+/g, ' ')
+    .replace(/[^a-z0-9+\s-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const splitDiscoveryPhrases = (...values) => values
+    .flatMap((value) => {
+        if (Array.isArray(value)) return value;
+        return String(value || '')
+            .split(/[,|\n;]+/)
+            .map((item) => item.trim());
+    })
+    .map(normalizeDiscoveryPhrase)
+    .filter(Boolean);
+
+const uniqueDiscoveryPhrases = (values = [], limit = 8) => {
+    const seen = new Set();
+    const ordered = [];
+    for (const value of values) {
+        const normalized = normalizeDiscoveryPhrase(value);
+        if (!normalized || seen.has(normalized)) continue;
+        seen.add(normalized);
+        ordered.push(normalized);
+        if (ordered.length >= limit) break;
+    }
+    return ordered;
+};
+
+const rankDiscoveryPhrases = (values = [], limit = 8) => {
+    const counts = new Map();
+    for (const value of values) {
+        const normalized = normalizeDiscoveryPhrase(value);
+        if (!normalized) continue;
+        counts.set(normalized, (counts.get(normalized) || 0) + 1);
+    }
+    return [...counts.entries()]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .slice(0, limit)
+        .map(([value]) => value);
+};
+
+const normalizeSeedSubreddit = (rawValue = '') => String(rawValue || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^(r\/|\/r\/)/i, '')
+    .replace(/[^a-z0-9_]/g, '');
+
+const uniqueSeedSubreddits = (values = [], limit = 12) => {
+    const seen = new Set();
+    const ordered = [];
+    for (const value of values) {
+        const normalized = normalizeSeedSubreddit(value);
+        if (!normalized || seen.has(normalized)) continue;
+        seen.add(normalized);
+        ordered.push(normalized);
+        if (ordered.length >= limit) break;
+    }
+    return ordered;
+};
+
+const MODEL_ARCHETYPE_KEYWORDS = {
+    milf: ['milf', 'mature', 'older'],
+    pregnant: ['pregnant', 'bump', 'expecting', 'maternity'],
+    'girl-next-door': ['girl next door', 'cute', 'amateur', 'soft'],
+    alt: ['alt', 'alternative', 'goth', 'inked'],
+};
+
+const EXPLICIT_DISCOVERY_PATTERNS = [
+    /\bnsfw\b/i,
+    /\bnude\b/i,
+    /\bnaked\b/i,
+    /\bporn\b/i,
+    /\bsex\b/i,
+    /\btaboo\b/i,
+    /\bfetish\b/i,
+    /\bhorny\b/i,
+    /\bbreed/i,
+];
+
+const extractJsonBlock = (rawText = '') => {
+    const text = String(rawText || '').trim();
+    if (!text) return '';
+
+    const fencedMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fencedMatch?.[1]) return fencedMatch[1].trim();
+
+    const firstBrace = text.indexOf('{');
+    const lastBrace = text.lastIndexOf('}');
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+        return text.slice(firstBrace, lastBrace + 1);
+    }
+
+    return text;
+};
+
+const EXPLICIT_ASSET_PATTERNS = [
+    /\bnude\b/i,
+    /\bnaked\b/i,
+    /\btopless\b/i,
+    /\bnsfw\b/i,
+    /\bporn\b/i,
+    /\bexplicit\b/i,
+    /\bspread\b/i,
+    /\bcameltoe\b/i,
+    /\btits?\b/i,
+    /\bboobs?\b/i,
+    /\bnipples?\b/i,
+    /\bpussy\b/i,
+    /\bareola/i,
+];
+
+const buildSubredditContextText = (subreddit = {}) => ([
+    subreddit?.name,
+    subreddit?.nicheTag,
+    subreddit?.rulesSummary,
+    subreddit?.hiddenRuleNotes,
+    subreddit?.requiredFlair,
+]).filter(Boolean).join(' ').toLowerCase();
+
+const isNonPostingSubreddit = (subreddit = {}) => {
+    if (Number(subreddit?.disableTaskGeneration || 0) === 1) return true;
+    const normalizedName = normalizeSubredditName(subreddit?.name);
+    return NON_POSTING_SUBREDDIT_NAMES.has(normalizedName);
+};
+
+const inferSubredditContentPolicy = (subreddit = {}) => {
+    const text = buildSubredditContextText(subreddit);
+    const normalizedName = normalizeSubredditName(subreddit?.name);
+    const clothedOnly = normalizedName.includes('shirtandtie')
+        || CLOTHED_ONLY_SUBREDDIT_PATTERNS.some((pattern) => pattern.test(text));
+    const disallowExplicit = !subreddit?.nsfw
+        || clothedOnly
+        || NON_EXPLICIT_SUBREDDIT_PATTERNS.some((pattern) => pattern.test(text));
+
+    return {
+        isDiagnostic: isNonPostingSubreddit(subreddit),
+        clothedOnly,
+        disallowExplicit,
+    };
+};
+
+const inferAssetContentProfile = (asset = {}) => {
+    const text = [
+        asset?.angleTag,
+        asset?.fileName,
+        asset?.locationTag,
+    ].filter(Boolean).join(' ').toLowerCase();
+
+    return {
+        explicit: EXPLICIT_ASSET_PATTERNS.some((pattern) => pattern.test(text)),
+    };
+};
+
+const isAssetCompatibleWithSubreddit = (asset, subreddit) => {
+    const policy = inferSubredditContentPolicy(subreddit);
+    if (policy.isDiagnostic) return false;
+
+    const assetProfile = inferAssetContentProfile(asset);
+    if (policy.disallowExplicit && assetProfile.explicit) return false;
+
+    return true;
+};
+
 const getAccountFreshnessTs = (account = {}) => {
     const candidates = [
         account.lastShadowCheck,
@@ -276,6 +483,155 @@ const collapseAccountsForManagerActions = (accounts = []) => {
 
         return Number(a?.id || 0) - Number(b?.id || 0);
     })[0]);
+};
+
+export const isAccountAvailableForAssignment = (account = {}) => {
+    if (!account?.id) return false;
+    if (!String(account?.handle || '').trim()) return false;
+    if (isAccountMarkedDead(account)) return false;
+
+    const status = String(account?.status || '').toLowerCase();
+    if (status && status !== 'active') return false;
+
+    return true;
+};
+
+const compareAccountsForAssignment = (a = {}, b = {}) => {
+    const aFresh = getAccountFreshnessTs(a);
+    const bFresh = getAccountFreshnessTs(b);
+    if (bFresh !== aFresh) return bFresh - aFresh;
+
+    const aComplete = getAccountCompletenessScore(a);
+    const bComplete = getAccountCompletenessScore(b);
+    if (bComplete !== aComplete) return bComplete - aComplete;
+
+    const aKarma = Number(a?.totalKarma || 0);
+    const bKarma = Number(b?.totalKarma || 0);
+    if (bKarma !== aKarma) return bKarma - aKarma;
+
+    return Number(a?.id || 0) - Number(b?.id || 0);
+};
+
+export const getAssignmentAccountRoster = (accounts = []) => {
+    const grouped = new Map();
+
+    for (const account of accounts) {
+        if (!isAccountAvailableForAssignment(account)) continue;
+
+        const normalizedHandle = normalizeRedditHandle(account?.handle);
+        const key = normalizedHandle || `__id:${account?.id}`;
+        if (!grouped.has(key)) grouped.set(key, []);
+        grouped.get(key).push(account);
+    }
+
+    return [...grouped.values()]
+        .map((group) => [...group].sort(compareAccountsForAssignment)[0])
+        .sort(compareAccountsForAssignment);
+};
+
+export const SubredditAssignmentService = {
+    async cleanupInvalidAccountLinks(modelId = null, options = {}) {
+        const scopedAccounts = (await db.accounts.toArray())
+            .filter((account) => modelId == null || Number(account.modelId) === Number(modelId));
+        const scopedSubreddits = modelId == null
+            ? await db.subreddits.toArray()
+            : await db.subreddits.where('modelId').equals(Number(modelId)).toArray();
+
+        const canonicalAccounts = getAssignmentAccountRoster(scopedAccounts);
+        const canonicalIdByHandle = new Map(
+            canonicalAccounts.map((account) => [normalizeRedditHandle(account.handle), Number(account.id)])
+        );
+        const accountById = new Map(scopedAccounts.map((account) => [Number(account.id), account]));
+
+        const updates = [];
+        let remapped = 0;
+        let unassigned = 0;
+
+        for (const subreddit of scopedSubreddits) {
+            if (!subreddit?.accountId) continue;
+
+            const currentAccount = accountById.get(Number(subreddit.accountId));
+            let nextAccountId = Number(subreddit.accountId);
+
+            if (!currentAccount) {
+                nextAccountId = null;
+            } else {
+                const canonicalId = canonicalIdByHandle.get(normalizeRedditHandle(currentAccount.handle));
+                if (!isAccountAvailableForAssignment(currentAccount)) {
+                    nextAccountId = canonicalId && canonicalId !== Number(currentAccount.id) ? canonicalId : null;
+                } else if (canonicalId && canonicalId !== Number(currentAccount.id)) {
+                    nextAccountId = canonicalId;
+                }
+            }
+
+            const normalizedCurrent = Number(subreddit.accountId);
+            const normalizedNext = nextAccountId == null ? null : Number(nextAccountId);
+            if (normalizedCurrent === normalizedNext) continue;
+
+            if (normalizedNext == null) unassigned++;
+            else remapped++;
+
+            updates.push({ ...subreddit, accountId: normalizedNext });
+        }
+
+        if (updates.length === 0) {
+            return { cleaned: 0, remapped: 0, unassigned: 0 };
+        }
+
+        await db.subreddits.bulkPut(updates);
+        for (const subreddit of updates) {
+            await markDirty('subreddits', subreddit.id);
+        }
+
+        if (!options.skipCloud) {
+            try {
+                await CloudSyncService.autoPush(['subreddits']);
+            } catch (err) {
+                console.warn('[SubredditAssignmentService] Cloud push failed after cleanup:', err.message);
+            }
+        }
+
+        return {
+            cleaned: updates.length,
+            remapped,
+            unassigned,
+        };
+    }
+};
+
+export const resolveLatestTaskQueue = (rows = []) => {
+    if (!Array.isArray(rows) || rows.length === 0) {
+        return { queueDate: null, tasks: [] };
+    }
+
+    const datedRows = rows.filter((row) => !!row?.date);
+    if (datedRows.length === 0) {
+        return { queueDate: null, tasks: rows };
+    }
+
+    const uniqueDates = [...new Set(datedRows.map((row) => row.date))].sort((a, b) => {
+        const aTs = Date.parse(a);
+        const bTs = Date.parse(b);
+        if (Number.isFinite(aTs) && Number.isFinite(bTs)) return bTs - aTs;
+        return String(b).localeCompare(String(a));
+    });
+
+    let latestDate = uniqueDates[0];
+    for (const date of uniqueDates) {
+        const dateTasks = rows.filter((row) => row.date === date);
+        if (dateTasks.some((task) => task.status !== 'closed')) {
+            latestDate = date;
+            break;
+        }
+    }
+
+    const queueTasks = rows.filter((row) => !row.date || row.date === latestDate);
+    const openTasks = queueTasks.filter((task) => task.status !== 'closed');
+
+    return {
+        queueDate: latestDate,
+        tasks: openTasks.length > 0 ? openTasks : queueTasks,
+    };
 };
 
 async function fetchBestAccountSnapshot(proxyUrl, rawHandle, existingAccount = {}) {
@@ -394,6 +750,9 @@ export const SettingsService = {
         const settingsArr = await db.settings.toArray();
         const settings = { ...defaultSettings };
         settingsArr.forEach(s => {
+            if (String(s.key || '').startsWith(MODEL_DISCOVERY_PROFILE_KEY_PREFIX)) {
+                return;
+            }
             if (s.value !== undefined && s.value !== null && s.value !== '') {
                 settings[s.key] = s.value;
             }
@@ -413,6 +772,357 @@ export const SettingsService = {
         const settings = await this.getSettings();
         return settings.proxyUrl || '';
     }
+};
+
+export const ModelDiscoveryProfileService = {
+    _getSettingsKey(modelId) {
+        return `${MODEL_DISCOVERY_PROFILE_KEY_PREFIX}${Number(modelId)}`;
+    },
+
+    async getProfile(modelId) {
+        if (!modelId) return null;
+        const row = await db.settings.where('key').equals(this._getSettingsKey(modelId)).first();
+        if (!row?.value) return null;
+        try {
+            return JSON.parse(row.value);
+        } catch (err) {
+            console.warn('[ModelDiscoveryProfile] Failed to parse stored profile:', err.message);
+            return null;
+        }
+    },
+
+    async saveProfile(modelId, profile, options = {}) {
+        if (!modelId || !profile) return null;
+        const shouldPush = options.push !== false;
+        const key = this._getSettingsKey(modelId);
+        await SettingsService.updateSetting(key, JSON.stringify(profile));
+        if (shouldPush) {
+            try {
+                await CloudSyncService.autoPush(['settings']);
+            } catch (err) {
+                console.warn('[ModelDiscoveryProfile] Cloud push failed after save:', err.message);
+            }
+        }
+        return profile;
+    },
+
+    async buildSignals(modelId) {
+        const numericModelId = Number(modelId);
+        const model = await db.models.get(numericModelId);
+        if (!model) throw new Error('Model not found');
+
+        const [assets, subreddits, competitors, tasks, performances] = await Promise.all([
+            db.assets.where('modelId').equals(numericModelId).toArray(),
+            db.subreddits.where('modelId').equals(numericModelId).toArray(),
+            db.competitors.where('modelId').equals(numericModelId).toArray(),
+            db.tasks.where('modelId').equals(numericModelId).toArray(),
+            db.performances.toArray(),
+        ]);
+
+        const performanceByTaskId = new Map(performances.map((row) => [row.taskId, row]));
+        const assetById = new Map(assets.map((row) => [Number(row.id), row]));
+        const winningSubredditScores = new Map();
+        const winningAngleScores = new Map();
+
+        for (const task of tasks) {
+            const perf = performanceByTaskId.get(task.id);
+            const score = Number(perf?.views24h || 0) - (perf?.removed ? 750 : 0);
+            if (score <= 0) continue;
+
+            if (task.subredditId) {
+                winningSubredditScores.set(task.subredditId, (winningSubredditScores.get(task.subredditId) || 0) + score);
+            }
+
+            if (task.assetId) {
+                const asset = assetById.get(Number(task.assetId));
+                const angleTag = normalizeDiscoveryPhrase(asset?.angleTag);
+                if (angleTag) {
+                    winningAngleScores.set(angleTag, (winningAngleScores.get(angleTag) || 0) + score);
+                }
+            }
+        }
+
+        const topAssetAngles = rankDiscoveryPhrases(assets.map((asset) => asset.angleTag), 8);
+        const topLocationTags = rankDiscoveryPhrases(assets.map((asset) => asset.locationTag), 6);
+        const existingNicheTags = rankDiscoveryPhrases(subreddits.map((subreddit) => subreddit.nicheTag), 8);
+        const seedSubreddits = uniqueSeedSubreddits([
+            ...subreddits.map((subreddit) => subreddit.name),
+            ...competitors.flatMap((competitor) => (competitor.topSubreddits || []).map((subreddit) => subreddit.name)),
+        ]);
+
+        const winningSubreddits = [...winningSubredditScores.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 8)
+            .map(([subredditId]) => subreddits.find((row) => Number(row.id) === Number(subredditId))?.name)
+            .filter(Boolean);
+
+        const winningAngles = [...winningAngleScores.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 6)
+            .map(([value]) => value);
+
+        return {
+            model: {
+                id: numericModelId,
+                name: model.name || '',
+                primaryNiche: model.primaryNiche || '',
+                voiceArchetype: model.voiceArchetype || 'general',
+                voiceTone: model.voiceTone || '',
+                voiceEnergy: model.voiceEnergy || '',
+                voiceNoGo: model.voiceNoGo || '',
+                voiceProfile: model.voiceProfile || '',
+                voiceNotes: model.voiceNotes || '',
+                redgifsProfile: model.redgifsProfile || '',
+                identityAge: model.identityAge || '',
+                identityHairColor: model.identityHairColor || '',
+                identityBodyType: model.identityBodyType || '',
+                identityEthnicity: model.identityEthnicity || '',
+                identityCurrentState: model.identityCurrentState || '',
+                identityNicheKeywords: model.identityNicheKeywords || '',
+            },
+            assetAngles: topAssetAngles,
+            locationTags: topLocationTags,
+            subredditNiches: existingNicheTags,
+            seedSubreddits,
+            winningSubreddits,
+            winningAngles,
+            competitorHandles: uniqueDiscoveryPhrases(competitors.map((competitor) => competitor.handle), 8),
+            competitorTopSubreddits: uniqueSeedSubreddits(
+                competitors.flatMap((competitor) => (competitor.topSubreddits || []).map((subreddit) => subreddit.name)),
+                12
+            ),
+            counts: {
+                assets: assets.length,
+                subreddits: subreddits.length,
+                competitors: competitors.length,
+                tasks: tasks.length,
+            },
+        };
+    },
+
+    buildFallbackProfile(signals) {
+        const model = signals?.model || {};
+        const archetypeKeywords = MODEL_ARCHETYPE_KEYWORDS[model.voiceArchetype] || [];
+        const traitKeywords = splitDiscoveryPhrases(
+            model.primaryNiche,
+            model.identityNicheKeywords,
+            model.identityHairColor,
+            model.identityBodyType,
+            model.identityEthnicity,
+            model.identityCurrentState,
+            model.voiceNotes
+        );
+
+        const crawlKeywords = uniqueDiscoveryPhrases([
+            model.primaryNiche,
+            ...traitKeywords,
+            ...archetypeKeywords,
+            ...(signals.assetAngles || []),
+            ...(signals.winningAngles || []),
+            ...(signals.subredditNiches || []),
+        ], 10);
+
+        const starterKeywords = uniqueDiscoveryPhrases(
+            crawlKeywords.filter((keyword) => !EXPLICIT_DISCOVERY_PATTERNS.some((pattern) => pattern.test(keyword))),
+            6
+        );
+
+        const riskyKeywords = uniqueDiscoveryPhrases(
+            crawlKeywords.filter((keyword) => EXPLICIT_DISCOVERY_PATTERNS.some((pattern) => pattern.test(keyword))),
+            4
+        );
+
+        const primaryNiche = normalizeDiscoveryPhrase(model.primaryNiche || crawlKeywords[0] || model.voiceArchetype || 'general');
+        const secondaryNiches = uniqueDiscoveryPhrases([
+            ...crawlKeywords.filter((keyword) => keyword !== primaryNiche),
+            ...(signals.winningAngles || []),
+        ], 5);
+
+        const nsfwFit = riskyKeywords.length > 0 || model.redgifsProfile ? 'nsfw' : 'mixed';
+        const summary = [
+            `${model.name || 'This model'} leans ${primaryNiche || 'general'}.`,
+            secondaryNiches.length > 0 ? `Secondary lanes: ${secondaryNiches.slice(0, 3).join(', ')}.` : '',
+            starterKeywords.length > 0 ? `Start crawling with ${starterKeywords.slice(0, 3).join(', ')}.` : '',
+        ].filter(Boolean).join(' ');
+
+        return {
+            modelId: Number(model.id),
+            modelName: model.name || '',
+            summary,
+            primaryNiche,
+            secondaryNiches,
+            crawlKeywords,
+            starterKeywords: starterKeywords.length > 0 ? starterKeywords : crawlKeywords.slice(0, 4),
+            riskyKeywords,
+            competitorArchetypes: uniqueDiscoveryPhrases([
+                model.voiceArchetype,
+                ...(signals.competitorHandles || []),
+            ], 4),
+            seedSubreddits: uniqueSeedSubreddits([
+                ...(signals.winningSubreddits || []),
+                ...(signals.seedSubreddits || []),
+                ...(signals.competitorTopSubreddits || []),
+            ]),
+            nsfwFit,
+            confidence: signals?.counts?.assets > 0 || signals?.counts?.subreddits > 0 ? 'medium' : 'low',
+            source: 'heuristic',
+            generatedAt: new Date().toISOString(),
+            inputsUsed: {
+                assetAngles: signals.assetAngles || [],
+                winningAngles: signals.winningAngles || [],
+                subredditNiches: signals.subredditNiches || [],
+                winningSubreddits: signals.winningSubreddits || [],
+            },
+        };
+    },
+
+    sanitizeProfile(rawProfile, fallbackProfile, signals) {
+        const profile = rawProfile && typeof rawProfile === 'object' ? rawProfile : {};
+        const fallback = fallbackProfile || {};
+        const model = signals?.model || {};
+        const primaryNiche = normalizeDiscoveryPhrase(
+            profile.primaryNiche || fallback.primaryNiche || model.primaryNiche || ''
+        );
+        const crawlKeywords = uniqueDiscoveryPhrases([
+            ...(profile.crawlKeywords || []),
+            ...(fallback.crawlKeywords || []),
+            primaryNiche,
+        ], 10);
+        const starterKeywords = uniqueDiscoveryPhrases([
+            ...(profile.starterKeywords || []),
+            ...(fallback.starterKeywords || []),
+            primaryNiche,
+        ], 6);
+        const riskyKeywords = uniqueDiscoveryPhrases([
+            ...(profile.riskyKeywords || []),
+            ...(fallback.riskyKeywords || []),
+        ], 4);
+
+        return {
+            modelId: Number(model.id),
+            modelName: model.name || '',
+            summary: String(profile.summary || fallback.summary || `${model.name || 'Model'} crawl profile ready.`).trim(),
+            primaryNiche: primaryNiche || crawlKeywords[0] || 'general',
+            secondaryNiches: uniqueDiscoveryPhrases([
+                ...(profile.secondaryNiches || []),
+                ...(fallback.secondaryNiches || []),
+            ], 5),
+            crawlKeywords,
+            starterKeywords: starterKeywords.length > 0 ? starterKeywords : crawlKeywords.slice(0, 4),
+            riskyKeywords,
+            competitorArchetypes: uniqueDiscoveryPhrases([
+                ...(profile.competitorArchetypes || []),
+                ...(fallback.competitorArchetypes || []),
+            ], 4),
+            seedSubreddits: uniqueSeedSubreddits([
+                ...(profile.seedSubreddits || []),
+                ...(fallback.seedSubreddits || []),
+            ]),
+            nsfwFit: ['sfw', 'mixed', 'nsfw'].includes(profile.nsfwFit) ? profile.nsfwFit : (fallback.nsfwFit || 'mixed'),
+            confidence: ['low', 'medium', 'high'].includes(profile.confidence) ? profile.confidence : (fallback.confidence || 'medium'),
+            source: profile.source || fallback.source || 'heuristic',
+            generatedAt: new Date().toISOString(),
+            inputsUsed: fallback.inputsUsed || {},
+        };
+    },
+
+    async generateProfileWithAI(signals, fallbackProfile) {
+        const settings = await SettingsService.getSettings();
+        const apiKey = String(settings.openRouterApiKey || '').trim();
+        if (!apiKey) return null;
+
+        const proxyUrl = await SettingsService.getProxyUrl();
+        let aiBaseUrl = String(settings.aiBaseUrl || '').trim() || 'https://openrouter.ai/api/v1';
+        if (aiBaseUrl.endsWith('/chat/completions')) {
+            aiBaseUrl = aiBaseUrl.replace('/chat/completions', '');
+        }
+
+        const prompt = `
+You are building an internal crawl profile for a Reddit growth operating system.
+Respond with valid JSON only. No markdown fences. No commentary.
+
+Return exactly this shape:
+{
+  "summary": "short operator summary",
+  "primaryNiche": "one niche phrase",
+  "secondaryNiches": ["up to 5"],
+  "crawlKeywords": ["up to 10 short search phrases"],
+  "starterKeywords": ["up to 6 safer starter search phrases"],
+  "riskyKeywords": ["up to 4 riskier expansion phrases"],
+  "competitorArchetypes": ["up to 4 short descriptors"],
+  "seedSubreddits": ["up to 12 subreddit names without r/"],
+  "nsfwFit": "sfw|mixed|nsfw",
+  "confidence": "low|medium|high"
+}
+
+Rules:
+- Use lowercase phrases where possible.
+- Prefer the model's real traits, asset angles, and proven subreddit patterns.
+- Do not invent unsupported traits.
+- Keep search phrases short and practical for subreddit discovery.
+- Seed subreddits must be bare subreddit names, no prefixes or URLs.
+
+Signals:
+${JSON.stringify(signals, null, 2)}
+
+Fallback profile:
+${JSON.stringify(fallbackProfile, null, 2)}
+`.trim();
+
+        const response = await fetch(`${proxyUrl}/api/ai/generate`, {
+            method: 'POST',
+            headers: await getProxyHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({
+                aiBaseUrl: aiBaseUrl.endsWith('/') ? aiBaseUrl.slice(0, -1) : aiBaseUrl,
+                apiKey,
+                model: (settings.openRouterModel || '').trim() || 'z-ai/glm-5',
+                messages: [{ role: 'user', content: prompt }],
+                temperature: 0.3,
+            }),
+        });
+
+        if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            const detail = errData.details?.message || errData.details || errData.error || `HTTP ${response.status}`;
+            throw new Error(detail);
+        }
+
+        const data = await response.json().catch(() => ({}));
+        const content = data?.choices?.[0]?.message?.content || '';
+        const jsonBlock = extractJsonBlock(content);
+        return JSON.parse(jsonBlock);
+    },
+
+    async generateProfile(modelId, options = {}) {
+        const signals = await this.buildSignals(modelId);
+        const fallbackProfile = this.buildFallbackProfile(signals);
+        let profile = fallbackProfile;
+
+        if (options.preferAI !== false) {
+            try {
+                const aiProfile = await this.generateProfileWithAI(signals, fallbackProfile);
+                if (aiProfile) {
+                    profile = this.sanitizeProfile({ ...aiProfile, source: 'ai' }, fallbackProfile, signals);
+                }
+            } catch (err) {
+                console.warn('[ModelDiscoveryProfile] AI generation failed, using fallback:', err.message);
+            }
+        }
+
+        if (options.save !== false) {
+            await this.saveProfile(modelId, profile, { push: options.push });
+        }
+
+        return profile;
+    },
+
+    getPreferredSearchKeyword(profile) {
+        if (!profile) return '';
+        return profile.starterKeywords?.[0]
+            || profile.crawlKeywords?.[0]
+            || profile.primaryNiche
+            || '';
+    },
 };
 
 
@@ -996,6 +1706,7 @@ export const SubredditGuardService = {
 
     async isBlockedForPosting(subreddit) {
         if (!subreddit) return false;
+        if (isNonPostingSubreddit(subreddit)) return true;
         if (subreddit.cooldownUntil) {
             return new Date(subreddit.cooldownUntil) > new Date();
         }
@@ -1068,37 +1779,77 @@ export const SubredditGuardService = {
 };
 
 export const VerificationService = {
-    async isVerified(accountId, subredditId) {
-        if (!await canUseStore('verifications')) return false;
-        const record = await db.verifications
+    async _findRecord(accountId, subredditId) {
+        if (!await canUseStore('verifications')) return null;
+        return db.verifications
             .where('accountId').equals(accountId)
             .and(v => v.subredditId === subredditId)
             .first();
+    },
+
+    async _upsertRecord(accountId, subredditId, patch) {
+        if (!await canUseStore('verifications')) return null;
+        const existing = await this._findRecord(accountId, subredditId);
+        if (existing) {
+            await db.verifications.update(existing.id, patch);
+            return { ...existing, ...patch };
+        }
+
+        const record = { id: generateId(), accountId, subredditId, ...patch };
+        await db.verifications.add(record);
+        return record;
+    },
+
+    async isVerified(accountId, subredditId) {
+        const record = await this._findRecord(accountId, subredditId);
         return !!(record && record.verified);
     },
 
     async markVerified(accountId, subredditId) {
-        if (!await canUseStore('verifications')) return;
-        const existing = await db.verifications
-            .where('accountId').equals(accountId)
-            .and(v => v.subredditId === subredditId)
-            .first();
-        if (existing) {
-            await db.verifications.update(existing.id, { verified: 1, verifiedDate: new Date().toISOString() });
-        } else {
-            await db.verifications.add({ id: generateId(), accountId, subredditId, verified: 1, verifiedDate: new Date().toISOString() });
-        }
+        const nowIso = new Date().toISOString();
+        await this._upsertRecord(accountId, subredditId, {
+            verified: 1,
+            verifiedDate: nowIso,
+            blocked: 0,
+            blockedDate: null,
+            blockedReason: '',
+        });
         try { await CloudSyncService.autoPush(['verifications']); } catch (e) { /* non-critical */ }
     },
 
     async markUnverified(accountId, subredditId) {
-        if (!await canUseStore('verifications')) return;
-        const existing = await db.verifications
-            .where('accountId').equals(accountId)
-            .and(v => v.subredditId === subredditId)
-            .first();
+        const existing = await this._findRecord(accountId, subredditId);
         if (existing) {
             await db.verifications.update(existing.id, { verified: 0, verifiedDate: null });
+        }
+        try { await CloudSyncService.autoPush(['verifications']); } catch (e) { /* non-critical */ }
+    },
+
+    async isBlocked(accountId, subredditId) {
+        const record = await this._findRecord(accountId, subredditId);
+        return !!(record && record.blocked);
+    },
+
+    async markBlocked(accountId, subredditId, reason = '') {
+        const nowIso = new Date().toISOString();
+        await this._upsertRecord(accountId, subredditId, {
+            verified: 0,
+            verifiedDate: null,
+            blocked: 1,
+            blockedDate: nowIso,
+            blockedReason: String(reason || '').slice(0, 500),
+        });
+        try { await CloudSyncService.autoPush(['verifications']); } catch (e) { /* non-critical */ }
+    },
+
+    async clearBlocked(accountId, subredditId) {
+        const existing = await this._findRecord(accountId, subredditId);
+        if (existing) {
+            await db.verifications.update(existing.id, {
+                blocked: 0,
+                blockedDate: null,
+                blockedReason: '',
+            });
         }
         try { await CloudSyncService.autoPush(['verifications']); } catch (e) { /* non-critical */ }
     },
@@ -1256,6 +2007,153 @@ export const DailyPlanGenerator = {
                 .map(t => TitleGuardService.normalize(t.title || ''))
                 .filter(Boolean)
         );
+        const subredditContextCache = new Map();
+        const accountSubredditEligibilityCache = new Map();
+        const assetUsageHistoryCache = new Map();
+
+        const getAssetUsageHistory = async (assetId) => {
+            if (!assetUsageHistoryCache.has(assetId)) {
+                assetUsageHistoryCache.set(assetId, await db.tasks.where('assetId').equals(assetId).toArray());
+            }
+            return assetUsageHistoryCache.get(assetId);
+        };
+
+        const getSubredditPostingContext = async (subreddit) => {
+            if (!subreddit) return null;
+            if (subredditContextCache.has(subreddit.id)) {
+                return subredditContextCache.get(subreddit.id);
+            }
+
+            let enriched = { ...subreddit };
+            const needsRules = !String(subreddit.rulesSummary || '').trim();
+
+            if (needsRules) {
+                try {
+                    const proxyUrl = await SettingsService.getProxyUrl();
+                    const cleanName = String(subreddit.name || '').replace(/^(r\/|\/r\/)/i, '');
+                    const res = await fetchWithTimeout(`${proxyUrl}/api/scrape/subreddit/${cleanName}`, {}, 4000);
+                    if (res.ok) {
+                        const deepData = await res.json();
+                        const patch = {
+                            rulesSummary: deepData.rules?.map(r => `- ${r.title}: ${r.description}`).join('\n\n') || '',
+                            flairRequired: deepData.flairRequired ? 1 : 0,
+                        };
+                        await db.subreddits.update(subreddit.id, patch);
+                        enriched = { ...subreddit, ...patch };
+                    }
+                } catch (err) {
+                    console.warn('DailyPlanGenerator: Failed to load subreddit rules for', subreddit?.name);
+                }
+            }
+
+            subredditContextCache.set(subreddit.id, enriched);
+            return enriched;
+        };
+
+        const getEligibleSubredditForAccount = async (account, subreddit, accountAgeDays, accountKarma) => {
+            const cacheKey = `${account.id}:${subreddit.id}`;
+            if (accountSubredditEligibilityCache.has(cacheKey)) {
+                return accountSubredditEligibilityCache.get(cacheKey);
+            }
+
+            const subContext = await getSubredditPostingContext(subreddit);
+            let eligible = subContext;
+
+            if (!subContext || await SubredditGuardService.isBlockedForPosting(subContext)) {
+                eligible = null;
+            } else if (await VerificationService.isBlocked(account.id, subContext.id)) {
+                eligible = null;
+            } else {
+                const autoRisk = SubredditGuardService.calculateRiskLevel(subContext);
+                if ((accountAgeDays < 30 || accountKarma < 500) && autoRisk === 'high') {
+                    eligible = null;
+                } else if (subContext.minRequiredKarma && accountKarma < Number(subContext.minRequiredKarma)) {
+                    eligible = null;
+                } else if (subContext.minAccountAgeDays && accountAgeDays < Number(subContext.minAccountAgeDays)) {
+                    eligible = null;
+                } else if (subContext.requiresVerified) {
+                    const isVerified = await VerificationService.isVerified(account.id, subContext.id);
+                    if (!isVerified) eligible = null;
+                }
+            }
+
+            accountSubredditEligibilityCache.set(cacheKey, eligible);
+            return eligible;
+        };
+
+        const canUseAssetForSubreddit = async (asset, subreddit, cooldownDate, ignoreCooldown = false) => {
+            if (!isAssetCompatibleWithSubreddit(asset, subreddit)) return false;
+
+            const timesUsedToday = usedAssetsInSession.get(asset.id) || 0;
+            if (timesUsedToday >= 5) return false;
+
+            if (!ignoreCooldown && timesUsedToday === 0) {
+                const pastUsages = await getAssetUsageHistory(asset.id);
+                const recentlyUsed = pastUsages.some(t => isAfter(new Date(t.date), cooldownDate));
+                if (recentlyUsed) return false;
+            }
+
+            return true;
+        };
+
+        const buildFallbackOrder = (assets) => [...assets].sort((a, b) => {
+            const aGen = (a.angleTag || 'general') === 'general';
+            const bGen = (b.angleTag || 'general') === 'general';
+            return (bGen ? 1 : 0) - (aGen ? 1 : 0);
+        });
+
+        const selectAssetForSubreddit = async (subreddit, assets, cooldownDate) => {
+            let selectedAsset = null;
+            const subNameLower = String(subreddit?.name || '').toLowerCase();
+            const subNiche = String(subreddit?.nicheTag || '').toLowerCase().trim();
+
+            if (subNiche && subNiche !== 'general' && subNiche !== 'scraped' && subNiche !== 'untagged') {
+                for (const asset of assets) {
+                    const assetTag = (asset.angleTag || '').toLowerCase().trim();
+                    if (subNiche !== assetTag) continue;
+                    if (!await canUseAssetForSubreddit(asset, subreddit, cooldownDate)) continue;
+                    selectedAsset = asset;
+                    break;
+                }
+            }
+
+            if (!selectedAsset) {
+                for (const asset of assets) {
+                    const assetTag = (asset.angleTag || '').toLowerCase().trim();
+                    if (!assetTag || assetTag === 'general' || assetTag === 'untagged' || assetTag.length < 3) continue;
+
+                    const isMatch = subNameLower.includes(assetTag)
+                        || (assetTag === 'preg' && subNameLower.includes('pregnant'))
+                        || (assetTag === 'pregnant' && subNameLower.includes('preg'));
+
+                    if (!isMatch) continue;
+                    if (!await canUseAssetForSubreddit(asset, subreddit, cooldownDate)) continue;
+
+                    selectedAsset = asset;
+                    break;
+                }
+            }
+
+            if (!selectedAsset) {
+                const fallbackOrder = buildFallbackOrder(assets);
+                for (const asset of fallbackOrder) {
+                    if (!await canUseAssetForSubreddit(asset, subreddit, cooldownDate)) continue;
+                    selectedAsset = asset;
+                    break;
+                }
+            }
+
+            if (!selectedAsset) {
+                const emergencyOrder = buildFallbackOrder(assets);
+                for (const asset of emergencyOrder) {
+                    if (!await canUseAssetForSubreddit(asset, subreddit, cooldownDate, true)) continue;
+                    selectedAsset = asset;
+                    break;
+                }
+            }
+
+            return selectedAsset;
+        };
 
         // 2. Spread tasks evenly across accounts via round-robin
         // Calculate total available sub slots and fair share per account
@@ -1303,6 +2201,10 @@ export const DailyPlanGenerator = {
 
             if (tasksToGenerate <= 0) continue;
 
+            const accountAgeDays = account.createdUtc
+                ? Math.floor((Date.now() - Number(account.createdUtc) * 1000) / (24 * 60 * 60 * 1000))
+                : 9999;
+            const accountKarma = Number(account.totalKarma || 0);
             let selectedSubsForAccount = [];
             const accountTestingSubs = testingSubs.filter(s => !s.accountId || Number(s.accountId) === Number(account.id));
             const accountFallbackSubs = fallbackSubs.filter(s => !s.accountId || Number(s.accountId) === Number(account.id));
@@ -1310,29 +2212,40 @@ export const DailyPlanGenerator = {
 
             // Try to pick Testing Subs first if global limit allows
             for (const sub of accountTestingSubs) {
-                if (selectedSubsForAccount.length < tasksToGenerate && testsRemaining > 0 && canUseSubreddit(sub.id, false)) {
-                    selectedSubsForAccount.push(sub);
-                    markSubredditUsed(sub.id);
-                    testsRemaining--;
-                }
+                if (selectedSubsForAccount.length >= tasksToGenerate || testsRemaining <= 0) break;
+                if (!canUseSubreddit(sub.id, false)) continue;
+
+                const eligibleSub = await getEligibleSubredditForAccount(account, sub, accountAgeDays, accountKarma);
+                if (!eligibleSub) continue;
+
+                selectedSubsForAccount.push(eligibleSub);
+                markSubredditUsed(eligibleSub.id);
+                testsRemaining--;
             }
             // If still need more subs and we have a fallback list, use it
             if (selectedSubsForAccount.length < tasksToGenerate && accountFallbackSubs.length > 0) {
                 for (const sub of accountFallbackSubs) {
                     if (selectedSubsForAccount.length >= tasksToGenerate) break;
-                    if (canUseSubreddit(sub.id, false)) {
-                        selectedSubsForAccount.push(sub);
-                        markSubredditUsed(sub.id);
-                    }
+                    if (!canUseSubreddit(sub.id, false)) continue;
+
+                    const eligibleSub = await getEligibleSubredditForAccount(account, sub, accountAgeDays, accountKarma);
+                    if (!eligibleSub) continue;
+
+                    selectedSubsForAccount.push(eligibleSub);
+                    markSubredditUsed(eligibleSub.id);
                 }
             }
 
             // Fill remainder with Proven Subs
             for (const sub of accountProvenSubs) {
-                if (selectedSubsForAccount.length < tasksToGenerate && canUseSubreddit(sub.id, false)) {
-                    selectedSubsForAccount.push(sub);
-                    markSubredditUsed(sub.id);
-                }
+                if (selectedSubsForAccount.length >= tasksToGenerate) break;
+                if (!canUseSubreddit(sub.id, false)) continue;
+
+                const eligibleSub = await getEligibleSubredditForAccount(account, sub, accountAgeDays, accountKarma);
+                if (!eligibleSub) continue;
+
+                selectedSubsForAccount.push(eligibleSub);
+                markSubredditUsed(eligibleSub.id);
             }
 
             // Backfill quota when unique subreddits are exhausted
@@ -1348,136 +2261,32 @@ export const DailyPlanGenerator = {
                     if (selectedSubsForAccount.length >= tasksToGenerate) break;
                     if (selectedSubsForAccount.some(existing => existing.id === sub.id)) continue;
                     if (!canUseSubreddit(sub.id, true)) continue;
-                    selectedSubsForAccount.push(sub);
-                    markSubredditUsed(sub.id);
+
+                    const eligibleSub = await getEligibleSubredditForAccount(account, sub, accountAgeDays, accountKarma);
+                    if (!eligibleSub) continue;
+
+                    selectedSubsForAccount.push(eligibleSub);
+                    markSubredditUsed(eligibleSub.id);
                 }
             }
 
             // Assign assets to selected subreddits for this account
             const cooldownDate = subDays(targetDate, settings.assetReuseCooldownDays);
-            const accountAgeDays = account.createdUtc
-                ? Math.floor((Date.now() - Number(account.createdUtc) * 1000) / (24 * 60 * 60 * 1000))
-                : 9999;
-            const accountKarma = Number(account.totalKarma || 0);
 
             // SHUFFLE assets before starting to ensure we don't always pick the same one as fallback
             const shuffledAssets = [...activeAssets].sort(() => Math.random() - 0.5);
 
             for (const sub of selectedSubsForAccount) {
-                // Risk-level guard: new/low-karma accounts only get low-risk subs
-                const autoRisk = SubredditGuardService.calculateRiskLevel(sub);
-                if ((accountAgeDays < 30 || accountKarma < 500) && autoRisk === 'high') {
+                const selectedAsset = await selectAssetForSubreddit(sub, shuffledAssets, cooldownDate);
+
+                if (!selectedAsset) {
+                    const hasCompatibleAsset = shuffledAssets.some((asset) => isAssetCompatibleWithSubreddit(asset, sub));
+                    if (!hasCompatibleAsset) {
+                        console.warn(`[DailyPlan] SKIPPED r/${sub.name} - no compatible assets matched the subreddit rules/theme.`);
+                    } else {
+                        console.error(`[DailyPlan] SKIPPED r/${sub.name} - every compatible asset hit the daily reuse/cooldown limit. Upload more content to Library!`);
+                    }
                     continue;
-                }
-                if (sub.minRequiredKarma && accountKarma < Number(sub.minRequiredKarma)) {
-                    continue;
-                }
-                if (sub.minAccountAgeDays && accountAgeDays < Number(sub.minAccountAgeDays)) {
-                    continue;
-                }
-
-                // Verification guard: if sub requires verification, only assign verified accounts
-                if (sub.requiresVerified) {
-                    const isVerified = await VerificationService.isVerified(account.id, sub.id);
-                    if (!isVerified) continue;
-                }
-
-                let selectedAsset = null;
-                const subNameLower = sub.name.toLowerCase();
-                const subNiche = (sub.nicheTag || '').toLowerCase().trim();
-
-                // 1. First Pass: Exact Niche Match (Highest priority)
-                if (subNiche && subNiche !== 'general' && subNiche !== 'scraped' && subNiche !== 'untagged') {
-                    for (const asset of shuffledAssets) {
-                        const assetTag = (asset.angleTag || '').toLowerCase().trim();
-                        if (subNiche === assetTag) {
-                            const timesUsedToday = usedAssetsInSession.get(asset.id) || 0;
-                            if (timesUsedToday >= 5) continue;
-
-                            if (timesUsedToday === 0) {
-                                const pastUsages = await db.tasks.where('assetId').equals(asset.id).toArray();
-                                const recentlyUsed = pastUsages.some(t => isAfter(new Date(t.date), cooldownDate));
-                                if (recentlyUsed) continue;
-                            }
-                            selectedAsset = asset;
-                            break;
-                        }
-                    }
-                }
-
-                // 2. Second Pass: Intelligence Match (Fuzzy)
-                if (!selectedAsset) {
-                    for (const asset of shuffledAssets) {
-                        const assetTag = (asset.angleTag || '').toLowerCase().trim();
-                        // Ignore assets that are too generic for fuzzy matching
-                        if (!assetTag || assetTag === 'general' || assetTag === 'untagged' || assetTag.length < 3) continue;
-
-                        // Check if the subreddit name contains the asset's tag (e.g. sub 'fitnessgirls' includes tag 'fitness')
-                        const isMatch = subNameLower.includes(assetTag) ||
-                            (assetTag === 'preg' && subNameLower.includes('pregnant')) ||
-                            (assetTag === 'pregnant' && subNameLower.includes('preg'));
-
-                        if (!isMatch) continue;
-
-                        const timesUsedToday = usedAssetsInSession.get(asset.id) || 0;
-                        if (timesUsedToday >= 5) continue;
-
-                        if (timesUsedToday === 0) {
-                            const pastUsages = await db.tasks.where('assetId').equals(asset.id).toArray();
-                            const recentlyUsed = pastUsages.some(t => isAfter(new Date(t.date), cooldownDate));
-                            if (recentlyUsed) continue;
-                        }
-
-                        selectedAsset = asset;
-                        break;
-                    }
-                }
-
-                // 3. Third Pass (Fallback): Take ANY available but prioritize General/Untagged first
-                // If a sub is SPECIFICALLY tagged, we try hard to NOT give it a mismatched fallback if possible,
-                // but we'll allow it if nothing else exists.
-                if (!selectedAsset) {
-                    // Sort shuffled assets to put 'general' ones first in the fallback queue
-                    const fallbackOrder = [...shuffledAssets].sort((a, b) => {
-                        const aGen = (a.angleTag || 'general') === 'general';
-                        const bGen = (b.angleTag || 'general') === 'general';
-                        return (bGen ? 1 : 0) - (aGen ? 1 : 0);
-                    });
-
-                    for (const asset of fallbackOrder) {
-                        const timesUsedToday = usedAssetsInSession.get(asset.id) || 0;
-                        if (timesUsedToday >= 5) continue;
-
-                        if (timesUsedToday === 0) {
-                            const pastUsages = await db.tasks.where('assetId').equals(asset.id).toArray();
-                            const recentlyUsed = pastUsages.some(t => isAfter(new Date(t.date), cooldownDate));
-                            if (recentlyUsed) continue;
-                        }
-
-                        selectedAsset = asset;
-                        break;
-                    }
-                }
-
-                // 4. Emergency Pass: IGNORE cooldown entirely rather than skip the subreddit
-                // Better to reuse an older asset than generate no task at all
-                if (!selectedAsset) {
-                    console.warn(`[DailyPlan] All assets on cooldown for r/${sub.name} — ignoring cooldown to avoid empty slot`);
-                    const emergencyOrder = [...shuffledAssets].sort((a, b) => {
-                        const aGen = (a.angleTag || 'general') === 'general';
-                        const bGen = (b.angleTag || 'general') === 'general';
-                        return (bGen ? 1 : 0) - (aGen ? 1 : 0);
-                    });
-                    for (const asset of emergencyOrder) {
-                        const timesUsedToday = usedAssetsInSession.get(asset.id) || 0;
-                        if (timesUsedToday >= 5) continue;
-                        selectedAsset = asset;
-                        break;
-                    }
-                }
-
-                if (!selectedAsset) {
-                    console.error(`[DailyPlan] SKIPPED r/${sub.name} — every asset hit 5 uses/day limit. Upload more content to Library!`);
                 }
 
                 if (selectedAsset) {
@@ -1499,7 +2308,7 @@ export const DailyPlanGenerator = {
                                 const res = await fetchWithTimeout(`${proxyUrl}/api/scrape/subreddit/${cleanName}`, {}, 4000);
                                 if (res.ok) {
                                     const deepData = await res.json();
-                                    currentRules = deepData.rules?.map(r => `• ${r.title}: ${r.description}`).join('\n\n') || '';
+                                    currentRules = deepData.rules?.map(r => `- ${r.title}: ${r.description}`).join('\n\n') || '';
 
                                     // Cleanly update the DB so the VA dashboard instantly repopulates
                                     await db.subreddits.update(sub.id, {
@@ -1708,23 +2517,175 @@ export const DailyPlanGenerator = {
 };
 
 export const AnalyticsEngine = {
-    computeAccountHealthScore(account) {
-        let score = 100;
+    computeAccountHealthBreakdown(account = {}) {
+        const components = [];
+        const profileScore = this.computeProfileScore(account);
         const removalRate = Number(account.removalRate || 0);
-        score -= removalRate * 0.5;
-        if (account.isSuspended) score -= 15;
-        // Inactive 7+ days
-        if (account.lastSyncDate) {
-            const daysSinceSync = differenceInDays(new Date(), new Date(account.lastSyncDate));
-            if (daysSinceSync >= 7) score -= 10;
-        } else if (account.lastActiveDate) {
-            const daysSinceActive = differenceInDays(new Date(), new Date(account.lastActiveDate));
-            if (daysSinceActive >= 7) score -= 10;
-        }
         const karma = Number(account.totalKarma || 0);
-        if (karma > 5000) score += 10;
-        else if (karma > 1000) score += 5;
-        return Math.max(0, Math.min(100, Math.round(score)));
+        const phase = String(account.phase || '').toLowerCase();
+        const cqs = String(account.cqsStatus || '').toLowerCase();
+        const status = String(account.status || '').toLowerCase();
+        const shadow = String(account.shadowBanStatus || '').toLowerCase();
+        const isDead = status === 'dead'
+            || phase === 'burned'
+            || !!account.isSuspended
+            || shadow === 'shadow_banned'
+            || shadow === 'suspended';
+
+        const addComponent = (label, delta, detail, tone) => {
+            components.push({ label, delta, detail, tone });
+        };
+
+        const getDaysSince = (value) => {
+            if (!value) return null;
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) return null;
+            return differenceInDays(new Date(), date);
+        };
+
+        let score = 100;
+
+        if (isDead) {
+            score -= 100;
+            addComponent('Account risk', -100, 'Dead, suspended, or shadow-banned', 'danger');
+        }
+
+        if (removalRate > 0) {
+            const removalPenalty = -Math.min(42, Math.round(removalRate * 0.65));
+            score += removalPenalty;
+            addComponent(
+                'Removal pressure',
+                removalPenalty,
+                `${Math.round(removalRate)}% recent removals`,
+                removalRate >= 25 ? 'danger' : 'warning'
+            );
+        }
+
+        if (phase === 'warming') {
+            score -= 12;
+            addComponent('Lifecycle phase', -12, 'Still warming this handle', 'warning');
+        } else if (phase === 'resting') {
+            score -= 8;
+            addComponent('Lifecycle phase', -8, 'Rest cycle active', 'warning');
+        } else if (phase === 'ready') {
+            score += 4;
+            addComponent('Lifecycle phase', 4, 'Ready for controlled posting', 'success');
+        } else if (phase === 'active') {
+            score += 6;
+            addComponent('Lifecycle phase', 6, 'Already operational', 'success');
+        }
+
+        const daysSinceSync = getDaysSince(account.lastSyncDate || account.lastActiveDate);
+        if (daysSinceSync == null) {
+            score -= 8;
+            addComponent('Sync freshness', -8, 'Never synced with live Reddit data', 'warning');
+        } else if (daysSinceSync >= 14) {
+            score -= 16;
+            addComponent('Sync freshness', -16, `${daysSinceSync} days since last sync`, 'danger');
+        } else if (daysSinceSync >= 7) {
+            score -= 8;
+            addComponent('Sync freshness', -8, `${daysSinceSync} days since last sync`, 'warning');
+        } else {
+            score += 5;
+            addComponent('Sync freshness', 5, 'Fresh account telemetry available', 'success');
+        }
+
+        if (karma >= 5000) {
+            score += 10;
+            addComponent('Karma trust', 10, `${karma.toLocaleString()} karma`, 'success');
+        } else if (karma >= 1000) {
+            score += 6;
+            addComponent('Karma trust', 6, `${karma.toLocaleString()} karma`, 'success');
+        } else if (karma >= 100) {
+            score += 3;
+            addComponent('Karma trust', 3, `${karma.toLocaleString()} karma`, 'info');
+        } else if (karma < 50) {
+            score -= 12;
+            addComponent('Karma trust', -12, `${karma.toLocaleString()} karma`, 'warning');
+        } else {
+            score -= 6;
+            addComponent('Karma trust', -6, `${karma.toLocaleString()} karma`, 'warning');
+        }
+
+        if (profileScore >= 80) {
+            score += 10;
+            addComponent('Profile readiness', 10, `${profileScore}/100 complete`, 'success');
+        } else if (profileScore >= 60) {
+            score += 5;
+            addComponent('Profile readiness', 5, `${profileScore}/100 complete`, 'info');
+        } else if (profileScore < 40) {
+            score -= 12;
+            addComponent('Profile readiness', -12, `${profileScore}/100 complete`, 'warning');
+        } else {
+            score -= 6;
+            addComponent('Profile readiness', -6, `${profileScore}/100 complete`, 'warning');
+        }
+
+        const cqsDeltaMap = {
+            highest: 6,
+            high: 4,
+            moderate: 0,
+            low: -6,
+            lowest: -10,
+        };
+        if (cqs) {
+            const cqsDelta = cqsDeltaMap[cqs] ?? 0;
+            if (cqsDelta !== 0) {
+                score += cqsDelta;
+                addComponent(
+                    'CQS standing',
+                    cqsDelta,
+                    `CQS is ${cqs}`,
+                    cqsDelta > 0 ? 'success' : 'warning'
+                );
+            }
+        }
+
+        if (account.lastSyncError) {
+            score -= 8;
+            addComponent('Sync stability', -8, 'Recent scrape or sync error recorded', 'warning');
+        }
+
+        score = Math.max(0, Math.min(100, Math.round(score)));
+
+        let statusLabel = 'strong';
+        if (isDead) statusLabel = 'dead';
+        else if (score < 40) statusLabel = 'critical';
+        else if (score < 60) statusLabel = 'watch';
+        else if (score < 80) statusLabel = 'stable';
+
+        let nextAction = 'Keep scaling proven subreddits and recycle winners carefully.';
+        if (isDead) {
+            nextAction = 'Remove this account from rotation and replace it in the active fleet.';
+        } else if (removalRate >= 25) {
+            nextAction = 'Pause risky subreddits, tighten rules compliance, and re-check asset fit before scaling.';
+        } else if (profileScore < 60) {
+            nextAction = 'Finish the profile setup before pushing more volume through this account.';
+        } else if (daysSinceSync == null || daysSinceSync >= 7) {
+            nextAction = 'Run Sync Stats before trusting this account for planning decisions.';
+        } else if (phase === 'warming') {
+            nextAction = 'Keep warming this handle until age, karma, and profile signals are safer.';
+        } else if (statusLabel === 'watch') {
+            nextAction = 'Keep this account in controlled testing until the signal firms up.';
+        } else if (statusLabel === 'critical') {
+            nextAction = 'Reduce exposure immediately and audit the lane before more posting.';
+        }
+
+        components.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+
+        return {
+            score,
+            status: statusLabel,
+            nextAction,
+            profileScore,
+            removalRate,
+            karma,
+            components,
+        };
+    },
+
+    computeAccountHealthScore(account) {
+        return this.computeAccountHealthBreakdown(account).score;
     },
 
     computeProfileScore(account) {
@@ -1743,6 +2704,165 @@ export const AnalyticsEngine = {
         // Karma > 100
         if (Number(account.totalKarma || 0) >= 100) score += 15;
         return Math.min(100, score);
+    },
+
+    getSubredditStanding(subreddit = {}, metrics = {}, options = {}) {
+        const totalTests = Number(metrics.totalTests ?? metrics.tests ?? subreddit.totalTests ?? 0);
+        const avgViews = Number(metrics.avgViews ?? metrics.avg24h ?? subreddit.avg24hViews ?? 0);
+        const removalPct = Number(metrics.removalPct ?? subreddit.removalPct ?? 0);
+        const viewThreshold = Number(options.viewThreshold || 500);
+        const status = String(subreddit.status || '').toLowerCase();
+        const crossModelWarning = !!subreddit.crossModelWarning;
+        const hasGate = !!(subreddit.minRequiredKarma || subreddit.minAccountAgeDays || subreddit.requiresVerified);
+        const coolingDown = !!(subreddit.cooldownUntil && new Date(subreddit.cooldownUntil) > new Date()) || status === 'cooldown';
+        const reasons = [];
+
+        const finalizeStanding = (label, tone, score, action) => ({
+            label,
+            tone,
+            score: Math.max(0, Math.min(100, Math.round(score))),
+            action,
+            reasons,
+            totalTests,
+            avgViews,
+            removalPct,
+        });
+
+        if (isNonPostingSubreddit(subreddit)) {
+            reasons.push('Diagnostic or non-posting subreddit');
+            return finalizeStanding('No-post', 'muted', 0, 'Keep this subreddit out of the posting queue.');
+        }
+
+        if (coolingDown) {
+            reasons.push('Currently cooling down after posting issues');
+            return finalizeStanding('Blocked', 'warning', 18, 'Leave blocked until cooldown or manual review clears it.');
+        }
+
+        let score = 50;
+
+        if (status === 'rejected' || removalPct >= 40) {
+            reasons.push('High removal pressure');
+            return finalizeStanding('Stop', 'danger', 8, 'Pause this lane and review rules, account fit, and asset fit.');
+        }
+
+        if (totalTests === 0) {
+            reasons.push('No validated post history yet');
+            if (hasGate) reasons.push('Posting gate requirements detected');
+            return finalizeStanding('Unproven', 'info', hasGate ? 32 : 38, 'Run controlled tests before scaling.');
+        }
+
+        if (avgViews >= viewThreshold) {
+            score += 18;
+            reasons.push('View performance is above your operating threshold');
+        } else if (avgViews >= Math.round(viewThreshold * 0.6)) {
+            score += 8;
+            reasons.push('Early reach is promising');
+        } else {
+            score -= 10;
+            reasons.push('Reach is weak for the amount of effort');
+        }
+
+        if (removalPct < 10) {
+            score += 14;
+            reasons.push('Removal rate is clean');
+        } else if (removalPct < 20) {
+            score += 2;
+            reasons.push('Removal rate is manageable');
+        } else {
+            score -= 15;
+            reasons.push('Removal rate needs caution');
+        }
+
+        if (totalTests >= 5) {
+            score += 10;
+            reasons.push('Enough sample size to trust the signal');
+        } else if (totalTests >= 3) {
+            score += 5;
+            reasons.push('Some sample size confidence');
+        } else {
+            score -= 4;
+            reasons.push('Still low sample size');
+        }
+
+        if (status === 'proven') {
+            score += 8;
+            reasons.push('Already promoted to proven');
+        } else if (status === 'testing') {
+            score += 1;
+        }
+
+        if (crossModelWarning) {
+            score -= 12;
+            reasons.push('Cross-model warning from another campaign');
+        }
+
+        if (hasGate) {
+            score -= 4;
+            reasons.push('Account eligibility gates apply here');
+        }
+
+        if (subreddit.peakPostHour != null) {
+            score += 3;
+            reasons.push('Peak posting window has been learned');
+        }
+
+        if (totalTests >= 3 && removalPct < 10 && avgViews >= viewThreshold) {
+            return finalizeStanding('Scale', 'success', score, 'Increase safe volume here with fresh titles and compatible assets.');
+        }
+        if (totalTests < 3 && removalPct < 20 && avgViews >= Math.round(viewThreshold * 0.6)) {
+            return finalizeStanding('Promising', 'info', score, 'Keep testing until you have a real sample size.');
+        }
+        if (removalPct >= 20 || crossModelWarning) {
+            return finalizeStanding('Watch', 'warning', score, 'Proceed carefully and review rules before allocating more volume.');
+        }
+        if (totalTests >= 3 && removalPct < 20) {
+            return finalizeStanding('Stable', 'success', score, 'Maintain this lane while looking for a stronger scale signal.');
+        }
+        return finalizeStanding('Test', 'info', score, 'Keep controlled testing on this subreddit.');
+    },
+
+    getRemovalIntelligence(subreddit = {}, metrics = {}, options = {}) {
+        const standing = this.getSubredditStanding(subreddit, metrics, options);
+        const totalTests = Number(metrics.totalTests ?? metrics.tests ?? subreddit.totalTests ?? 0);
+        const avgViews = Number(metrics.avgViews ?? metrics.avg24h ?? subreddit.avg24hViews ?? 0);
+        const removalPct = Number(metrics.removalPct ?? subreddit.removalPct ?? 0);
+
+        let cause = 'Signal is still forming.';
+        let action = standing.action;
+
+        if (standing.label === 'No-post') {
+            cause = 'This community is diagnostic or not meant for normal posting.';
+        } else if (standing.label === 'Blocked') {
+            cause = 'Recent posting errors or rules friction pushed this subreddit into cooldown.';
+        } else if (standing.label === 'Stop') {
+            cause = 'Removal pressure is high enough to suggest a rules, account-fit, or asset-fit mismatch.';
+        } else if (standing.label === 'Watch') {
+            cause = subreddit.crossModelWarning
+                ? 'Another campaign already hit risk here, so this lane needs extra caution.'
+                : 'Performance is mixed and removals are high enough to justify caution.';
+        } else if (standing.label === 'Promising') {
+            cause = 'Early tests are landing with enough reach to justify more data.';
+        } else if (standing.label === 'Scale') {
+            cause = 'This lane is producing clean reach with enough sample size to justify more volume.';
+        } else if (standing.label === 'Stable') {
+            cause = 'This lane is usable, but not yet strong enough to be a top-scale winner.';
+        } else if (totalTests === 0) {
+            cause = 'There is not enough data yet to classify this lane.';
+        }
+
+        if (removalPct >= 25) {
+            action = 'Pause or reduce volume here until rules, account eligibility, and asset fit are re-checked.';
+        } else if (totalTests < 3) {
+            action = 'Keep tests controlled until you have enough posts to trust the lane.';
+        } else if (avgViews >= Number(options.viewThreshold || 500) && removalPct < 10) {
+            action = 'This is a clean lane. Scale carefully and recycle only proven compatible assets.';
+        }
+
+        return {
+            standing,
+            cause,
+            action,
+        };
     },
 
     getManagerSignals({ tasksCompleted, avgViewsPerPost, removalRatePct, worstSubreddits, testingSubs, provenSubs }) {
@@ -3049,7 +4169,15 @@ export const AccountAdminService = {
             await CloudSyncService.deleteMultipleFromCloud('tasks', relatedTaskIds.slice(i, i + chunkSize));
         }
         for (let i = 0; i < relatedVerificationIds.length; i += chunkSize) {
-            await CloudSyncService.deleteMultipleFromCloud('verifications', relatedVerificationIds.slice(i, i + chunkSize));
+            try {
+                await CloudSyncService.deleteMultipleFromCloud('verifications', relatedVerificationIds.slice(i, i + chunkSize));
+            } catch (err) {
+                if (/schema cache|relation.*does not exist|not found|Could not find the table/i.test(String(err?.message || err))) {
+                    console.warn('[AccountAdminService] Cloud verifications table missing; local delete already completed.');
+                    break;
+                }
+                throw err;
+            }
         }
         if (attachedSubreddits.length > 0) {
             await CloudSyncService.autoPush(['subreddits']);

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../db/db';
 import { generateId } from '../db/generateId';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { CloudSyncService, DailyPlanGenerator, SettingsService, SubredditLifecycleService, TitleGeneratorService, markPendingDelete } from '../services/growthEngine';
+import { CloudSyncService, DailyPlanGenerator, resolveLatestTaskQueue, SettingsService, SubredditGuardService, SubredditLifecycleService, TitleGeneratorService, markPendingDelete } from '../services/growthEngine';
 
 const ACCOUNT_COLORS = [
     '#6366f1', '#ec4899', '#14b8a6', '#f59e0b', '#8b5cf6',
@@ -49,30 +49,7 @@ export function Tasks() {
         async () => {
             if (!activeModelId) return { queueDate: null, tasks: [] };
             const rows = await db.tasks.where('modelId').equals(activeModelId).toArray();
-            if (!rows || rows.length === 0) return { queueDate: null, tasks: [] };
-
-            const datedRows = rows.filter(r => !!r.date);
-            if (datedRows.length === 0) return { queueDate: null, tasks: rows };
-
-            // Find latest date that still has open (non-closed) tasks
-            const uniqueDates = [...new Set(datedRows.map(r => r.date))].sort((a, b) => (a > b ? -1 : 1));
-            let latestDate = uniqueDates[0];
-            for (const d of uniqueDates) {
-                const dateTasks = rows.filter(r => r.date === d);
-                if (dateTasks.some(t => t.status !== 'closed')) {
-                    latestDate = d;
-                    break;
-                }
-            }
-
-            // Show non-closed tasks from that date (closed tasks are history)
-            const dateTasks = rows.filter(r => !r.date || r.date === latestDate);
-            const openTasks = dateTasks.filter(t => t.status !== 'closed');
-
-            return {
-                queueDate: latestDate,
-                tasks: openTasks.length > 0 ? openTasks : dateTasks
-            };
+            return resolveLatestTaskQueue(rows || []);
         },
         [activeModelId]
     );
@@ -139,15 +116,18 @@ export function Tasks() {
                 : perAccountBreakdown.reduce((sum, a) => sum + a.remaining, 0);
 
             const usedSubIdsToday = new Set(tasksToday.map(t => Number(t.subredditId)).filter(Boolean));
-            const candidateSubs = subreddits.filter(s => {
-                if (s.status === 'rejected') return false;
-                if (s.cooldownUntil && new Date(s.cooldownUntil) > new Date()) return false;
-                if (usedSubIdsToday.has(Number(s.id))) return false;
+            const candidateSubs = [];
+            for (const s of subreddits) {
+                if (s.status === 'rejected') continue;
+                if (await SubredditGuardService.isBlockedForPosting(s)) continue;
+                if (usedSubIdsToday.has(Number(s.id))) continue;
 
                 const attachedAll = !s.accountId;
                 const attachedToActive = activeAccounts.some(a => Number(a.id) === Number(s.accountId));
-                return attachedAll || attachedToActive;
-            });
+                if (attachedAll || attachedToActive) {
+                    candidateSubs.push(s);
+                }
+            }
 
             const repeatsEnabled = Number(settings.allowSubredditRepeatsInQueue || 0) === 1;
             const perSubCap = Math.max(1, Number(settings.maxPostsPerSubPerDay || 5));
@@ -642,7 +622,7 @@ function TaskRow({ task, activeModelId, proxyUrl, showAccount }) {
     const objectUrl = useMemo(() => {
         if (!asset?.fileBlob) return null;
         return URL.createObjectURL(asset.fileBlob);
-    }, [asset?.id, asset?.fileBlob]);
+    }, [asset?.fileBlob]);
 
     const isHeic = !!asset?.fileName && /\.hei[cf]$/i.test(asset.fileName);
 
@@ -770,7 +750,11 @@ function TaskRow({ task, activeModelId, proxyUrl, showAccount }) {
                                     const { markDirty } = await import('../services/growthEngine');
                                     await db.tasks.update(task.id, { status: 'closed' });
                                     await markDirty('tasks', task.id);
-                                    try { await CloudSyncService.autoPush(['tasks']); } catch {}
+                                    try {
+                                        await CloudSyncService.autoPush(['tasks']);
+                                    } catch (err) {
+                                        console.warn('[Tasks] Cloud sync after manual completion failed:', err?.message || err);
+                                    }
                                     setSaved(true);
                                 }}
                             >

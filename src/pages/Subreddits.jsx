@@ -2,7 +2,19 @@ import React, { useState } from 'react';
 import { db } from '../db/db';
 import { generateId } from '../db/generateId';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { SubredditGuardService, VerificationService } from '../services/growthEngine';
+import { AnalyticsEngine, getAssignmentAccountRoster, SubredditAssignmentService, SubredditGuardService, VerificationService } from '../services/growthEngine';
+
+const STANDING_STYLES = {
+    success: { bg: '#10b98122', color: '#10b981', border: '#10b98144' },
+    info: { bg: '#3b82f622', color: '#60a5fa', border: '#3b82f644' },
+    warning: { bg: '#f59e0b22', color: '#fbbf24', border: '#f59e0b44' },
+    danger: { bg: '#ef444422', color: '#f87171', border: '#ef444444' },
+    muted: { bg: '#6b728022', color: '#9ca3af', border: '#6b728044' },
+};
+
+function getStandingStyle(tone) {
+    return STANDING_STYLES[tone] || STANDING_STYLES.info;
+}
 
 export function Subreddits() {
     const models = useLiveQuery(() => db.models.toArray());
@@ -17,6 +29,7 @@ export function Subreddits() {
     const [tableAccountFilter, setTableAccountFilter] = useState('');
     const [searchText, setSearchText] = useState('');
     const [historySubredditId, setHistorySubredditId] = useState(null);
+    const cleanupSignatureRef = React.useRef('');
 
     React.useEffect(() => {
         if (models && models.length > 0 && !selectedModelId) {
@@ -28,7 +41,12 @@ export function Subreddits() {
         name: '', url: '', nicheTag: '', riskLevel: 'low', contentComplexity: 'general', accountId: 'all'
     });
 
-    const formAccounts = (accounts || []).filter(a => String(a.modelId) === String(selectedModelId));
+    const formAccounts = React.useMemo(
+        () => getAssignmentAccountRoster(
+            (accounts || []).filter(a => String(a.modelId) === String(selectedModelId))
+        ),
+        [accounts, selectedModelId]
+    );
 
     async function handleSubmit(e) {
         e.preventDefault();
@@ -48,7 +66,7 @@ export function Subreddits() {
                 rulesSummary = deepData.rules?.map(r => `• ${r.title}: ${r.description}`).join('\n\n') || '';
                 flairRequired = deepData.flairRequired ? 1 : 0;
             }
-        } catch (err) {
+        } catch {
             console.error("Failed to fetch deep metadata for", formData.name);
         }
 
@@ -92,7 +110,43 @@ export function Subreddits() {
             return (b.avg24hViews || 0) - (a.avg24hViews || 0);
         });
 
-    const visibleAccounts = (accounts || []).filter(a => !tableModelFilter || String(a.modelId) === String(tableModelFilter));
+    const visibleAccounts = React.useMemo(
+        () => getAssignmentAccountRoster(
+            (accounts || []).filter(a => !tableModelFilter || String(a.modelId) === String(tableModelFilter))
+        ),
+        [accounts, tableModelFilter]
+    );
+
+    React.useEffect(() => {
+        if (accounts === undefined || subreddits === undefined) return;
+
+        const signature = JSON.stringify({
+            accounts: (accounts || [])
+                .map(account => `${account.id}:${account.modelId}:${account.handle || ''}:${account.status || ''}:${account.phase || ''}:${account.shadowBanStatus || ''}:${account.isSuspended ? 1 : 0}`)
+                .sort(),
+            subreddits: (subreddits || [])
+                .filter(subreddit => subreddit?.accountId)
+                .map(subreddit => `${subreddit.id}:${subreddit.modelId}:${subreddit.accountId}`)
+                .sort(),
+        });
+
+        if (signature === cleanupSignatureRef.current) return;
+        cleanupSignatureRef.current = signature;
+
+        let cancelled = false;
+        (async () => {
+            const result = await SubredditAssignmentService.cleanupInvalidAccountLinks();
+            if (!cancelled && result.cleaned > 0) {
+                console.info(`[Subreddits] Cleaned ${result.cleaned} stale subreddit account links.`);
+            }
+        })().catch(err => {
+            console.warn('[Subreddits] Failed to clean stale subreddit account links:', err.message);
+        });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [accounts, subreddits]);
 
     React.useEffect(() => {
         if (!models || models.length === 0) return;
@@ -158,6 +212,57 @@ export function Subreddits() {
         }
         return map;
     }, [verifications]);
+
+    const subredditIntelRows = React.useMemo(() => {
+        return filteredSubreddits.map((sub) => {
+            const scoped = scopedStatsBySubreddit.get(sub.id);
+            const tests = scoped ? scoped.tests : Number(sub.totalTests || 0);
+            const avg24h = scoped ? scoped.avg24h : Number(sub.avg24hViews || 0);
+            const removalPct = scoped ? scoped.removalPct : Number(sub.removalPct || 0);
+            const standing = AnalyticsEngine.getSubredditStanding(sub, {
+                totalTests: tests,
+                avgViews: avg24h,
+                avg24h,
+                removalPct,
+            });
+            const intelligence = AnalyticsEngine.getRemovalIntelligence(sub, {
+                totalTests: tests,
+                avgViews: avg24h,
+                avg24h,
+                removalPct,
+            });
+
+            return {
+                sub,
+                tests,
+                avg24h,
+                removalPct,
+                standing,
+                intelligence,
+            };
+        });
+    }, [filteredSubreddits, scopedStatsBySubreddit]);
+
+    const pulseCounts = React.useMemo(() => {
+        return subredditIntelRows.reduce((acc, row) => {
+            const label = row.standing.label;
+            if (label === 'Scale') acc.scale += 1;
+            else if (label === 'Promising' || label === 'Stable') acc.working += 1;
+            else if (label === 'Watch' || label === 'Blocked') acc.watch += 1;
+            else if (label === 'Stop' || label === 'No-post') acc.stop += 1;
+            else acc.unproven += 1;
+            return acc;
+        }, { scale: 0, working: 0, watch: 0, stop: 0, unproven: 0 });
+    }, [subredditIntelRows]);
+
+    const topScaleLane = React.useMemo(() => {
+        return subredditIntelRows
+            .filter((row) => row.standing.label === 'Scale' || row.standing.label === 'Promising')
+            .sort((a, b) => {
+                if (b.standing.score !== a.standing.score) return b.standing.score - a.standing.score;
+                return b.avg24h - a.avg24h;
+            })[0] || null;
+    }, [subredditIntelRows]);
 
     async function handleAttachUnassignedToSelectedAccount() {
         if (!tableModelFilter || tableAccountFilter === 'all' || !tableAccountFilter) return;
@@ -319,9 +424,46 @@ export function Subreddits() {
                     </div>
                 </div>
 
+                <div className="dashboard-metric-grid" style={{ marginBottom: '20px' }}>
+                    <div className="metric-card metric-card--accent">
+                        <div className="metric-label">Scale Lanes</div>
+                        <div className="metric-value">{pulseCounts.scale}</div>
+                        <div style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>Clean enough to push harder</div>
+                    </div>
+                    <div className="metric-card">
+                        <div className="metric-label">Working Lanes</div>
+                        <div className="metric-value">{pulseCounts.working}</div>
+                        <div style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>Promising or stable channels</div>
+                    </div>
+                    <div className="metric-card">
+                        <div className="metric-label">Watch List</div>
+                        <div className="metric-value" style={{ color: 'var(--status-warning)' }}>{pulseCounts.watch}</div>
+                        <div style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>Mixed performance or cooldown risk</div>
+                    </div>
+                    <div className="metric-card">
+                        <div className="metric-label">Stop / No-post</div>
+                        <div className="metric-value" style={{ color: 'var(--status-danger)' }}>{pulseCounts.stop}</div>
+                        <div style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>Keep these out of normal rotation</div>
+                    </div>
+                </div>
+
+                <div className="card" style={{ marginBottom: '24px' }}>
+                    <div className="section-heading">
+                        <div>
+                            <div className="subtle-kicker">Subreddit Pulse</div>
+                            <h2 style={{ fontSize: '1.05rem' }}>What to scale, what to watch, and what to stop</h2>
+                        </div>
+                    </div>
+                    <div style={{ color: 'var(--text-secondary)', marginTop: '10px' }}>
+                        {topScaleLane
+                            ? `Best lane right now: r/${topScaleLane.sub.name} is ${topScaleLane.standing.label.toLowerCase()} with ${topScaleLane.avg24h.toLocaleString()} avg 24h views across ${topScaleLane.tests} tests.`
+                            : 'No clear scale lane yet. Keep testing until you have enough clean data.'}
+                    </div>
+                </div>
+
                 <div className="card">
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'end', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
-                        <h2 style={{ fontSize: '1.1rem' }}>Managed Subreddits ({filteredSubreddits.length})</h2>
+                        <h2 style={{ fontSize: '1.1rem' }}>Managed Subreddits ({subredditIntelRows.length})</h2>
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                             <select
                                 className="input-field"
@@ -362,7 +504,7 @@ export function Subreddits() {
                             </button>
                         </div>
                     </div>
-                    {filteredSubreddits.length === 0 ? (
+                    {subredditIntelRows.length === 0 ? (
                         <div style={{ color: 'var(--text-secondary)' }}>No subreddits added.</div>
                     ) : (
                         <div className="data-table-container">
@@ -371,23 +513,21 @@ export function Subreddits() {
                                     <tr>
                                         <th>Name</th>
                                         <th>Account</th>
+                                        <th>Standing</th>
                                         <th>Status</th>
                                         <th>Tag</th>
-                                        <th>Risk</th>
                                         <th>Tests</th>
                                         <th>Avg 24h</th>
                                         <th>Rem %</th>
+                                        <th>Next Move</th>
                                         <th>Verified</th>
                                         <th style={{ width: '48px' }}></th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {filteredSubreddits.map(sub => {
-                                        const scoped = scopedStatsBySubreddit.get(sub.id);
-                                        const tests = scoped ? scoped.tests : (sub.totalTests || 0);
-                                        const avg24h = scoped ? scoped.avg24h : (sub.avg24hViews || 0);
-                                        const removalPct = scoped ? scoped.removalPct : Number(sub.removalPct || 0);
+                                    {subredditIntelRows.map(({ sub, tests, avg24h, removalPct, standing, intelligence }) => {
                                         const attachedAccount = sub.accountId ? (accounts || []).find(a => Number(a.id) === Number(sub.accountId)) : null;
+                                        const standingStyle = getStandingStyle(standing.tone);
                                         const gateTitle = [
                                             sub.peakPostHour != null ? `Peak: ${String(sub.peakPostHour).padStart(2, '0')}:00` : null,
                                             sub.minRequiredKarma ? `Karma ${sub.minRequiredKarma}+` : null,
@@ -400,12 +540,35 @@ export function Subreddits() {
                                                     <a href={`https://reddit.com/r/${sub.name.replace(/^(r\/|\/r\/)/i, '')}`} target="_blank" rel="noreferrer" style={{ color: 'var(--primary-color)', textDecoration: 'none' }}>
                                                         r/{sub.name}
                                                     </a>
+                                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                                                        {standing.reasons[0] || 'No intel yet'}
+                                                    </div>
                                                     {sub.crossModelWarning && (
                                                         <span style={{ fontSize: '0.6rem', color: 'var(--status-warning)', marginLeft: '6px' }} title={sub.crossModelWarning}>cross</span>
                                                     )}
                                                 </td>
                                                 <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                                                     {attachedAccount ? attachedAccount.handle : <span style={{ color: 'var(--text-muted)' }}>all</span>}
+                                                </td>
+                                                <td>
+                                                    <div
+                                                        style={{
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            gap: '8px',
+                                                            padding: '4px 10px',
+                                                            borderRadius: '999px',
+                                                            fontSize: '0.75rem',
+                                                            fontWeight: 700,
+                                                            border: `1px solid ${standingStyle.border}`,
+                                                            backgroundColor: standingStyle.bg,
+                                                            color: standingStyle.color,
+                                                        }}
+                                                        title={`${intelligence.cause} ${intelligence.action}`}
+                                                    >
+                                                        <span>{standing.label}</span>
+                                                        <span style={{ opacity: 0.85 }}>{standing.score}</span>
+                                                    </div>
                                                 </td>
                                                 <td>
                                                     <span className={`badge ${sub.status === 'proven' ? 'badge-success' :
@@ -416,31 +579,13 @@ export function Subreddits() {
                                                     </span>
                                                 </td>
                                                 <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{sub.nicheTag || '--'}</td>
-                                                <td>
-                                                    {(() => {
-                                                        const risk = (() => {
-                                                            if (tests < 3) return 'unknown';
-                                                            if (removalPct > 30) return 'high';
-                                                            if (removalPct >= 10) return 'medium';
-                                                            return 'low';
-                                                        })();
-                                                        const badges = {
-                                                            low:     { icon: '🟢', color: '#4caf50' },
-                                                            medium:  { icon: '🟡', color: '#ff9800' },
-                                                            high:    { icon: '🔴', color: '#f44336' },
-                                                            unknown: { icon: '⚪', color: '#9e9e9e' },
-                                                        };
-                                                        const b = badges[risk];
-                                                        return (
-                                                            <span style={{ fontSize: '0.8rem', fontWeight: 600, color: b.color }} title={`Auto-calculated: ${risk}`}>
-                                                                {b.icon}
-                                                            </span>
-                                                        );
-                                                    })()}
-                                                </td>
                                                 <td>{tests}</td>
                                                 <td>{avg24h?.toLocaleString() || 0}</td>
                                                 <td style={{ color: removalPct > 20 ? 'var(--status-danger)' : 'inherit' }}>{Number(removalPct || 0).toFixed(1)}%</td>
+                                                <td style={{ minWidth: '220px' }}>
+                                                    <div style={{ fontWeight: 600, fontSize: '0.8rem' }}>{intelligence.action}</div>
+                                                    <div style={{ color: 'var(--text-secondary)', fontSize: '0.72rem', marginTop: '4px' }}>{intelligence.cause}</div>
+                                                </td>
                                                 <td style={{ textAlign: 'center' }}>
                                                     {(() => {
                                                         if (!sub.requiresVerified) {

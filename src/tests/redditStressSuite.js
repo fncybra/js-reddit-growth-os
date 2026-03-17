@@ -3,10 +3,17 @@ import { generateId } from '../db/generateId.js';
 import {
     AccountAdminService,
     AccountDeduplicationService,
+    AnalyticsEngine,
     canUseStore,
     classifyAccountSnapshotFailures,
+    CloudSyncService,
+    DailyPlanGenerator,
     generateManagerActionItems,
+    getAssignmentAccountRoster,
+    ModelDiscoveryProfileService,
     normalizeRedditHandle,
+    resolveLatestTaskQueue,
+    SubredditAssignmentService,
 } from '../services/growthEngine.js';
 
 function createLogger() {
@@ -41,6 +48,7 @@ async function cleanupScenario(idsByTable) {
     await deleteIds('subreddits', idsByTable.subreddits || []);
     await deleteIds('accounts', idsByTable.accounts || []);
     await deleteIds('models', idsByTable.models || []);
+    await deleteIds('settings', idsByTable.settings || []);
     await deleteIds('_syncMeta', idsByTable.syncMeta || []);
 }
 
@@ -154,7 +162,73 @@ export async function runRedditStressSuite() {
         }
     }
 
-    // Test 3: Manager action generation should short-circuit burned/dead accounts
+    // Test 3: Missing cloud verifications table must not make account delete look failed
+    {
+        const ids = { models: [], accounts: [], tasks: [], performances: [], verifications: [], subreddits: [] };
+        const originalDeleteMultipleFromCloud = CloudSyncService.deleteMultipleFromCloud;
+        const originalDeleteFromCloud = CloudSyncService.deleteFromCloud;
+        const originalAutoPush = CloudSyncService.autoPush;
+        try {
+            const modelId = generateId();
+            const accountId = generateId();
+            const taskId = generateId();
+            const perfId = generateId();
+            const subId = generateId();
+            const verificationId = generateId();
+            ids.models.push(modelId);
+            ids.accounts.push(accountId);
+            ids.tasks.push(taskId);
+            ids.performances.push(perfId);
+            ids.subreddits.push(subId);
+            ids.verifications.push(verificationId);
+
+            await db.models.add({ id: modelId, name: stressName('delete-cloud-model'), status: 'active' });
+            await db.accounts.add({ id: accountId, modelId, handle: 'u/stressclouddelete', status: 'active', phase: 'active' });
+            await db.subreddits.add({ id: subId, modelId, name: stressName('delete-cloud-sub'), status: 'active', accountId });
+            await db.tasks.add({ id: taskId, date: '2099-01-01', modelId, accountId, subredditId: subId, assetId: null, status: 'generated' });
+            await db.performances.add({ id: perfId, taskId, views24h: 0, removed: 0 });
+            if (hasVerificationsStore) {
+                await db.verifications.add({ id: verificationId, accountId, subredditId: subId, verified: 1 });
+            }
+
+            CloudSyncService.deleteMultipleFromCloud = async (table) => {
+                if (table === 'verifications') {
+                    throw new Error("Could not find the table 'public.verifications' in the schema cache");
+                }
+            };
+            CloudSyncService.deleteFromCloud = async () => {};
+            CloudSyncService.autoPush = async () => {};
+
+            const result = await AccountAdminService.deleteAccountCascade(accountId);
+            const account = await db.accounts.get(accountId);
+            const task = await db.tasks.get(taskId);
+            const perf = await db.performances.get(perfId);
+            const verification = hasVerificationsStore ? await db.verifications.get(verificationId) : null;
+            const subreddit = await db.subreddits.get(subId);
+
+            const ok = !account
+                && !task
+                && !perf
+                && (!hasVerificationsStore || !verification)
+                && subreddit?.accountId == null
+                && result?.cloudSkipped === false;
+
+            if (!ok) {
+                throw new Error(`result=${JSON.stringify(result)} subreddit=${JSON.stringify(subreddit)}`);
+            }
+            log.pass('Delete with missing cloud verifications', 'Cloud schema gaps no longer fake a delete failure');
+        } catch (err) {
+            log.fail('Delete with missing cloud verifications', err.message);
+        } finally {
+            CloudSyncService.deleteMultipleFromCloud = originalDeleteMultipleFromCloud;
+            CloudSyncService.deleteFromCloud = originalDeleteFromCloud;
+            CloudSyncService.autoPush = originalAutoPush;
+            await db._syncMeta.clear();
+            await cleanupScenario(ids);
+        }
+    }
+
+    // Test 4: Manager action generation should short-circuit burned/dead accounts
     {
         try {
             const items = await generateManagerActionItems([{
@@ -174,7 +248,7 @@ export async function runRedditStressSuite() {
         }
     }
 
-    // Test 4: VA-style post completion updates task, perf, and asset usage
+    // Test 5: VA-style post completion updates task, perf, and asset usage
     {
         const ids = { models: [], accounts: [], tasks: [], performances: [], assets: [], subreddits: [] };
         try {
@@ -220,7 +294,7 @@ export async function runRedditStressSuite() {
         }
     }
 
-    // Test 5: Large task dataset query should stay under a sane local threshold
+    // Test 6: Large task dataset query should stay under a sane local threshold
     {
         const ids = { models: [], tasks: [] };
         try {
@@ -259,7 +333,7 @@ export async function runRedditStressSuite() {
         }
     }
 
-    // Test 6: Duplicate merge keeps the strongest dead-state signal
+    // Test 7: Duplicate merge keeps the strongest dead-state signal
     {
         const ids = { models: [], accounts: [] };
         try {
@@ -295,7 +369,7 @@ export async function runRedditStressSuite() {
         }
     }
 
-    // Test 7: Manager items collapse duplicate handles into one source of truth
+    // Test 8: Manager items collapse duplicate handles into one source of truth
     {
         try {
             const items = await generateManagerActionItems([
@@ -314,7 +388,7 @@ export async function runRedditStressSuite() {
         }
     }
 
-    // Test 8: Normalization guard catches mixed handle formats
+    // Test 9: Normalization guard catches mixed handle formats
     {
         try {
             const inputs = [
@@ -333,7 +407,7 @@ export async function runRedditStressSuite() {
         }
     }
 
-    // Test 9: Mixed stats/profile failures still classify missing when profile scrape says 404
+    // Test 10: Mixed stats/profile failures still classify missing when profile scrape says 404
     {
         try {
             const reason = classifyAccountSnapshotFailures([
@@ -348,6 +422,254 @@ export async function runRedditStressSuite() {
             log.pass('Missing classification fallback', reason);
         } catch (err) {
             log.fail('Missing classification fallback', err.message);
+        }
+    }
+
+    // Test 11: Assignment roster hides stale accounts and repairs subreddit account links
+    {
+        const ids = { models: [], accounts: [], subreddits: [] };
+        try {
+            const modelId = generateId();
+            const liveAccountId = generateId();
+            const deadDuplicateId = generateId();
+            const orphanedSubId = generateId();
+            const duplicateLinkedSubId = generateId();
+
+            ids.models.push(modelId);
+            ids.accounts.push(liveAccountId, deadDuplicateId);
+            ids.subreddits.push(orphanedSubId, duplicateLinkedSubId);
+
+            await db.models.add({ id: modelId, name: stressName('assignment-model'), status: 'active' });
+            await db.accounts.bulkAdd([
+                { id: liveAccountId, modelId, handle: 'u/stressassignment', status: 'active', phase: 'active', totalKarma: 800 },
+                { id: deadDuplicateId, modelId, handle: 'StressAssignment', status: 'dead', phase: 'burned', shadowBanStatus: 'shadow_banned' },
+            ]);
+            await db.subreddits.bulkAdd([
+                { id: orphanedSubId, modelId, name: stressName('orphan-sub'), status: 'testing', accountId: generateId() },
+                { id: duplicateLinkedSubId, modelId, name: stressName('duplicate-sub'), status: 'testing', accountId: deadDuplicateId },
+            ]);
+
+            const roster = getAssignmentAccountRoster(await db.accounts.where('modelId').equals(modelId).toArray());
+            const cleanup = await SubredditAssignmentService.cleanupInvalidAccountLinks(modelId, { skipCloud: true });
+            const orphanedSub = await db.subreddits.get(orphanedSubId);
+            const duplicateLinkedSub = await db.subreddits.get(duplicateLinkedSubId);
+
+            const ok = roster.length === 1
+                && roster[0]?.id === liveAccountId
+                && cleanup.cleaned === 2
+                && orphanedSub?.accountId == null
+                && duplicateLinkedSub?.accountId === liveAccountId;
+
+            if (!ok) {
+                throw new Error(`roster=${roster.length} cleanup=${JSON.stringify(cleanup)} orphan=${orphanedSub?.accountId} duplicate=${duplicateLinkedSub?.accountId}`);
+            }
+            log.pass('Assignment account cleanup', 'Stale and duplicate links no longer leak into assignment flows');
+        } catch (err) {
+            log.fail('Assignment account cleanup', err.message);
+        } finally {
+            await cleanupScenario(ids);
+        }
+    }
+
+    // Test 12: Planner skips diagnostic subs, blocked pairings, and explicit assets on clothed-only subs
+    {
+        const ids = { models: [], accounts: [], assets: [], subreddits: [], tasks: [], verifications: [] };
+        try {
+            const modelId = generateId();
+            const accountId = generateId();
+            const explicitAssetId = generateId();
+            const safeAssetId = generateId();
+            const safeSubId = generateId();
+            const diagnosticSubId = generateId();
+            const blockedSubId = generateId();
+            const verificationId = generateId();
+
+            ids.models.push(modelId);
+            ids.accounts.push(accountId);
+            ids.assets.push(explicitAssetId, safeAssetId);
+            ids.subreddits.push(safeSubId, diagnosticSubId, blockedSubId);
+            ids.verifications.push(verificationId);
+
+            const createdUtc = Math.floor(Date.now() / 1000) - (90 * 24 * 60 * 60);
+
+            await db.models.add({ id: modelId, name: stressName('planner-model'), status: 'active' });
+            await db.accounts.add({
+                id: accountId,
+                modelId,
+                handle: 'u/stressplanner',
+                status: 'active',
+                phase: 'active',
+                dailyCap: 3,
+                totalKarma: 1500,
+                createdUtc,
+            });
+            await db.assets.bulkAdd([
+                { id: explicitAssetId, modelId, assetType: 'image', angleTag: 'pregnant nude', approved: 1, timesUsed: 0, fileName: 'pregnant_nude.jpg' },
+                { id: safeAssetId, modelId, assetType: 'image', angleTag: 'pregnant sweater', approved: 1, timesUsed: 0, fileName: 'pregnant_sweater.jpg' },
+            ]);
+            await db.subreddits.bulkAdd([
+                { id: safeSubId, modelId, name: 'womeninshirtandtie', status: 'proven', rulesSummary: 'No nudity. Fully clothed only.' },
+                { id: diagnosticSubId, modelId, name: 'WhatIsMyCQS', status: 'proven', rulesSummary: 'Diagnostic only.' },
+                { id: blockedSubId, modelId, name: 'PregnantPetite', status: 'proven', rulesSummary: 'Pregnancy posts only.' },
+            ]);
+            if (hasVerificationsStore) {
+                await db.verifications.add({
+                    id: verificationId,
+                    accountId,
+                    subredditId: blockedSubId,
+                    blocked: 1,
+                    blockedReason: 'banned from sub',
+                });
+            }
+
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const todayIso = today.toISOString();
+
+            await DailyPlanGenerator.generateDailyPlan(modelId, new Date(), { totalTarget: 3 });
+            const plannedTasks = await db.tasks.where('modelId').equals(modelId).filter(task => task.date === todayIso).toArray();
+            ids.tasks.push(...plannedTasks.map(task => task.id));
+
+            const queuedSubIds = new Set(plannedTasks.map(task => task.subredditId));
+            const safeTask = plannedTasks.find(task => task.subredditId === safeSubId);
+            const ok = plannedTasks.length === 1
+                && queuedSubIds.has(safeSubId)
+                && !queuedSubIds.has(diagnosticSubId)
+                && !queuedSubIds.has(blockedSubId)
+                && safeTask?.assetId === safeAssetId;
+
+            if (!ok) {
+                throw new Error(`tasks=${JSON.stringify(plannedTasks)}`);
+            }
+            log.pass('Planner compatibility guards', 'Only the safe subreddit/asset pairing was queued');
+        } catch (err) {
+            log.fail('Planner compatibility guards', err.message);
+        } finally {
+            await cleanupScenario(ids);
+        }
+    }
+
+    // Test 13: Pulse-style intelligence should surface scale and dead-risk states cleanly
+    {
+        try {
+            const accountBreakdown = AnalyticsEngine.computeAccountHealthBreakdown({
+                handle: 'u/stresspulse',
+                status: 'active',
+                phase: 'active',
+                totalKarma: 2400,
+                cqsStatus: 'High',
+                hasAvatar: 1,
+                hasBanner: 1,
+                hasBio: 1,
+                hasDisplayName: 1,
+                hasProfileLink: 1,
+                hasVerifiedEmail: 1,
+                lastSyncDate: new Date().toISOString(),
+                removalRate: 4,
+            });
+            const subredditStanding = AnalyticsEngine.getSubredditStanding(
+                { name: 'pregnantgonewild', status: 'proven' },
+                { totalTests: 6, avgViews: 1800, removalPct: 0 }
+            );
+
+            const ok = accountBreakdown.score >= 80
+                && accountBreakdown.status === 'strong'
+                && subredditStanding.label === 'Scale'
+                && subredditStanding.score >= 70;
+
+            if (!ok) {
+                throw new Error(`account=${JSON.stringify(accountBreakdown)} subreddit=${JSON.stringify(subredditStanding)}`);
+            }
+            log.pass('Pulse intelligence', 'High-health accounts and clean lanes classify as scale-ready');
+        } catch (err) {
+            log.fail('Pulse intelligence', err.message);
+        }
+    }
+
+    // Test 14: VA queue resolution should match manager queue even with ISO task dates
+    {
+        try {
+            const isoToday = new Date();
+            isoToday.setHours(0, 0, 0, 0);
+            const yesterday = new Date(isoToday);
+            yesterday.setDate(yesterday.getDate() - 1);
+
+            const queue = resolveLatestTaskQueue([
+                { id: 1, date: yesterday.toISOString(), status: 'generated', accountId: 101 },
+                { id: 2, date: isoToday.toISOString(), status: 'generated', accountId: 202 },
+                { id: 3, date: isoToday.toISOString(), status: 'closed', accountId: 202 },
+            ]);
+
+            const ok = queue.queueDate === isoToday.toISOString()
+                && queue.tasks.length === 1
+                && queue.tasks[0]?.id === 2;
+
+            if (!ok) {
+                throw new Error(`queue=${JSON.stringify(queue)}`);
+            }
+            log.pass('Queue date resolution', 'ISO-dated generated tasks stay visible in the active VA queue');
+        } catch (err) {
+            log.fail('Queue date resolution', err.message);
+        }
+    }
+
+    // Test 15: Model crawl profile should persist a usable niche fingerprint without AI
+    {
+        const ids = { models: [], assets: [], subreddits: [], settings: [] };
+        try {
+            const modelId = generateId();
+            const assetId = generateId();
+            const subredditId = generateId();
+            ids.models.push(modelId);
+            ids.assets.push(assetId);
+            ids.subreddits.push(subredditId);
+
+            await db.models.add({
+                id: modelId,
+                name: stressName('crawl-model'),
+                status: 'active',
+                primaryNiche: 'pregnant milf',
+                voiceArchetype: 'pregnant',
+                identityNicheKeywords: 'pregnant, mature, bump',
+                identityBodyType: 'curvy',
+            });
+            await db.assets.add({
+                id: assetId,
+                modelId,
+                assetType: 'image',
+                angleTag: 'pregnant bikini',
+                approved: 1,
+                timesUsed: 0,
+                fileName: 'stress-bikini.jpg',
+            });
+            await db.subreddits.add({
+                id: subredditId,
+                modelId,
+                name: 'PregnantGoneWild',
+                nicheTag: 'pregnant',
+                status: 'testing',
+            });
+
+            const profile = await ModelDiscoveryProfileService.generateProfile(modelId, {
+                preferAI: false,
+                push: false,
+            });
+            const storedSetting = await db.settings.where('key').equals(`modelDiscoveryProfile:${modelId}`).first();
+            if (storedSetting?.id) ids.settings.push(storedSetting.id);
+
+            const ok = profile?.primaryNiche?.includes('pregnant')
+                && profile?.crawlKeywords?.some((keyword) => keyword.includes('pregnant'))
+                && profile?.seedSubreddits?.includes('pregnantgonewild')
+                && storedSetting?.value;
+
+            if (!ok) {
+                throw new Error(`profile=${JSON.stringify(profile)} stored=${storedSetting?.value || 'none'}`);
+            }
+            log.pass('Model crawl profile', 'Model signals persist into a reusable crawl fingerprint');
+        } catch (err) {
+            log.fail('Model crawl profile', err.message);
+        } finally {
+            await cleanupScenario(ids);
         }
     }
 

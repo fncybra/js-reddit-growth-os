@@ -2,18 +2,32 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../db/db';
 import { generateId } from '../db/generateId';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { extractRedditPostIdFromUrl, SubredditGuardService, TitleGeneratorService } from '../services/growthEngine';
+import { extractRedditPostIdFromUrl, resolveLatestTaskQueue, SubredditGuardService, TitleGeneratorService } from '../services/growthEngine';
 
 const vaResponsiveCss = `
 .va-root {
+    min-height: 100vh;
+    color: var(--text-primary);
     padding-top: env(safe-area-inset-top);
     padding-bottom: env(safe-area-inset-bottom);
 }
 
-.va-main {
+.va-shell {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+.va-auth-wrap {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
     padding: 24px;
-    max-width: 1200px;
-    margin: 0 auto;
+}
+
+.va-main {
+    display: grid;
+    gap: 24px;
 }
 
 .va-header-left {
@@ -24,7 +38,99 @@ const vaResponsiveCss = `
 }
 
 .va-auth-card {
-    width: min(360px, 92vw);
+    width: min(420px, 94vw);
+}
+
+.va-panel {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 36%),
+        linear-gradient(180deg, rgba(36, 29, 40, 0.94), rgba(23, 19, 27, 0.94));
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-lg);
+    box-shadow:
+        0 24px 50px rgba(0, 0, 0, 0.28),
+        inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.va-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+    gap: 18px;
+    padding: 24px;
+    border-radius: var(--radius-xl);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background:
+        radial-gradient(circle at top right, rgba(255, 106, 26, 0.18), transparent 30%),
+        radial-gradient(circle at bottom left, rgba(85, 184, 255, 0.12), transparent 28%),
+        linear-gradient(135deg, rgba(39, 28, 41, 0.97), rgba(19, 16, 23, 0.97));
+    box-shadow: 0 28px 80px rgba(0, 0, 0, 0.26);
+}
+
+.va-hero__intro {
+    display: grid;
+    gap: 14px;
+}
+
+.va-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.va-stat-card {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 44%),
+        var(--bg-surface);
+    border-radius: 18px;
+    padding: 16px;
+    border: 1px solid var(--border-light);
+    display: grid;
+    gap: 6px;
+}
+
+.va-stat-label {
+    color: var(--text-secondary);
+    font-size: 0.74rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.va-stat-value {
+    font-family: var(--font-display);
+    font-size: 1.7rem;
+    font-weight: 700;
+    letter-spacing: -0.05em;
+}
+
+.va-toolbar {
+    display: grid;
+    gap: 16px;
+    padding: 18px 20px;
+}
+
+.va-filter-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.va-select-group {
+    display: grid;
+    gap: 6px;
+}
+
+.va-queue-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.va-empty-state {
+    padding: 48px 24px;
+    text-align: center;
 }
 
 .va-pin-input {
@@ -92,12 +198,21 @@ const vaResponsiveCss = `
         flex-wrap: wrap;
     }
 
-    .va-main {
-        padding: 14px;
-    }
-
     .va-card-container {
         flex-direction: column;
+    }
+
+    .va-hero {
+        grid-template-columns: 1fr;
+        padding: 18px;
+    }
+
+    .va-stats-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .va-filter-row {
+        grid-template-columns: 1fr;
     }
 
     .va-media-sidebar {
@@ -195,9 +310,6 @@ const vaResponsiveCss = `
 
 /* ===== Small phone breakpoint ===== */
 @media (max-width: 480px) {
-    .va-main {
-        padding: 8px;
-    }
     .va-media-preview {
         height: 200px;
     }
@@ -218,6 +330,9 @@ const vaResponsiveCss = `
     }
     .va-header-stats button {
         padding: 10px 14px !important;
+    }
+    .va-stats-grid {
+        grid-template-columns: 1fr;
     }
 }
 
@@ -357,30 +472,33 @@ export function VADashboard() {
         }
     }, [visibleAccounts, selectedAccountId, authorizedAccountIds]);
 
-    // Fetch all pending tasks to avoid Timezone strict-equality blocking overseas VAs
-    // Added filter by selected account if not ALL
-    const tasks = useLiveQuery(
-        () => {
-            if (!activeModelId) return [];
+    const taskBundle = useLiveQuery(
+        async () => {
+            if (!activeModelId) return { queueDate: null, tasks: [] };
+
             let query = db.tasks.where('modelId').equals(activeModelId).filter(t => t.status !== 'failed');
             if (authorizedAccountIds && authorizedAccountIds.length > 0) {
                 const allowed = new Set(authorizedAccountIds.map(Number));
                 query = query.filter(t => allowed.has(Number(t.accountId)));
             }
-            if (selectedAccountId !== 'ALL') {
-                const acctId = Number(selectedAccountId);
-                query = query.filter(t => t.accountId === acctId);
-            }
 
-            return query.toArray().then(rows => {
-                if (!rows || rows.length === 0) return [];
-
-                const today = new Date().toISOString().slice(0, 10);
-                return rows.filter(r => !r.date || r.date === today);
-            });
+            const rows = await query.toArray();
+            return resolveLatestTaskQueue(rows || []);
         },
-        [activeModelId, selectedAccountId, authorizedAccountIds]
+        [activeModelId, authorizedAccountIds]
     );
+    const tasks = useMemo(() => {
+        const queueTasks = taskBundle?.tasks || [];
+        if (selectedAccountId === 'ALL') return queueTasks;
+        const acctId = Number(selectedAccountId);
+        return queueTasks.filter(task => Number(task.accountId) === acctId);
+    }, [taskBundle, selectedAccountId]);
+    const totalTasks = tasks.length || 0;
+    const completedTasks = tasks.filter(t => t.status === 'closed').length || 0;
+    const openTasks = Math.max(0, totalTasks - completedTasks);
+    const visibleAccountCount = selectedAccountId === 'ALL'
+        ? (visibleAccounts?.length || 0)
+        : (visibleAccounts?.some(a => String(a.id) === String(selectedAccountId)) ? 1 : 0);
 
     function handleAuth() {
         if (!models) return;
@@ -462,28 +580,29 @@ export function VADashboard() {
 
     if (!authenticated) {
         return (
-            <div className="va-root" style={{ minHeight: '100vh', backgroundColor: '#0f1115', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#e5e7eb', fontFamily: 'sans-serif' }}>
+            <div className="va-root va-auth-wrap">
                 <style>{vaResponsiveCss}</style>
-                <div className="va-auth-card" style={{ backgroundColor: '#1a1d24', padding: '40px', borderRadius: '12px', border: '1px solid #2d313a' }}>
+                <div className="card va-auth-card">
                     <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-                        <div style={{ fontSize: '2rem', marginBottom: '8px' }}>PIN</div>
-                        <h2 style={{ fontSize: '1.2rem' }}>VA Terminal Access</h2>
-                        <p style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Enter access PIN to continue</p>
+                        <div className="subtle-kicker" style={{ justifySelf: 'center', marginBottom: '8px' }}>VA Access</div>
+                        <h2 style={{ fontSize: '1.35rem', marginBottom: '8px' }}>Unlock Posting Terminal</h2>
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.92rem' }}>Enter the access PIN to open today's Reddit queue.</p>
                     </div>
                     <input
                         type="password"
                         className="input-field va-pin-input"
-                        style={{ textAlign: 'center', marginBottom: '16px', backgroundColor: '#0f1115' }}
+                        style={{ textAlign: 'center', marginBottom: '16px' }}
                         maxLength={8}
                         value={pinInput}
                         onChange={e => setPinInput(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && handleAuth()}
                         autoFocus
                     />
-                    {error && <div style={{ color: '#ef4444', textAlign: 'center', marginBottom: '16px', fontSize: '0.9rem' }}>{error}</div>}
+                    {error && <div style={{ color: 'var(--status-danger)', textAlign: 'center', marginBottom: '16px', fontSize: '0.9rem' }}>{error}</div>}
                     <button
                         onClick={handleAuth}
-                        style={{ width: '100%', backgroundColor: '#6366f1', color: '#fff', border: 'none', padding: '12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+                        className="btn btn-primary"
+                        style={{ width: '100%' }}
                     >
                         Unlock Terminal
                     </button>
@@ -492,21 +611,21 @@ export function VADashboard() {
         );
     }
 
-    // VA Name entry — shown once after PIN auth, remembered in localStorage
+    // VA Name entry - shown once after PIN auth, remembered in localStorage
     if (!vaNameConfirmed) {
         return (
-            <div className="va-root" style={{ minHeight: '100vh', backgroundColor: '#0f1115', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#e5e7eb', fontFamily: 'sans-serif' }}>
+            <div className="va-root va-auth-wrap">
                 <style>{vaResponsiveCss}</style>
-                <div className="va-auth-card" style={{ backgroundColor: '#1a1d24', padding: '40px', borderRadius: '12px', border: '1px solid #2d313a' }}>
+                <div className="card va-auth-card">
                     <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-                        <div style={{ fontSize: '2rem', marginBottom: '8px' }}>NAME</div>
-                        <h2 style={{ fontSize: '1.2rem' }}>Who's Working?</h2>
-                        <p style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Enter your name so posts get attributed to you</p>
+                        <div className="subtle-kicker" style={{ justifySelf: 'center', marginBottom: '8px' }}>VA Identity</div>
+                        <h2 style={{ fontSize: '1.35rem', marginBottom: '8px' }}>Who's Posting Today?</h2>
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.92rem' }}>Enter your name so completed Reddit posts get attributed correctly.</p>
                     </div>
                     <input
                         type="text"
                         className="input-field"
-                        style={{ textAlign: 'center', marginBottom: '16px', backgroundColor: '#0f1115', fontSize: '1.2rem', padding: '12px' }}
+                        style={{ textAlign: 'center', marginBottom: '16px', fontSize: '1.2rem', padding: '12px' }}
                         placeholder="Your name..."
                         value={vaName}
                         onChange={e => setVaName(e.target.value)}
@@ -525,7 +644,8 @@ export function VADashboard() {
                             setVaNameConfirmed(true);
                         }}
                         disabled={!vaName.trim()}
-                        style={{ width: '100%', backgroundColor: '#6366f1', color: '#fff', border: 'none', padding: '12px', borderRadius: '6px', fontWeight: 'bold', cursor: vaName.trim() ? 'pointer' : 'not-allowed', opacity: vaName.trim() ? 1 : 0.5 }}
+                        className="btn btn-primary"
+                        style={{ width: '100%', opacity: vaName.trim() ? 1 : 0.5 }}
                     >
                         Continue
                     </button>
@@ -537,63 +657,40 @@ export function VADashboard() {
     if (!models || models.length === 0) {
         if (syncing) {
             return (
-                <div style={{ minHeight: '100vh', backgroundColor: '#0f1115', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#e5e7eb', fontFamily: 'sans-serif' }}>
-                    <div style={{ textAlign: 'center' }}>
+                <div className="va-root va-auth-wrap">
+                    <style>{vaResponsiveCss}</style>
+                    <div className="card va-auth-card" style={{ textAlign: 'center' }}>
                         <div style={{ fontSize: '2rem', marginBottom: '16px', animation: 'spin 1s linear infinite' }}>SYNC</div>
                         <h3>Syncing campaigns from cloud...</h3>
-                        <p style={{ color: '#9ca3af' }}>This takes a few seconds on first load.</p>
+                        <p style={{ color: 'var(--text-secondary)' }}>This takes a few seconds on first load.</p>
                     </div>
                 </div>
             );
         }
-        return <div style={{ padding: '2rem', textAlign: 'center', minHeight: '100vh', backgroundColor: '#0f1115', color: '#e5e7eb', fontFamily: 'sans-serif' }}>No campaigns available. Ask your manager to generate a daily plan.</div>;
+        return <div className="va-root va-auth-wrap"><style>{vaResponsiveCss}</style><div className="card va-auth-card" style={{ textAlign: 'center' }}>No campaigns available. Ask your manager to generate a daily plan.</div></div>;
     }
 
     return (
-        <div className="va-root" style={{ minHeight: '100vh', backgroundColor: '#0f1115', color: '#e5e7eb', fontFamily: 'sans-serif' }}>
+        <div className="va-root va-shell">
             <style>{vaResponsiveCss}</style>
-            <header className="va-header-wrap" style={{ backgroundColor: '#1a1d24', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #2d313a' }}>
-                <div className="va-header-left">
-                    <div style={{ fontWeight: 'bold', fontSize: '1.2rem', color: '#6366f1' }}>VA Operations Terminal</div>
-                    {syncing && <span style={{ color: '#fbbf24', fontSize: '0.8rem' }}>Syncing...</span>}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
-                        <label style={{ fontSize: '0.7rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Model</label>
-                        <select
-                            style={{ padding: '8px', backgroundColor: '#2d313a', color: '#fff', border: 'none', borderRadius: '4px', outline: 'none', width: '100%' }}
-                            value={selectedModelId || ''}
-                            onChange={e => setSelectedModelId(e.target.value)}
-                        >
-                            {authorizedModels?.map(m => (
-                                <option key={m.id} value={m.id}>{m.name}</option>
-                            ))}
-                        </select>
-                    </div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
-                        <label style={{ fontSize: '0.7rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Account</label>
-                        <select
-                            style={{ padding: '8px', backgroundColor: '#2d313a', color: '#fff', border: 'none', borderRadius: '4px', outline: 'none', width: '100%' }}
-                            value={selectedAccountId}
-                            onChange={e => setSelectedAccountId(e.target.value)}
-                        >
-                            <option value="ALL">All Accounts</option>
-                            {visibleAccounts?.map(a => (
-                                <option key={a.id} value={a.id}>u/{a.handle}</option>
-                            ))}
-                        </select>
+            <header className="page-header va-header-wrap">
+                <div style={{ display: 'grid', gap: '6px' }}>
+                    <div className="subtle-kicker">VA Terminal</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                        <h1 className="page-title" style={{ margin: 0 }}>Reddit Posting Queue</h1>
+                        {syncing && <span className="badge badge-warning">Syncing</span>}
                     </div>
                 </div>
-                <div className="va-header-stats" style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-                    <div style={{ fontSize: '0.9rem', color: '#9ca3af' }}>
+                <div className="va-header-stats" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
                         {new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                    </div>
-                    <div style={{ padding: '4px 12px', backgroundColor: '#10b98122', color: '#10b981', border: '1px solid #10b98144', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold' }}>
-                        {tasks?.filter(t => t.status === 'closed').length} / {tasks?.length} COMPLETED
-                    </div>
+                    </span>
+                    <span className="badge badge-success">{completedTasks}/{totalTasks} Completed</span>
                     <button
                         onClick={handleClearQueue}
                         disabled={clearingQueue || !tasks || tasks.length === 0}
-                        style={{ backgroundColor: 'transparent', color: '#ef4444', border: '1px solid #ef4444', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', opacity: (clearingQueue || !tasks || tasks.length === 0) ? 0.5 : 1 }}
+                        className="btn btn-outline"
+                        style={{ opacity: (clearingQueue || !tasks || tasks.length === 0) ? 0.5 : 1 }}
                     >
                         {clearingQueue ? 'Clearing...' : 'Clear Queue'}
                     </button>
@@ -607,48 +704,109 @@ export function VADashboard() {
                             } catch (e) { console.error(e); }
                             finally { setSyncing(false); }
                         }}
-                        style={{ backgroundColor: 'transparent', color: '#6366f1', border: '1px solid #6366f1', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}
+                        className="btn btn-outline"
                     >
                         Refresh
                     </button>
-                    <span style={{ fontSize: '0.8rem', color: '#9ca3af', padding: '4px 8px', backgroundColor: '#6366f122', borderRadius: '4px', border: '1px solid #6366f144' }}>
-                        VA: <strong style={{ color: '#6366f1' }}>{vaName}</strong>
-                        <button onClick={() => { setVaNameConfirmed(false); }} style={{ background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: '0.7rem', marginLeft: '4px' }}>(change)</button>
+                    <span className="glass-panel" style={{ padding: '8px 12px', display: 'inline-flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)' }}>
+                        VA: <strong style={{ color: 'var(--accent-secondary)' }}>{vaName}</strong>
+                        <button onClick={() => { setVaNameConfirmed(false); }} style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>(change)</button>
                     </span>
-                    <button onClick={() => { setAuthenticated(false); setAuthorizedModels([]); setAuthorizedAccountIds([]); setSelectedModelId(''); setSelectedAccountId('ALL'); setPinInput(''); }} style={{ backgroundColor: 'transparent', color: '#9ca3af', border: '1px solid #2d313a', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}>Lock</button>
+                    <button onClick={() => { setAuthenticated(false); setAuthorizedModels([]); setAuthorizedAccountIds([]); setSelectedModelId(''); setSelectedAccountId('ALL'); setPinInput(''); }} className="btn btn-outline">Lock</button>
                 </div>
             </header>
 
-            <main className="va-main">
-                <h2 style={{ fontSize: '1.5rem', marginBottom: '8px' }}>Today's Queue</h2>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                    <p style={{ color: '#9ca3af', margin: 0 }}>Execute the following posts linearly. Mark them done as you go.</p>
-                    {tasks?.some(t => t.status === 'closed') && (
-                        <button
-                            onClick={() => setHideCompleted(h => !h)}
-                            style={{ backgroundColor: 'transparent', color: '#9ca3af', border: '1px solid #2d313a', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', whiteSpace: 'nowrap', marginLeft: '12px' }}
-                        >
-                            {hideCompleted ? 'Show Completed' : 'Hide Completed'}
-                        </button>
+            <main className="page-content">
+                <div className="va-main">
+                    <section className="va-hero">
+                        <div className="va-hero__intro">
+                            <div className="subtle-kicker">Today's Mission</div>
+                            <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '2rem', lineHeight: 1.05, letterSpacing: '-0.05em' }}>Post cleanly, match the subreddit, and move the queue without guessing.</h2>
+                            <p style={{ color: 'var(--text-secondary)', maxWidth: '58ch' }}>The planner now respects subreddit rules before it pairs media with tasks. This terminal is your live execution board for phone or desktop.</p>
+                        </div>
+                        <div className="va-stats-grid">
+                            <div className="va-stat-card">
+                                <div className="va-stat-label">Open Tasks</div>
+                                <div className="va-stat-value">{openTasks}</div>
+                            </div>
+                            <div className="va-stat-card">
+                                <div className="va-stat-label">Completed</div>
+                                <div className="va-stat-value">{completedTasks}</div>
+                            </div>
+                            <div className="va-stat-card">
+                                <div className="va-stat-label">Accounts In View</div>
+                                <div className="va-stat-value">{visibleAccountCount}</div>
+                            </div>
+                            <div className="va-stat-card">
+                                <div className="va-stat-label">Model</div>
+                                <div className="va-stat-value" style={{ fontSize: '1.05rem', lineHeight: 1.2 }}>{authorizedModels?.find(m => String(m.id) === String(selectedModelId))?.name || 'Select model'}</div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section className="va-panel va-toolbar">
+                        <div className="va-filter-row">
+                            <div className="va-select-group">
+                                <label className="input-label">Model</label>
+                                <select
+                                    className="input-field"
+                                    value={selectedModelId || ''}
+                                    onChange={e => setSelectedModelId(e.target.value)}
+                                >
+                                    {authorizedModels?.map(m => (
+                                        <option key={m.id} value={m.id}>{m.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="va-select-group">
+                                <label className="input-label">Account</label>
+                                <select
+                                    className="input-field"
+                                    value={selectedAccountId}
+                                    onChange={e => setSelectedAccountId(e.target.value)}
+                                >
+                                    <option value="ALL">All Accounts</option>
+                                    {visibleAccounts?.map(a => (
+                                        <option key={a.id} value={a.id}>u/{a.handle}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+
+                        <div className="va-queue-head">
+                            <div>
+                                <h2 style={{ fontSize: '1.35rem', marginBottom: '6px' }}>Today's Queue</h2>
+                                <p style={{ color: 'var(--text-secondary)', margin: 0 }}>Execute the posts in order, follow the subreddit notes, then mark them posted or failed as you go.</p>
+                            </div>
+                            {tasks?.some(t => t.status === 'closed') && (
+                                <button
+                                    onClick={() => setHideCompleted(h => !h)}
+                                    className="btn btn-outline"
+                                >
+                                    {hideCompleted ? 'Show Completed' : 'Hide Completed'}
+                                </button>
+                            )}
+                        </div>
+                    </section>
+
+                    {tasks?.length === 0 ? (
+                        <div className="card va-empty-state">
+                            <div style={{ fontSize: '2rem', marginBottom: '16px' }}>EMPTY</div>
+                            <h3 style={{ marginBottom: '8px' }}>Queue Empty</h3>
+                            <p style={{ color: 'var(--text-secondary)' }}>No tasks assigned for this model today, or you've completed them all.</p>
+                        </div>
+                    ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                            {[...(tasks || [])]
+                                .sort((a, b) => (a.status === 'closed' ? 1 : 0) - (b.status === 'closed' ? 1 : 0))
+                                .filter(t => !hideCompleted || t.status !== 'closed')
+                                .map((task, index) => (
+                                    <VATaskCard key={task.id} task={task} index={index + 1} onPosted={() => {}} vaName={vaName} />
+                                ))}
+                        </div>
                     )}
                 </div>
-
-                {tasks?.length === 0 ? (
-                    <div style={{ backgroundColor: '#1a1d24', padding: '48px', textAlign: 'center', borderRadius: '8px', border: '1px solid #2d313a' }}>
-                        <div style={{ fontSize: '2rem', marginBottom: '16px' }}>EMPTY</div>
-                        <h3 style={{ marginBottom: '8px' }}>Queue Empty</h3>
-                        <p style={{ color: '#9ca3af' }}>No tasks assigned for this model today, or you've completed them all.</p>
-                    </div>
-                ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                        {[...(tasks || [])]
-                            .sort((a, b) => (a.status === 'closed' ? 1 : 0) - (b.status === 'closed' ? 1 : 0))
-                            .filter(t => !hideCompleted || t.status !== 'closed')
-                            .map((task, index) => (
-                                <VATaskCard key={task.id} task={task} index={index + 1} onPosted={() => {}} vaName={vaName} />
-                            ))}
-                    </div>
-                )}
             </main>
 
             {/* Floating sync button for mobile */}
@@ -896,11 +1054,17 @@ function VATaskCard({ task, index, onPosted, vaName }) {
             await db.performances.add({ id: generateId(), ...perfInsert });
 
             try {
-                await SubredditGuardService.recordPostingError(task.subredditId, reason, {
-                    accountHandle: account?.handle || '',
-                    modelName: model?.name || '',
-                    taskId: task.id,
-                });
+                const isAccountSpecificSubBan = /banned from sub|subreddit ban|banned in this subreddit|banned from this subreddit|community ban|permanently banned from participating/i.test(String(reason || ''));
+                if (isAccountSpecificSubBan && task.accountId && task.subredditId) {
+                    const { VerificationService } = await import('../services/growthEngine');
+                    await VerificationService.markBlocked(task.accountId, task.subredditId, reason);
+                } else {
+                    await SubredditGuardService.recordPostingError(task.subredditId, reason, {
+                        accountHandle: account?.handle || '',
+                        modelName: model?.name || '',
+                        taskId: task.id,
+                    });
+                }
             } catch (guardErr) {
                 console.warn('[VA] Failed to store subreddit posting guard:', guardErr?.message || guardErr);
             }
@@ -908,7 +1072,7 @@ function VATaskCard({ task, index, onPosted, vaName }) {
             // Cloud Sync Push (Native)
             try {
                 const { CloudSyncService } = await import('../services/growthEngine');
-                await CloudSyncService.autoPush(['tasks', 'performances', 'subreddits']);
+                await CloudSyncService.autoPush(['tasks', 'performances', 'subreddits', 'verifications']);
             } catch (err) {
                 console.warn('[VA] Error sync push failed:', err?.message || err);
             }
