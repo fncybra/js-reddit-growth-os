@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { db } from '../db/db';
 import { generateId } from '../db/generateId';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { AnalyticsEngine, getAssignmentAccountRoster, SubredditAssignmentService, SubredditGuardService, VerificationService } from '../services/growthEngine';
+import { AnalyticsEngine, canUseStore, getAssignmentAccountRoster, SubredditAssignmentService, SubredditGuardService, VerificationService } from '../services/growthEngine';
 
 const STANDING_STYLES = {
     success: { bg: '#10b98122', color: '#10b981', border: '#10b98144' },
@@ -22,7 +22,18 @@ export function Subreddits() {
     const accounts = useLiveQuery(() => db.accounts.toArray());
     const tasks = useLiveQuery(() => db.tasks.toArray());
     const performances = useLiveQuery(() => db.performances.toArray());
-    const verifications = useLiveQuery(() => db.verifications.toArray());
+    const verificationStoreAvailable = useLiveQuery(
+        async () => canUseStore('verifications'),
+        []
+    );
+    const verifications = useLiveQuery(
+        async () => {
+            if (verificationStoreAvailable === false) return [];
+            if (verificationStoreAvailable === undefined) return undefined;
+            return db.verifications.toArray();
+        },
+        [verificationStoreAvailable]
+    );
 
     const [selectedModelId, setSelectedModelId] = useState('');
     const [tableModelFilter, setTableModelFilter] = useState('');
@@ -588,6 +599,9 @@ export function Subreddits() {
                                                 </td>
                                                 <td style={{ textAlign: 'center' }}>
                                                     {(() => {
+                                                        if (verificationStoreAvailable === false) {
+                                                            return <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>store unavailable</span>;
+                                                        }
                                                         if (!sub.requiresVerified) {
                                                             return <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>—</span>;
                                                         }

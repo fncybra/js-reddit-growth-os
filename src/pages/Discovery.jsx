@@ -3,12 +3,13 @@ import { db } from '../db/db';
 import { generateId } from '../db/generateId';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Search, Loader2, Download, RefreshCw, Trash2, Plus, Eye, Sparkles } from 'lucide-react';
-import { CompetitorService, getAssignmentAccountRoster, ModelDiscoveryProfileService, SubredditAssignmentService } from '../services/growthEngine';
+import { canUseStore, CompetitorService, getAssignmentAccountRoster, ModelDiscoveryProfileService, SubredditAssignmentService } from '../services/growthEngine';
 
 export function Discovery() {
     const models = useLiveQuery(() => db.models.toArray());
     const [selectedModelId, setSelectedModelId] = useState(null);
     const [selectedAccountId, setSelectedAccountId] = useState('');
+    const [importNiche, setImportNiche] = useState('general'); // The niche to apply to all selected subs on import
     const cleanupSignatureRef = React.useRef('');
 
     // Auto-select first model available if none selected
@@ -36,6 +37,10 @@ export function Discovery() {
             return ModelDiscoveryProfileService.getProfile(targetModel.id);
         },
         [targetModel?.id]
+    );
+    const competitorStoreAvailable = useLiveQuery(
+        async () => canUseStore('competitors'),
+        []
     );
 
     React.useEffect(() => {
@@ -95,8 +100,12 @@ export function Discovery() {
     }, [targetModel?.id, rawModelAccounts, existingSubreddits]);
 
     const competitors = useLiveQuery(
-        () => targetModel ? db.competitors.where('modelId').equals(targetModel.id).toArray() : [],
-        [targetModel?.id]
+        async () => {
+            if (!targetModel || competitorStoreAvailable === false) return [];
+            if (competitorStoreAvailable === undefined) return undefined;
+            return db.competitors.where('modelId').equals(targetModel.id).toArray();
+        },
+        [targetModel?.id, competitorStoreAvailable]
     );
     const [scrapingAll, setScrapingAll] = useState(false);
     const [addingCompetitor, setAddingCompetitor] = useState('');
@@ -110,7 +119,6 @@ export function Discovery() {
     const [error, setError] = useState(null);
     const [results, setResults] = useState([]);
     const [selectedSubs, setSelectedSubs] = useState(new Set());
-    const [importNiche, setImportNiche] = useState('general'); // The niche to apply to all selected subs on import
 
     if (models === undefined) {
         return <div className="page-content" style={{ textAlign: 'center', padding: '48px', color: 'var(--text-secondary)' }}>Loading...</div>;
@@ -540,8 +548,9 @@ export function Discovery() {
                                 placeholder="u/handle"
                                 value={addingCompetitor}
                                 onChange={e => setAddingCompetitor(e.target.value)}
+                                disabled={competitorStoreAvailable === false}
                                 onKeyDown={async e => {
-                                    if (e.key === 'Enter' && addingCompetitor.trim() && targetModel) {
+                                    if (e.key === 'Enter' && addingCompetitor.trim() && targetModel && competitorStoreAvailable !== false) {
                                         await CompetitorService.addCompetitor(targetModel.id, addingCompetitor);
                                         setAddingCompetitor('');
                                     }
@@ -550,9 +559,9 @@ export function Discovery() {
                             />
                             <button
                                 className="btn btn-primary"
-                                disabled={!addingCompetitor.trim() || !targetModel}
+                                disabled={competitorStoreAvailable === false || !addingCompetitor.trim() || !targetModel}
                                 onClick={async () => {
-                                    if (!addingCompetitor.trim() || !targetModel) return;
+                                    if (!addingCompetitor.trim() || !targetModel || competitorStoreAvailable === false) return;
                                     await CompetitorService.addCompetitor(targetModel.id, addingCompetitor);
                                     setAddingCompetitor('');
                                 }}
@@ -562,7 +571,7 @@ export function Discovery() {
                             </button>
                             <button
                                 className="btn btn-outline"
-                                disabled={scrapingAll || !(competitors?.length > 0)}
+                                disabled={competitorStoreAvailable === false || scrapingAll || !(competitors?.length > 0)}
                                 onClick={async () => {
                                     setScrapingAll(true);
                                     try {
@@ -580,7 +589,9 @@ export function Discovery() {
                     </div>
                     {(!competitors || competitors.length === 0) ? (
                         <div style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '20px' }}>
-                            No competitors tracked yet. Add a Reddit handle above to start monitoring.
+                            {competitorStoreAvailable === false
+                                ? 'Competitor tracking is unavailable in this local browser database. Refresh the app data, then try again.'
+                                : 'No competitors tracked yet. Add a Reddit handle above to start monitoring.'}
                         </div>
                     ) : (
                         <div className="data-table-container">
