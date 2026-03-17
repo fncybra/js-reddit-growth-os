@@ -143,6 +143,67 @@ const getRedditHandleVariants = (rawValue = '') => {
     ].filter(Boolean))];
 };
 
+const ACCOUNT_DELETE_TOMBSTONES_KEY = 'accountDeleteTombstones';
+const MAX_ACCOUNT_DELETE_TOMBSTONES = 500;
+
+const parseJsonSettingValue = (value, fallback = []) => {
+    try {
+        const parsed = JSON.parse(String(value || '').trim() || 'null');
+        return parsed ?? fallback;
+    } catch {
+        return fallback;
+    }
+};
+
+const normalizeAccountDeleteTombstones = (rows = []) => {
+    if (!Array.isArray(rows)) return [];
+    const normalized = [];
+    const seen = new Set();
+
+    for (const row of rows) {
+        const id = row?.id ?? null;
+        const handle = normalizeRedditHandle(row?.handle);
+        if (id == null && !handle) continue;
+        const key = `${id ?? 'none'}::${handle || 'none'}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        normalized.push({
+            id,
+            handle,
+            modelId: row?.modelId != null ? Number(row.modelId) : null,
+            deletedAt: row?.deletedAt || new Date().toISOString(),
+        });
+    }
+
+    return normalized
+        .sort((a, b) => String(b.deletedAt || '').localeCompare(String(a.deletedAt || '')))
+        .slice(0, MAX_ACCOUNT_DELETE_TOMBSTONES);
+};
+
+async function getAccountDeleteTombstones() {
+    const row = await db.settings.where('key').equals(ACCOUNT_DELETE_TOMBSTONES_KEY).first();
+    return normalizeAccountDeleteTombstones(parseJsonSettingValue(row?.value, []));
+}
+
+async function addAccountDeleteTombstone(account = {}) {
+    const next = normalizeAccountDeleteTombstones([
+        {
+            id: account?.id ?? null,
+            handle: account?.handle || '',
+            modelId: account?.modelId ?? null,
+            deletedAt: new Date().toISOString(),
+        },
+        ...(await getAccountDeleteTombstones()),
+    ]);
+    await SettingsService.updateSetting(ACCOUNT_DELETE_TOMBSTONES_KEY, JSON.stringify(next));
+    return next;
+}
+
+const matchesAccountDeleteTombstone = (account = {}, tombstoneIds = new Set(), tombstoneHandles = new Set()) => {
+    return tombstoneIds.has(account?.id)
+        || tombstoneHandles.has(normalizeRedditHandle(account?.handle));
+};
+
 const isUsableAccountStats = (data) => {
     if (!data || typeof data !== 'object') return false;
     return (
@@ -4324,6 +4385,9 @@ export const CloudSyncService = {
         const allTables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'settings', 'verifications', 'dailySnapshots', 'competitors'];
         const tables = onlyTables || allTables;
         const TASK_STATUS_RANK = { 'generated': 1, 'failed': 2, 'closed': 3 };
+        const accountDeleteTombstones = await getAccountDeleteTombstones();
+        const tombstoneIds = new Set(accountDeleteTombstones.map((row) => row.id).filter((id) => id !== null && id !== undefined));
+        const tombstoneHandles = new Set(accountDeleteTombstones.map((row) => row.handle).filter(Boolean));
 
         // Pre-compute account IDs that will be excluded from push (no handle = NOT NULL violation)
         // Dependent tables (tasks, subreddits, verifications) must also exclude rows referencing these
@@ -4333,7 +4397,9 @@ export const CloudSyncService = {
         if (needsExclusionCheck) {
             const allAccounts = await db.accounts.toArray();
             for (const acc of allAccounts) {
-                if (!acc.handle) excludedAccountIds.add(acc.id);
+                if (!acc.handle || matchesAccountDeleteTombstone(acc, tombstoneIds, tombstoneHandles)) {
+                    excludedAccountIds.add(acc.id);
+                }
             }
         }
 
@@ -4374,7 +4440,7 @@ export const CloudSyncService = {
 
             // Skip accounts with missing handle — Supabase has NOT NULL constraint
             if (table === 'accounts') {
-                cleanData = cleanData.filter(row => !!row.handle);
+                cleanData = cleanData.filter(row => !!row.handle && !matchesAccountDeleteTombstone(row, tombstoneIds, tombstoneHandles));
             }
 
             // Skip rows that reference excluded accounts — prevents FK violations
@@ -4509,10 +4575,23 @@ export const CloudSyncService = {
 
         // Task status ranking for conflict resolution (higher = more advanced)
         const TASK_STATUS_RANK = { 'generated': 1, 'failed': 2, 'closed': 3 };
+        const accountDeleteTombstones = await getAccountDeleteTombstones();
+        const tombstoneIds = new Set(accountDeleteTombstones.map((row) => row.id).filter((id) => id !== null && id !== undefined));
+        const tombstoneHandles = new Set(accountDeleteTombstones.map((row) => row.handle).filter(Boolean));
 
         // Phase 2: MERGE cloud data into local (never clear — prevents data loss)
         for (const table of tables) {
             let cloudData = fetched[table] || [];
+            if (table === 'accounts') {
+                const localAccounts = await db.accounts.toArray();
+                const localTombstonedIds = localAccounts
+                    .filter((account) => matchesAccountDeleteTombstone(account, tombstoneIds, tombstoneHandles))
+                    .map((account) => account.id);
+                if (localTombstonedIds.length > 0) {
+                    await db.accounts.bulkDelete(localTombstonedIds);
+                }
+                cloudData = cloudData.filter((remote) => !matchesAccountDeleteTombstone(remote, tombstoneIds, tombstoneHandles));
+            }
             if (cloudData.length === 0) {
                 console.log(`[CloudSync] Skipped ${table} — cloud is empty, keeping local data`);
                 continue;
@@ -4968,6 +5047,7 @@ export const AccountAdminService = {
         const relatedVerificationIds = relatedVerifications.map(v => v.id);
         const attachedSubreddits = await db.subreddits.filter(sub => sub.accountId === account.id).toArray();
 
+        await addAccountDeleteTombstone(account);
         await markPendingDelete('accounts', account.id);
         for (const taskId of relatedTaskIds) await markPendingDelete('tasks', taskId);
         for (const perf of relatedPerformances) await markPendingDelete('performances', perf.id);
@@ -5024,7 +5104,7 @@ export const AccountAdminService = {
             await CloudSyncService.autoPush(['subreddits']);
         }
         await CloudSyncService.deleteFromCloud('accounts', account.id);
-        await CloudSyncService.autoPush(['accounts', 'tasks', 'performances', 'verifications']);
+        await CloudSyncService.autoPush(['settings', 'accounts', 'tasks', 'performances', 'verifications']);
 
         return {
             accountId: account.id,
