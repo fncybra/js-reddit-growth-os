@@ -1273,6 +1273,9 @@ export const SettingsService = {
             if (String(s.key || '').startsWith(MODEL_DISCOVERY_PROFILE_KEY_PREFIX)) {
                 return;
             }
+            if (s.key === ACCOUNT_DELETE_TOMBSTONES_KEY) {
+                return;
+            }
             if (s.value !== undefined && s.value !== null && s.value !== '') {
                 settings[s.key] = s.value;
             }
@@ -4377,15 +4380,53 @@ export const CloudSyncService = {
         return { deletedIds: [...deletedIds], missingIds };
     },
 
+    async _deleteAccountTombstonesFromCloud(supabase, tombstones = []) {
+        const tombstoneIds = [...new Set(tombstones.map((row) => row?.id).filter((id) => id !== null && id !== undefined))];
+        const tombstoneHandles = [...new Set(tombstones.map((row) => normalizeRedditHandle(row?.handle)).filter(Boolean))];
+        if (tombstoneIds.length === 0 && tombstoneHandles.length === 0) return;
+
+        const { data, error } = await supabase.from('accounts').select('id, handle');
+        if (error) {
+            throw new Error(error.message || 'Failed reading cloud accounts for tombstone cleanup');
+        }
+
+        const matchingIds = (data || [])
+            .filter((row) => tombstoneIds.includes(row.id) || tombstoneHandles.includes(normalizeRedditHandle(row.handle)))
+            .map((row) => row.id);
+
+        if (matchingIds.length > 0) {
+            await this._deleteIdsFromCloud(supabase, 'accounts', matchingIds);
+        }
+    },
+
     async pushLocalToCloud(onlyTables = null) {
         const { getSupabaseClient } = await import('../db/supabase.js');
         const supabase = await getSupabaseClient();
         if (!supabase) return;
 
-        const allTables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'settings', 'verifications', 'dailySnapshots', 'competitors'];
+        const allTables = ['settings', 'models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'verifications', 'dailySnapshots', 'competitors'];
         const tables = onlyTables || allTables;
         const TASK_STATUS_RANK = { 'generated': 1, 'failed': 2, 'closed': 3 };
-        const accountDeleteTombstones = await getAccountDeleteTombstones();
+        let accountDeleteTombstones = await getAccountDeleteTombstones();
+        try {
+            const { data: cloudTombstoneSetting, error: cloudTombstoneError } = await supabase
+                .from('settings')
+                .select('value')
+                .eq('key', ACCOUNT_DELETE_TOMBSTONES_KEY)
+                .maybeSingle();
+            if (!cloudTombstoneError && cloudTombstoneSetting?.value) {
+                const mergedTombstones = normalizeAccountDeleteTombstones([
+                    ...accountDeleteTombstones,
+                    ...parseJsonSettingValue(cloudTombstoneSetting.value, []),
+                ]);
+                if (mergedTombstones.length !== accountDeleteTombstones.length) {
+                    accountDeleteTombstones = mergedTombstones;
+                    await SettingsService.updateSetting(ACCOUNT_DELETE_TOMBSTONES_KEY, JSON.stringify(mergedTombstones));
+                }
+            }
+        } catch (err) {
+            console.warn('[CloudSync] Could not prefetch cloud account tombstones:', err.message);
+        }
         const tombstoneIds = new Set(accountDeleteTombstones.map((row) => row.id).filter((id) => id !== null && id !== undefined));
         const tombstoneHandles = new Set(accountDeleteTombstones.map((row) => row.handle).filter(Boolean));
 
@@ -4400,6 +4441,14 @@ export const CloudSyncService = {
                 if (!acc.handle || matchesAccountDeleteTombstone(acc, tombstoneIds, tombstoneHandles)) {
                     excludedAccountIds.add(acc.id);
                 }
+            }
+        }
+
+        if (tables.includes('accounts') || tables.includes('settings')) {
+            try {
+                await this._deleteAccountTombstonesFromCloud(supabase, accountDeleteTombstones);
+            } catch (err) {
+                console.warn('[CloudSync] Tombstone cleanup failed before push:', err.message);
             }
         }
 
@@ -4554,7 +4603,7 @@ export const CloudSyncService = {
         const supabase = await getSupabaseClient();
         if (!supabase) return;
 
-        const tables = ['models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'settings', 'verifications', 'dailySnapshots', 'competitors'];
+        const tables = ['settings', 'models', 'accounts', 'subreddits', 'assets', 'tasks', 'performances', 'verifications', 'dailySnapshots', 'competitors'];
         const fetched = {};
 
         // Phase 1: fetch every table first; skip tables that don't exist in cloud yet
