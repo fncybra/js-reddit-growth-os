@@ -5,11 +5,27 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { Search, Loader2, Download, RefreshCw, Trash2, Plus, Eye, Sparkles } from 'lucide-react';
 import { canUseStore, CompetitorService, getAssignmentAccountRoster, ModelDiscoveryProfileService, SubredditAssignmentService } from '../services/growthEngine';
 
+function readDiscoverySampleFile(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve({
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            dataUrl: String(reader.result || ''),
+        });
+        reader.onerror = () => reject(reader.error || new Error(`Failed reading ${file.name}`));
+        reader.readAsDataURL(file);
+    });
+}
+
 export function Discovery() {
     const models = useLiveQuery(() => db.models.toArray());
     const [selectedModelId, setSelectedModelId] = useState(null);
     const [selectedAccountId, setSelectedAccountId] = useState('');
     const [importNiche, setImportNiche] = useState('general'); // The niche to apply to all selected subs on import
+    const [uploadedVisionSamples, setUploadedVisionSamples] = useState([]);
+    const [loadingVisionSamples, setLoadingVisionSamples] = useState(false);
     const cleanupSignatureRef = React.useRef('');
 
     // Auto-select first model available if none selected
@@ -38,6 +54,14 @@ export function Discovery() {
         },
         [targetModel?.id]
     );
+    const modelImageCount = useLiveQuery(
+        async () => {
+            if (!targetModel?.id) return 0;
+            const assets = await db.assets.where('modelId').equals(targetModel.id).toArray();
+            return assets.filter((asset) => String(asset.assetType || '').toLowerCase() === 'image').length;
+        },
+        [targetModel?.id]
+    );
     const competitorStoreAvailable = useLiveQuery(
         async () => canUseStore('competitors'),
         []
@@ -61,6 +85,10 @@ export function Discovery() {
             setImportNiche(modelDiscoveryProfile.primaryNiche);
         }
     }, [modelDiscoveryProfile, importNiche]);
+
+    React.useEffect(() => {
+        setUploadedVisionSamples([]);
+    }, [targetModel?.id]);
 
     const existingSubreddits = useLiveQuery(
         () => targetModel ? db.subreddits.where({ modelId: targetModel.id }).toArray() : [],
@@ -200,10 +228,15 @@ export function Discovery() {
         if (!targetModel?.id) return;
         setGeneratingProfile(true);
         try {
-            const shouldReuseExisting = options.runSearch && modelDiscoveryProfile && !options.forceRefresh;
+            const shouldReuseExisting = options.runSearch
+                && modelDiscoveryProfile
+                && !options.forceRefresh
+                && uploadedVisionSamples.length === 0;
             const profile = shouldReuseExisting
                 ? modelDiscoveryProfile
-                : await ModelDiscoveryProfileService.generateProfile(targetModel.id);
+                : await ModelDiscoveryProfileService.generateProfile(targetModel.id, {
+                    visionSamples: uploadedVisionSamples,
+                });
             if (profile?.primaryNiche && (!importNiche || importNiche === 'general')) {
                 setImportNiche(profile.primaryNiche);
             }
@@ -226,6 +259,24 @@ export function Discovery() {
         } finally {
             setLoading(false);
             setGeneratingProfile(false);
+        }
+    }
+
+    async function handleVisionSampleUpload(event) {
+        const files = Array.from(event.target.files || [])
+            .filter((file) => String(file.type || '').startsWith('image/'))
+            .slice(0, 3);
+        event.target.value = '';
+        if (files.length === 0) return;
+
+        setLoadingVisionSamples(true);
+        try {
+            const samples = await Promise.all(files.map((file) => readDiscoverySampleFile(file)));
+            setUploadedVisionSamples(samples);
+        } catch (err) {
+            alert(`Failed to load photo samples: ${err.message}`);
+        } finally {
+            setLoadingVisionSamples(false);
         }
     }
 
@@ -351,6 +402,13 @@ export function Discovery() {
     }
 
     const validResults = filterValidResults(results);
+    const hasUploadedVisionSamples = uploadedVisionSamples.length > 0;
+    const storedImageCount = Number(modelImageCount || 0);
+    const currentAnalysisSource = hasUploadedVisionSamples
+        ? 'uploaded photos'
+        : storedImageCount > 0
+            ? `${storedImageCount} library image${storedImageCount === 1 ? '' : 's'}`
+            : 'no photos available';
 
     return (
         <>
@@ -420,8 +478,84 @@ export function Discovery() {
                                 <h2 style={{ fontSize: '1.05rem', margin: 0 }}>Model Crawl Profile</h2>
                             </div>
                             <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: modelDiscoveryProfile ? '12px' : 0 }}>
-                                Let the OS turn this model into a crawl plan first. It uses model traits, approved image samples when available, and OnlyGuider-style tags to pick seed subreddits, then crawls posters in those lanes to find where else they actually post.
+                                Let the OS turn this model into a crawl plan first. Upload 1-3 photos for a fresh model, or let it use library images if they already exist. It matches the girl to OnlyGuider-style tags, picks seed subreddits, then crawls posters in those lanes to find where else they actually post.
                             </p>
+                            <div style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '10px',
+                                marginBottom: '14px',
+                                padding: '12px',
+                                borderRadius: '12px',
+                                background: 'rgba(255,255,255,0.03)',
+                                border: '1px solid var(--border-color)',
+                            }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                    <div>
+                                        <div style={{ fontSize: '0.76rem', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                                            Photo Analysis Input
+                                        </div>
+                                        <div style={{ fontSize: '0.88rem', color: 'var(--text-primary)' }}>
+                                            Current source: <strong>{currentAnalysisSource}</strong>
+                                        </div>
+                                        <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                                            If there are no uploaded or library photos, analysis falls back to text heuristics.
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                        <label className="btn btn-outline" style={{ cursor: loadingVisionSamples ? 'wait' : 'pointer' }}>
+                                            {loadingVisionSamples ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+                                            {loadingVisionSamples ? 'Loading Photos...' : 'Upload Photos'}
+                                            <input
+                                                type="file"
+                                                accept="image/*"
+                                                multiple
+                                                hidden
+                                                onChange={handleVisionSampleUpload}
+                                                disabled={loadingVisionSamples}
+                                            />
+                                        </label>
+                                        <button
+                                            type="button"
+                                            className="btn btn-outline"
+                                            onClick={() => setUploadedVisionSamples([])}
+                                            disabled={uploadedVisionSamples.length === 0}
+                                        >
+                                            Clear Photos
+                                        </button>
+                                    </div>
+                                </div>
+                                {uploadedVisionSamples.length > 0 && (
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                                        {uploadedVisionSamples.map((sample) => (
+                                            <div
+                                                key={sample.name}
+                                                style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '10px',
+                                                    padding: '8px 10px',
+                                                    borderRadius: '10px',
+                                                    background: 'rgba(255,255,255,0.03)',
+                                                    border: '1px solid var(--border-color)',
+                                                }}
+                                            >
+                                                <img
+                                                    src={sample.dataUrl}
+                                                    alt={sample.name}
+                                                    style={{ width: '52px', height: '52px', objectFit: 'cover', borderRadius: '8px' }}
+                                                />
+                                                <div>
+                                                    <div style={{ fontSize: '0.82rem', fontWeight: 600 }}>{sample.name}</div>
+                                                    <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+                                                        {(sample.size / 1024).toFixed(0)} KB ready for vision
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                             {modelDiscoveryProfile && (
                                 <>
                                     <div style={{ fontSize: '0.92rem', fontWeight: 600, marginBottom: '10px' }}>

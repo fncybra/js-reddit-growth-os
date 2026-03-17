@@ -1554,6 +1554,7 @@ export const ModelDiscoveryProfileService = {
         if (!apiKey) return null;
         const visionSamples = Array.isArray(options.visionSamples) ? options.visionSamples.filter((sample) => sample?.dataUrl) : [];
         const candidateOnlyGuiderTags = uniqueDiscoveryPhrases([
+            ...ONLY_GUIDER_DISCOVERY_TAGS,
             ...(fallbackProfile?.onlyGuiderTags || []),
             ...matchOnlyGuiderTags([
                 signals?.model?.primaryNiche,
@@ -1562,7 +1563,7 @@ export const ModelDiscoveryProfileService = {
                 ...(signals?.winningAngles || []),
                 ...(signals?.subredditNiches || []),
             ], 12),
-        ], 12);
+        ], ONLY_GUIDER_DISCOVERY_TAGS.length);
 
         const proxyUrl = await SettingsService.getProxyUrl();
         let aiBaseUrl = String(settings.aiBaseUrl || '').trim() || 'https://openrouter.ai/api/v1';
@@ -1650,12 +1651,21 @@ ${JSON.stringify(fallbackProfile, null, 2)}
 
         if (options.preferAI !== false) {
             try {
-                const visionSamples = await this.getVisionSamples(modelId, { limit: 3 });
+                const providedVisionSamples = Array.isArray(options.visionSamples)
+                    ? options.visionSamples.filter((sample) => sample?.dataUrl)
+                    : [];
+                const visionSamples = providedVisionSamples.length > 0
+                    ? providedVisionSamples.slice(0, 3)
+                    : await this.getVisionSamples(modelId, { limit: 3 });
                 const aiProfile = await this.generateProfileWithAI(signals, fallbackProfile, { visionSamples });
                 if (aiProfile) {
                     profile = this.sanitizeProfile({
                         ...aiProfile,
-                        source: visionSamples.length > 0 ? 'vision+ai' : 'ai',
+                        source: providedVisionSamples.length > 0
+                            ? 'uploaded-vision+ai'
+                            : visionSamples.length > 0
+                                ? 'vision+ai'
+                                : 'ai',
                         analysisMode: visionSamples.length > 0 ? 'visual' : 'text',
                     }, fallbackProfile, signals);
                 }
