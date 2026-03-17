@@ -4279,15 +4279,41 @@ export const CloudSyncService = {
     },
 
     async _deleteIdsFromCloud(supabase, table, ids) {
-        if (!ids || ids.length === 0) return;
-        const uniqueIds = [...new Set(ids.filter(id => id !== undefined && id !== null))];
-        if (uniqueIds.length === 0) return;
-        const { error } = uniqueIds.length === 1
-            ? await supabase.from(table).delete().eq('id', uniqueIds[0])
-            : await supabase.from(table).delete().in('id', uniqueIds);
-        if (error) {
-            throw new Error(error.message || `Failed deleting ${uniqueIds.length} row(s) from ${table}`);
+        if (!ids || ids.length === 0) {
+            return { deletedIds: [], missingIds: [] };
         }
+        const uniqueIds = [...new Set(ids.filter(id => id !== undefined && id !== null))];
+        if (uniqueIds.length === 0) {
+            return { deletedIds: [], missingIds: [] };
+        }
+
+        const { data: existingRows, error: existingError } = uniqueIds.length === 1
+            ? await supabase.from(table).select('id').eq('id', uniqueIds[0])
+            : await supabase.from(table).select('id').in('id', uniqueIds);
+        if (existingError) {
+            throw new Error(existingError.message || `Failed checking existing ${table} rows before delete`);
+        }
+
+        const existingIds = new Set((existingRows || []).map((row) => row.id));
+        const idsToDelete = uniqueIds.filter((id) => existingIds.has(id));
+        const missingIds = uniqueIds.filter((id) => !existingIds.has(id));
+        if (idsToDelete.length === 0) {
+            return { deletedIds: [], missingIds };
+        }
+
+        const { data: deletedRows, error } = idsToDelete.length === 1
+            ? await supabase.from(table).delete().eq('id', idsToDelete[0]).select('id')
+            : await supabase.from(table).delete().in('id', idsToDelete).select('id');
+        if (error) {
+            throw new Error(error.message || `Failed deleting ${idsToDelete.length} row(s) from ${table}`);
+        }
+        const deletedIds = new Set((deletedRows || []).map((row) => row.id));
+        const undeletedExistingIds = idsToDelete.filter((id) => !deletedIds.has(id));
+        if (undeletedExistingIds.length > 0) {
+            throw new Error(`Delete from ${table} did not remove ${undeletedExistingIds.length} expected row(s)`);
+        }
+
+        return { deletedIds: [...deletedIds], missingIds };
     },
 
     async pushLocalToCloud(onlyTables = null) {
@@ -4317,8 +4343,10 @@ export const CloudSyncService = {
                 const pendingDels = await getPendingDeleteIds(table);
                 if (pendingDels.size > 0) {
                     for (const id of pendingDels) {
-                        await this._deleteIdsFromCloud(supabase, table, [id]);
-                        await clearSyncMeta(table, id);
+                        const result = await this._deleteIdsFromCloud(supabase, table, [id]);
+                        if (result.deletedIds.includes(id) || result.missingIds.includes(id)) {
+                            await clearSyncMeta(table, id);
+                        }
                     }
                     console.log(`[CloudSync] Processed ${pendingDels.size} pending deletes for ${table}`);
                 }
