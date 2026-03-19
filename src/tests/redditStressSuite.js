@@ -2,6 +2,7 @@ import { db } from '../db/db.js';
 import { generateId } from '../db/generateId.js';
 import {
     AccountAdminService,
+    AccountLifecycleService,
     AccountDeduplicationService,
     AnalyticsEngine,
     canUseStore,
@@ -791,6 +792,120 @@ export async function runRedditStressSuite() {
             log.pass('Model crawl NSFW filter', 'Advice/support pregnancy subs are rejected while adult lanes stay available');
         } catch (err) {
             log.fail('Model crawl NSFW filter', err.message);
+        }
+    }
+
+    // Test 19: Lone resting account should wake for coverage and still generate posts
+    {
+        const ids = { models: [], accounts: [], assets: [], subreddits: [], tasks: [] };
+        const originalAutoPush = CloudSyncService.autoPush;
+        try {
+            const modelId = generateId();
+            const accountId = generateId();
+            const assetId = generateId();
+            const subredditId = generateId();
+            ids.models.push(modelId);
+            ids.accounts.push(accountId);
+            ids.assets.push(assetId);
+            ids.subreddits.push(subredditId);
+
+            const createdUtc = Math.floor(Date.now() / 1000) - (45 * 24 * 60 * 60);
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+
+            await db.models.add({ id: modelId, name: stressName('resting-coverage-model'), status: 'active' });
+            await db.accounts.add({
+                id: accountId,
+                modelId,
+                handle: 'u/stressrestingcoverage',
+                status: 'active',
+                phase: 'resting',
+                restUntilDate: tomorrow.toISOString(),
+                consecutiveActiveDays: 0,
+                totalKarma: 1400,
+                createdUtc,
+                dailyCap: 1,
+            });
+            await db.assets.add({
+                id: assetId,
+                modelId,
+                assetType: 'image',
+                angleTag: 'pregnant',
+                approved: 1,
+                timesUsed: 0,
+                fileName: 'stress-resting.jpg',
+            });
+            await db.subreddits.add({
+                id: subredditId,
+                modelId,
+                name: 'PregnantGoneWild',
+                status: 'proven',
+                rulesSummary: 'NSFW pregnancy content only.',
+            });
+
+            CloudSyncService.autoPush = async () => {};
+
+            await AccountLifecycleService.evaluateAccountPhases();
+            const afterEval = await db.accounts.get(accountId);
+            const tasks = await DailyPlanGenerator.generateDailyPlan(modelId, new Date(), { totalTarget: 1 });
+            ids.tasks.push(...tasks.map((task) => task.id));
+            const finalAccount = await db.accounts.get(accountId);
+
+            const ok = afterEval?.phase === 'ready'
+                && finalAccount?.phase === 'active'
+                && tasks.length === 1
+                && tasks[0]?.accountId === accountId
+                && tasks[0]?.subredditId === subredditId;
+
+            if (!ok) {
+                throw new Error(`afterEval=${afterEval?.phase} final=${finalAccount?.phase} tasks=${JSON.stringify(tasks)}`);
+            }
+            log.pass('Lone resting account coverage', 'Single-account models wake from resting and regenerate a queue');
+        } catch (err) {
+            log.fail('Lone resting account coverage', err.message);
+        } finally {
+            CloudSyncService.autoPush = originalAutoPush;
+            await cleanupScenario(ids);
+        }
+    }
+
+    // Test 20: Lone active account should not get forced into resting just for hitting the rotation threshold
+    {
+        const ids = { models: [], accounts: [] };
+        try {
+            const modelId = generateId();
+            const accountId = generateId();
+            ids.models.push(modelId);
+            ids.accounts.push(accountId);
+
+            const createdUtc = Math.floor(Date.now() / 1000) - (60 * 24 * 60 * 60);
+
+            await db.models.add({ id: modelId, name: stressName('active-coverage-model'), status: 'active' });
+            await db.accounts.add({
+                id: accountId,
+                modelId,
+                handle: 'u/stressactivecoverage',
+                status: 'active',
+                phase: 'active',
+                consecutiveActiveDays: 99,
+                restVariance: 0,
+                totalKarma: 2200,
+                createdUtc,
+                dailyCap: 1,
+            });
+
+            await AccountLifecycleService.evaluateAccountPhases();
+            const account = await db.accounts.get(accountId);
+            const ok = account?.phase === 'active';
+
+            if (!ok) {
+                throw new Error(`account=${JSON.stringify(account)}`);
+            }
+            log.pass('Lone active account coverage', 'Single-account models stay active instead of being rotated into resting');
+        } catch (err) {
+            log.fail('Lone active account coverage', err.message);
+        } finally {
+            await cleanupScenario(ids);
         }
     }
 

@@ -2759,6 +2759,12 @@ export const DailyPlanGenerator = {
         }).toArray();
 
         if (activeAccounts.length === 0 && warmingAccounts.length === 0) {
+            const restingAccounts = await db.accounts.where('modelId').equals(modelId).filter((a) => {
+                return a.status === 'active' && a.phase === 'resting';
+            }).toArray();
+            if (restingAccounts.length > 0) {
+                throw new Error(`All operational accounts for this model are currently resting (${restingAccounts.length}). Move one back to Ready/Active or reduce rest rotation in Settings.`);
+            }
             throw new Error("No eligible Reddit accounts found for this model. Accounts must have status 'Active' and phase 'Ready', 'Active', or 'Warming'. Check the Accounts tab.");
         }
 
@@ -5168,6 +5174,27 @@ export const AccountAdminService = {
 
 
 export const AccountLifecycleService = {
+    isOperationalRotationCandidate(account) {
+        if (!account) return false;
+        if (String(account.status || '').toLowerCase() !== 'active') return false;
+        if (account.isSuspended) return false;
+
+        const phase = String(account.phase || 'ready').toLowerCase();
+        const shadowState = String(account.shadowBanStatus || '').toLowerCase();
+        if (phase === 'burned' || phase === 'resting') return false;
+        if (shadowState === 'shadow_banned' || shadowState === 'suspended') return false;
+
+        return phase === 'ready' || phase === 'active';
+    },
+
+    getOperationalRotationSiblings(accounts, account) {
+        return accounts.filter((candidate) =>
+            candidate.modelId === account.modelId
+            && candidate.id !== account.id
+            && this.isOperationalRotationCandidate(candidate)
+        );
+    },
+
     async evaluateAccountPhases() {
         const settings = await SettingsService.getSettings();
         const minWarmupDays = Number(settings.minWarmupDays) || 7;
@@ -5204,10 +5231,7 @@ export const AccountLifecycleService = {
                     } else if (ageDays >= minWarmupDays && karma >= minWarmupKarma) {
                         phase = 'ready';
                         // Stagger rest rotation with existing sibling accounts
-                        const siblings = accounts.filter(a =>
-                            a.modelId === acc.modelId && a.id !== acc.id &&
-                            (a.phase === 'active' || a.phase === 'ready')
-                        );
+                        const siblings = this.getOperationalRotationSiblings(accounts, acc);
                         updates.consecutiveActiveDays = siblings.length % maxConsecutiveActiveDays;
                         updates.restVariance = Math.floor(Math.random() * 3) - 1;
                     } else {
@@ -5248,10 +5272,7 @@ export const AccountLifecycleService = {
                     newPhase = 'ready';
                     // Stagger: count how many sibling accounts are already active/ready
                     // and offset this account's consecutiveActiveDays so rest periods rotate
-                    const siblings = accounts.filter(a =>
-                        a.modelId === acc.modelId && a.id !== acc.id &&
-                        (a.phase === 'active' || a.phase === 'ready')
-                    );
+                    const siblings = this.getOperationalRotationSiblings(accounts, acc);
                     const staggerOffset = siblings.length % maxConsecutiveActiveDays;
                     updates.consecutiveActiveDays = staggerOffset;
                     updates.restVariance = Math.floor(Math.random() * 3) - 1;
@@ -5260,9 +5281,10 @@ export const AccountLifecycleService = {
             // active → resting: too many consecutive active days (with ±1 day randomness)
             else if (phase === 'active') {
                 const consecutive = acc.consecutiveActiveDays || 0;
+                const rotationSiblings = this.getOperationalRotationSiblings(accounts, acc);
                 // Add ±1 day variance per cycle so rest patterns look human
                 const variance = (acc.restVariance != null) ? acc.restVariance : 0;
-                if (consecutive >= maxConsecutiveActiveDays + variance) {
+                if (consecutive >= maxConsecutiveActiveDays + variance && rotationSiblings.length > 0) {
                     newPhase = 'resting';
                     // Randomize rest duration too: base ±1 day (min 1)
                     const restJitter = Math.random() < 0.5 ? -1 : (Math.random() < 0.5 ? 0 : 1);
@@ -5277,7 +5299,10 @@ export const AccountLifecycleService = {
             }
             // resting → ready: rest period over
             else if (phase === 'resting') {
-                if (acc.restUntilDate && new Date(acc.restUntilDate) <= today) {
+                const rotationSiblings = this.getOperationalRotationSiblings(accounts, acc);
+                const restElapsed = acc.restUntilDate && new Date(acc.restUntilDate) <= today;
+                const needsCoverageNow = rotationSiblings.length === 0;
+                if (restElapsed || needsCoverageNow) {
                     newPhase = 'ready';
                     updates.restUntilDate = null;
                 }
