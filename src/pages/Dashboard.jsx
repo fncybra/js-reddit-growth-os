@@ -895,7 +895,7 @@ export function Dashboard() {
                                         const { CloudSyncService, AccountLifecycleService, AccountSyncService, PerformanceSyncService, SnapshotService } = await import('../services/growthEngine');
 
                                         // 1. Acquire lock
-                                        const locked = await CloudSyncService.acquireLock();
+                                        const locked = await CloudSyncService.acquireLock({ waitMs: 12000, pollMs: 300 });
                                         if (!locked) { alert('Sync already running. Try again in a moment.'); return; }
 
                                         try {

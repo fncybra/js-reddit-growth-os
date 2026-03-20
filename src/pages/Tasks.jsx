@@ -559,6 +559,7 @@ function TaskRow({ task, activeModelId, proxyUrl, showAccount }) {
     const [saved, setSaved] = useState(false);
     const [mediaFailed, setMediaFailed] = useState(false);
     const [heicPreviewUrl, setHeicPreviewUrl] = useState('');
+    const [heicLoading, setHeicLoading] = useState(false);
 
     // Load related data
     const subreddit = useLiveQuery(() => task.subredditId ? db.subreddits.get(task.subredditId) : null, [task.subredditId]);
@@ -641,6 +642,7 @@ function TaskRow({ task, activeModelId, proxyUrl, showAccount }) {
             if (!asset?.driveFileId || !isHeic) return;
 
             try {
+                setHeicLoading(true);
                 const { getProxyHeaders } = await import('../services/growthEngine');
                 const response = await fetch(`${proxyUrl}/api/drive/download/${asset.driveFileId}?convert=true`, { headers: await getProxyHeaders() });
                 if (!response.ok) return;
@@ -649,6 +651,8 @@ function TaskRow({ task, activeModelId, proxyUrl, showAccount }) {
                 if (!cancelled) setHeicPreviewUrl(generatedUrl);
             } catch {
                 // leave fallback chain in place
+            } finally {
+                if (!cancelled) setHeicLoading(false);
             }
         }
 
@@ -665,11 +669,11 @@ function TaskRow({ task, activeModelId, proxyUrl, showAccount }) {
     }, [task.id, objectUrl, heicPreviewUrl, asset?.driveFileId, asset?.thumbnailUrl, asset?.originalUrl]);
 
     const previewUrl = objectUrl
-        || (isHeic ? heicPreviewUrl : null)
-        || (asset?.assetType === 'image' && asset?.driveFileId ? `${proxyUrl}/api/drive/thumb/${asset.driveFileId}` : null)
+        || (isHeic ? (heicPreviewUrl || null) : null)
+        || (!isHeic && asset?.assetType === 'image' && asset?.driveFileId ? `${proxyUrl}/api/drive/thumb/${asset.driveFileId}` : null)
         || (asset?.assetType === 'video' && asset?.driveFileId ? `${proxyUrl}/api/drive/view/${asset.driveFileId}` : null)
-        || asset?.thumbnailUrl
-        || asset?.originalUrl
+        || (!isHeic ? asset?.thumbnailUrl : null)
+        || (!isHeic ? asset?.originalUrl : null)
         || null;
 
     const isEngagement = (task.taskType && task.taskType !== 'post') || /^(Engage|Warmup):/i.test(task.title);
@@ -710,6 +714,8 @@ function TaskRow({ task, activeModelId, proxyUrl, showAccount }) {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         {asset.assetType === 'image' && previewUrl && !mediaFailed ? (
                             <img src={previewUrl} alt="asset thumbnail" style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '4px', border: '1px solid var(--border-color)' }} onError={() => setMediaFailed(true)} />
+                        ) : asset.assetType === 'image' && isHeic && heicLoading ? (
+                            <div style={{ width: '60px', height: '60px', backgroundColor: 'var(--surface-color)', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.6rem', textAlign: 'center', padding: '4px' }}>HEIC...</div>
                         ) : asset.assetType === 'video' && previewUrl && !mediaFailed ? (
                             <video src={previewUrl} style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '4px', border: '1px solid var(--border-color)' }} onError={() => setMediaFailed(true)} />
                         ) : (

@@ -865,7 +865,10 @@ function VATaskCard({ task, index, onPosted, vaName }) {
 
             try {
                 setHeicLoading(true);
-                const response = await fetch(`${proxyBase}/api/drive/download/${asset.driveFileId}?convert=true`);
+                const { getProxyHeaders } = await import('../services/growthEngine');
+                const response = await fetch(`${proxyBase}/api/drive/download/${asset.driveFileId}?convert=true`, {
+                    headers: await getProxyHeaders(),
+                });
                 if (!response.ok) throw new Error(`Preview conversion failed (${response.status})`);
                 const blob = await response.blob();
                 generatedUrl = URL.createObjectURL(blob);
@@ -886,11 +889,11 @@ function VATaskCard({ task, index, onPosted, vaName }) {
     }, [asset?.id, asset?.driveFileId, isHeic]);
 
     const mediaUrl = localBlobUrl
-        || (isHeic ? heicPreviewUrl : null)
-        || (asset?.assetType === 'image' && asset?.driveFileId ? `${proxyBase}/api/drive/thumb/${asset.driveFileId}` : null)
+        || (isHeic ? (heicPreviewUrl || null) : null)
+        || (!isHeic && asset?.assetType === 'image' && asset?.driveFileId ? `${proxyBase}/api/drive/thumb/${asset.driveFileId}` : null)
         || (asset?.assetType === 'video' && asset?.driveFileId ? `${proxyBase}/api/drive/view/${asset.driveFileId}` : null)
-        || asset?.thumbnailUrl
-        || asset?.originalUrl
+        || (!isHeic ? asset?.thumbnailUrl : null)
+        || (!isHeic ? asset?.originalUrl : null)
         || null;
 
     async function handleDownloadMedia() {
@@ -925,7 +928,10 @@ function VATaskCard({ task, index, onPosted, vaName }) {
                     // This prevents Android phones from intercepting the Google Drive URL and forcing the VA to login to a Google Account.
                     const fetchUrl = `${proxyBase}/api/drive/download/${asset.driveFileId}${isHeic ? '?convert=true' : ''}`;
 
-                    const response = await fetch(fetchUrl);
+                    const { getProxyHeaders } = await import('../services/growthEngine');
+                    const response = await fetch(fetchUrl, {
+                        headers: await getProxyHeaders(),
+                    });
                     if (!response.ok) throw new Error("Network request failed. " + response.statusText);
                     const blob = await response.blob();
                     const contentType = (response.headers.get('content-type') || '').toLowerCase();

@@ -59,6 +59,7 @@ export async function getProxyHeaders(extra = {}) {
 }
 // Reset cached token when settings change
 function invalidateProxyTokenCache() { _cachedProxyApiToken = ''; }
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const hasStore = (name) => db.tables.some(table => table.name === name);
 const _usableStoreCache = new Map();
 
@@ -145,6 +146,8 @@ const getRedditHandleVariants = (rawValue = '') => {
 
 const ACCOUNT_DELETE_TOMBSTONES_KEY = 'accountDeleteTombstones';
 const MAX_ACCOUNT_DELETE_TOMBSTONES = 500;
+const MODEL_DELETE_TOMBSTONES_KEY = 'modelDeleteTombstones';
+const MAX_MODEL_DELETE_TOMBSTONES = 500;
 
 const parseJsonSettingValue = (value, fallback = []) => {
     try {
@@ -202,6 +205,51 @@ async function addAccountDeleteTombstone(account = {}) {
 const matchesAccountDeleteTombstone = (account = {}, tombstoneIds = new Set(), tombstoneHandles = new Set()) => {
     return tombstoneIds.has(account?.id)
         || tombstoneHandles.has(normalizeRedditHandle(account?.handle));
+};
+
+const normalizeModelDeleteTombstones = (rows = []) => {
+    if (!Array.isArray(rows)) return [];
+    const normalized = [];
+    const seen = new Set();
+
+    for (const row of rows) {
+        const id = row?.id != null ? Number(row.id) : null;
+        if (id == null || Number.isNaN(id)) continue;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        normalized.push({
+            id,
+            name: String(row?.name || '').trim(),
+            deletedAt: row?.deletedAt || new Date().toISOString(),
+        });
+    }
+
+    return normalized
+        .sort((a, b) => String(b.deletedAt || '').localeCompare(String(a.deletedAt || '')))
+        .slice(0, MAX_MODEL_DELETE_TOMBSTONES);
+};
+
+async function getModelDeleteTombstones() {
+    const row = await db.settings.where('key').equals(MODEL_DELETE_TOMBSTONES_KEY).first();
+    return normalizeModelDeleteTombstones(parseJsonSettingValue(row?.value, []));
+}
+
+export async function addModelDeleteTombstone(model = {}) {
+    const next = normalizeModelDeleteTombstones([
+        {
+            id: model?.id ?? null,
+            name: model?.name || '',
+            deletedAt: new Date().toISOString(),
+        },
+        ...(await getModelDeleteTombstones()),
+    ]);
+    await SettingsService.updateSetting(MODEL_DELETE_TOMBSTONES_KEY, JSON.stringify(next));
+    return next;
+}
+
+const matchesModelDeleteTombstone = (model = {}, tombstoneIds = new Set()) => {
+    const numericId = model?.id != null ? Number(model.id) : null;
+    return numericId != null && tombstoneIds.has(numericId);
 };
 
 const isUsableAccountStats = (data) => {
@@ -4334,14 +4382,35 @@ export const CloudSyncService = {
         });
     },
 
-    async acquireLock() {
-        if (this._syncLock) return false;
-        this._syncLock = true;
-        return true;
+    async acquireLock(options = {}) {
+        const waitMs = Math.max(0, Number(options.waitMs) || 0);
+        const pollMs = Math.max(50, Number(options.pollMs) || 250);
+        const staleMs = Math.max(1000, Number(options.staleMs) || 120000);
+        const deadline = Date.now() + waitMs;
+
+        while (true) {
+            if (this._syncLock && this._syncLockSince && (Date.now() - this._syncLockSince) > staleMs) {
+                console.warn('[CloudSync] Releasing stale sync lock');
+                this.releaseLock();
+            }
+
+            if (!this._syncLock) {
+                this._syncLock = true;
+                this._syncLockSince = Date.now();
+                return true;
+            }
+
+            if (Date.now() >= deadline) {
+                return false;
+            }
+
+            await delay(Math.min(pollMs, Math.max(25, deadline - Date.now())));
+        }
     },
 
     releaseLock() {
         this._syncLock = false;
+        this._syncLockSince = 0;
     },
 
     get isLocked() {
@@ -4405,6 +4474,17 @@ export const CloudSyncService = {
         }
     },
 
+    async _deleteModelTombstonesFromCloud(supabase, tombstones = []) {
+        const tombstoneIds = [...new Set(
+            tombstones
+                .map((row) => row?.id != null ? Number(row.id) : null)
+                .filter((id) => id !== null && !Number.isNaN(id))
+        )];
+        if (tombstoneIds.length === 0) return;
+
+        await this._deleteIdsFromCloud(supabase, 'models', tombstoneIds);
+    },
+
     async pushLocalToCloud(onlyTables = null) {
         const { getSupabaseClient } = await import('../db/supabase.js');
         const supabase = await getSupabaseClient();
@@ -4414,6 +4494,7 @@ export const CloudSyncService = {
         const tables = onlyTables || allTables;
         const TASK_STATUS_RANK = { 'generated': 1, 'failed': 2, 'closed': 3 };
         let accountDeleteTombstones = await getAccountDeleteTombstones();
+        let modelDeleteTombstones = await getModelDeleteTombstones();
         try {
             const { data: cloudTombstoneSetting, error: cloudTombstoneError } = await supabase
                 .from('settings')
@@ -4433,8 +4514,28 @@ export const CloudSyncService = {
         } catch (err) {
             console.warn('[CloudSync] Could not prefetch cloud account tombstones:', err.message);
         }
-        const tombstoneIds = new Set(accountDeleteTombstones.map((row) => row.id).filter((id) => id !== null && id !== undefined));
+        try {
+            const { data: cloudModelTombstoneSetting, error: cloudModelTombstoneError } = await supabase
+                .from('settings')
+                .select('value')
+                .eq('key', MODEL_DELETE_TOMBSTONES_KEY)
+                .maybeSingle();
+            if (!cloudModelTombstoneError && cloudModelTombstoneSetting?.value) {
+                const mergedTombstones = normalizeModelDeleteTombstones([
+                    ...modelDeleteTombstones,
+                    ...parseJsonSettingValue(cloudModelTombstoneSetting.value, []),
+                ]);
+                if (mergedTombstones.length !== modelDeleteTombstones.length) {
+                    modelDeleteTombstones = mergedTombstones;
+                    await SettingsService.updateSetting(MODEL_DELETE_TOMBSTONES_KEY, JSON.stringify(mergedTombstones));
+                }
+            }
+        } catch (err) {
+            console.warn('[CloudSync] Could not prefetch cloud model tombstones:', err.message);
+        }
+        const accountTombstoneIds = new Set(accountDeleteTombstones.map((row) => row.id).filter((id) => id !== null && id !== undefined));
         const tombstoneHandles = new Set(accountDeleteTombstones.map((row) => row.handle).filter(Boolean));
+        const modelTombstoneIds = new Set(modelDeleteTombstones.map((row) => row.id).filter((id) => id !== null && id !== undefined));
 
         // Pre-compute account IDs that will be excluded from push (no handle = NOT NULL violation)
         // Dependent tables (tasks, subreddits, verifications) must also exclude rows referencing these
@@ -4444,17 +4545,26 @@ export const CloudSyncService = {
         if (needsExclusionCheck) {
             const allAccounts = await db.accounts.toArray();
             for (const acc of allAccounts) {
-                if (!acc.handle || matchesAccountDeleteTombstone(acc, tombstoneIds, tombstoneHandles)) {
+                if (!acc.handle || matchesAccountDeleteTombstone(acc, accountTombstoneIds, tombstoneHandles) || modelTombstoneIds.has(Number(acc.modelId))) {
                     excludedAccountIds.add(acc.id);
                 }
             }
         }
+
+        const excludedModelIds = new Set(modelTombstoneIds);
 
         if (tables.includes('accounts') || tables.includes('settings')) {
             try {
                 await this._deleteAccountTombstonesFromCloud(supabase, accountDeleteTombstones);
             } catch (err) {
                 console.warn('[CloudSync] Tombstone cleanup failed before push:', err.message);
+            }
+        }
+        if (tables.includes('models') || tables.includes('settings')) {
+            try {
+                await this._deleteModelTombstonesFromCloud(supabase, modelDeleteTombstones);
+            } catch (err) {
+                console.warn('[CloudSync] Model tombstone cleanup failed before push:', err.message);
             }
         }
 
@@ -4495,7 +4605,15 @@ export const CloudSyncService = {
 
             // Skip accounts with missing handle — Supabase has NOT NULL constraint
             if (table === 'accounts') {
-                cleanData = cleanData.filter(row => !!row.handle && !matchesAccountDeleteTombstone(row, tombstoneIds, tombstoneHandles));
+                cleanData = cleanData.filter((row) =>
+                    !!row.handle
+                    && !matchesAccountDeleteTombstone(row, accountTombstoneIds, tombstoneHandles)
+                    && !excludedModelIds.has(Number(row.modelId))
+                );
+            }
+
+            if (table === 'models') {
+                cleanData = cleanData.filter((row) => !matchesModelDeleteTombstone(row, excludedModelIds));
             }
 
             // Skip rows that reference excluded accounts — prevents FK violations
@@ -4503,6 +4621,10 @@ export const CloudSyncService = {
                 if (table === 'tasks' || table === 'subreddits' || table === 'verifications') {
                     cleanData = cleanData.filter(row => !row.accountId || !excludedAccountIds.has(row.accountId));
                 }
+            }
+
+            if (excludedModelIds.size > 0 && ['accounts', 'subreddits', 'assets', 'tasks', 'dailySnapshots'].includes(table)) {
+                cleanData = cleanData.filter((row) => !row.modelId || !excludedModelIds.has(Number(row.modelId)));
             }
 
             if (cleanData.length === 0) continue;
@@ -4631,12 +4753,24 @@ export const CloudSyncService = {
         // Task status ranking for conflict resolution (higher = more advanced)
         const TASK_STATUS_RANK = { 'generated': 1, 'failed': 2, 'closed': 3 };
         const accountDeleteTombstones = await getAccountDeleteTombstones();
+        const modelDeleteTombstones = await getModelDeleteTombstones();
         const tombstoneIds = new Set(accountDeleteTombstones.map((row) => row.id).filter((id) => id !== null && id !== undefined));
         const tombstoneHandles = new Set(accountDeleteTombstones.map((row) => row.handle).filter(Boolean));
+        const modelTombstoneIds = new Set(modelDeleteTombstones.map((row) => row.id).filter((id) => id !== null && id !== undefined));
 
         // Phase 2: MERGE cloud data into local (never clear — prevents data loss)
         for (const table of tables) {
             let cloudData = fetched[table] || [];
+            if (table === 'models') {
+                const localModels = await db.models.toArray();
+                const localTombstonedIds = localModels
+                    .filter((model) => matchesModelDeleteTombstone(model, modelTombstoneIds))
+                    .map((model) => model.id);
+                if (localTombstonedIds.length > 0) {
+                    await db.models.bulkDelete(localTombstonedIds);
+                }
+                cloudData = cloudData.filter((remote) => !matchesModelDeleteTombstone(remote, modelTombstoneIds));
+            }
             if (table === 'accounts') {
                 const localAccounts = await db.accounts.toArray();
                 const localTombstonedIds = localAccounts
@@ -4646,6 +4780,16 @@ export const CloudSyncService = {
                     await db.accounts.bulkDelete(localTombstonedIds);
                 }
                 cloudData = cloudData.filter((remote) => !matchesAccountDeleteTombstone(remote, tombstoneIds, tombstoneHandles));
+            }
+            if (modelTombstoneIds.size > 0 && ['accounts', 'subreddits', 'assets', 'tasks', 'dailySnapshots'].includes(table)) {
+                const localRows = await db[table].toArray();
+                const localTombstonedIds = localRows
+                    .filter((row) => row?.modelId != null && modelTombstoneIds.has(Number(row.modelId)))
+                    .map((row) => row.id);
+                if (localTombstonedIds.length > 0) {
+                    await db[table].bulkDelete(localTombstonedIds);
+                }
+                cloudData = cloudData.filter((remote) => !remote?.modelId || !modelTombstoneIds.has(Number(remote.modelId)));
             }
             if (cloudData.length === 0) {
                 console.log(`[CloudSync] Skipped ${table} — cloud is empty, keeping local data`);

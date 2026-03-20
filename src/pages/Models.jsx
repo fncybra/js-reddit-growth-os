@@ -149,8 +149,9 @@ export function Models() {
     async function handleDelete(id, name) {
         if (window.confirm(`Delete model "${name}"? This cannot be undone.`)) {
             try {
-                const { CloudSyncService } = await import('../services/growthEngine');
+                const { CloudSyncService, addModelDeleteTombstone } = await import('../services/growthEngine');
                 const modelId = Number(id);
+                const model = await db.models.get(modelId);
                 const [accounts, subreddits, assets, tasks] = await Promise.all([
                     db.accounts.where('modelId').equals(modelId).toArray(),
                     db.subreddits.where('modelId').equals(modelId).toArray(),
@@ -176,6 +177,8 @@ export function Models() {
                 for (const id of subredditIds) await markPendingDelete('subreddits', id);
                 for (const id of accountIds) await markPendingDelete('accounts', id);
                 await markPendingDelete('models', modelId);
+                await addModelDeleteTombstone(model || { id: modelId, name });
+                await CloudSyncService.autoPush(['settings']);
 
                 await db.transaction('rw', db.performances, db.tasks, db.assets, db.subreddits, db.accounts, db.models, async () => {
                     if (performanceIds.length > 0) await db.performances.bulkDelete(performanceIds);
@@ -443,4 +446,3 @@ export function Models() {
         </>
     );
 }
-
