@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { db } from '../db/db';
 import { generateId } from '../db/generateId';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { AnalyticsEngine, canUseStore, getAssignmentAccountRoster, SubredditAssignmentService, SubredditGuardService, VerificationService } from '../services/growthEngine';
+import { AnalyticsEngine, canUseStore, fetchProxyResponse, getAssignmentAccountRoster, SubredditAssignmentService, SubredditGuardService, VerificationService } from '../services/growthEngine';
 
 const STANDING_STYLES = {
     success: { bg: '#10b98122', color: '#10b981', border: '#10b98144' },
@@ -68,10 +68,7 @@ export function Subreddits() {
 
         try {
             const cleanName = formData.name.replace(/^(r\/|\/r\/)/i, '');
-            const { SettingsService } = await import('../services/growthEngine');
-            const proxyUrl = await SettingsService.getProxyUrl();
-            const { getProxyHeaders } = await import('../services/growthEngine');
-            const res = await fetch(`${proxyUrl}/api/scrape/subreddit/${cleanName}`, { headers: await getProxyHeaders() });
+            const res = await fetchProxyResponse(`/api/scrape/subreddit/${encodeURIComponent(cleanName)}`);
             if (res.ok) {
                 const deepData = await res.json();
                 rulesSummary = deepData.rules?.map(r => `• ${r.title}: ${r.description}`).join('\n\n') || '';

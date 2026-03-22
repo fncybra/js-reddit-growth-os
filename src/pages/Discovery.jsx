@@ -3,7 +3,7 @@ import { db } from '../db/db';
 import { generateId } from '../db/generateId';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Search, Loader2, Download, RefreshCw, Trash2, Plus, Eye, Sparkles } from 'lucide-react';
-import { canUseStore, CompetitorService, getAssignmentAccountRoster, ModelDiscoveryProfileService, SubredditAssignmentService } from '../services/growthEngine';
+import { canUseStore, CompetitorService, fetchProxyResponse, getAssignmentAccountRoster, ModelDiscoveryProfileService, SubredditAssignmentService } from '../services/growthEngine';
 
 function readDiscoverySampleFile(file) {
     return new Promise((resolve, reject) => {
@@ -167,13 +167,10 @@ export function Discovery() {
         setSelectedSubs(new Set());
 
         try {
-            const { SettingsService, getProxyHeaders } = await import('../services/growthEngine');
-            const proxyUrl = await SettingsService.getProxyUrl();
-
             if (mode === 'competitor') {
                 if (!competitorUsername.trim()) return;
                 const cleanUsername = competitorUsername.replace(/^(u\/|\/u\/|https:\/\/www.reddit.com\/u(ser)?\/)/i, '').split('/')[0].trim();
-                const response = await fetch(`${proxyUrl}/api/scrape/user/${cleanUsername}`, { headers: await getProxyHeaders() });
+                const response = await fetchProxyResponse(`/api/scrape/user/${encodeURIComponent(cleanUsername)}`);
 
                 if (!response.ok) throw new Error("Competitor not found or proxy error.");
                 const data = await response.json();
@@ -199,7 +196,7 @@ export function Discovery() {
                 setResults(Array.from(subMap.values()).sort((a, b) => b.postsSeen - a.postsSeen));
             } else {
                 if (!searchQuery.trim()) return;
-                const response = await fetch(`${proxyUrl}/api/scrape/search/subreddits?q=${encodeURIComponent(searchQuery)}`, { headers: await getProxyHeaders() });
+                const response = await fetchProxyResponse(`/api/scrape/search/subreddits?q=${encodeURIComponent(searchQuery)}`);
                 if (!response.ok) throw new Error("Failed to search subreddits.");
                 const data = await response.json();
 
@@ -329,9 +326,7 @@ export function Discovery() {
                 // Fetch deep metadata (Rules & Flairs) from proxy
                 let deepData = {};
                 try {
-                    const { SettingsService, getProxyHeaders } = await import('../services/growthEngine');
-                    const proxyUrl = await SettingsService.getProxyUrl();
-                    const res = await fetch(`${proxyUrl}/api/scrape/subreddit/${subName}`, { headers: await getProxyHeaders() });
+                    const res = await fetchProxyResponse(`/api/scrape/subreddit/${encodeURIComponent(subName)}`);
                     if (res.ok) {
                         deepData = await res.json();
                     }

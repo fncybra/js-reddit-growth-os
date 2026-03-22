@@ -62,6 +62,35 @@ function invalidateProxyTokenCache() { _cachedProxyApiToken = ''; }
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const hasStore = (name) => db.tables.some(table => table.name === name);
 const _usableStoreCache = new Map();
+const REDDIT_SCRAPE_FALLBACK_BASE = 'https://js-reddit-growth-os.jake-1997.workers.dev';
+
+const trimUrlBase = (value = '') => String(value || '').trim().replace(/\/+$/, '');
+
+const isRedditScrapePath = (pathname = '') => pathname === '/api/proxy/status'
+    || pathname === '/api/proxy/check'
+    || pathname.startsWith('/api/scrape/');
+
+const buildWorkerFallbackUrl = (rawUrl = '') => {
+    const fallbackBase = trimUrlBase(REDDIT_SCRAPE_FALLBACK_BASE);
+    try {
+        const parsed = new URL(rawUrl, typeof window !== 'undefined' ? window.location.origin : fallbackBase);
+        return `${fallbackBase}${parsed.pathname}${parsed.search}`;
+    } catch {
+        return rawUrl;
+    }
+};
+
+const shouldRetryWithWorkerFallback = (rawUrl = '', response = null) => {
+    try {
+        const parsed = new URL(rawUrl, typeof window !== 'undefined' ? window.location.origin : REDDIT_SCRAPE_FALLBACK_BASE);
+        if (!isRedditScrapePath(parsed.pathname)) return false;
+        if (trimUrlBase(parsed.origin) === trimUrlBase(REDDIT_SCRAPE_FALLBACK_BASE)) return false;
+        if (!response) return true;
+        return [404, 408, 425, 429, 500, 502, 503, 504].includes(Number(response.status));
+    } catch {
+        return false;
+    }
+};
 
 export async function canUseStore(name) {
     if (!hasStore(name)) return false;
@@ -81,18 +110,59 @@ export async function canUseStore(name) {
 }
 
 const fetchWithTimeout = async (url, options = {}, timeoutMs = 5000) => {
-    const controller = new AbortController();
     const proxyHeaders = await getProxyHeaders(options.headers || {});
-    const id = setTimeout(() => controller.abort(), timeoutMs);
+    const requestInit = { ...options, headers: proxyHeaders };
+
+    const performFetch = async (targetUrl) => {
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            const response = await fetch(targetUrl, { ...requestInit, signal: controller.signal });
+            clearTimeout(id);
+            return response;
+        } catch (err) {
+            clearTimeout(id);
+            throw err;
+        }
+    };
+
     try {
-        const response = await fetch(url, { ...options, headers: proxyHeaders, signal: controller.signal });
-        clearTimeout(id);
-        return response;
+        const response = await performFetch(url);
+        if (response.ok || !shouldRetryWithWorkerFallback(url, response)) {
+            return response;
+        }
+
+        console.warn(`[ProxyFallback] ${url} returned ${response.status}; retrying via worker fallback.`);
+        return await performFetch(buildWorkerFallbackUrl(url));
     } catch (err) {
-        clearTimeout(id);
-        throw err;
+        if (!shouldRetryWithWorkerFallback(url)) throw err;
+        console.warn(`[ProxyFallback] ${url} failed (${err.message}); retrying via worker fallback.`);
+        return await performFetch(buildWorkerFallbackUrl(url));
     }
 };
+
+export async function fetchProxyResponse(pathOrUrl, options = {}, timeoutMs = 10000) {
+    const raw = String(pathOrUrl || '').trim();
+    if (!raw) throw new Error('Missing proxy path');
+
+    const proxyUrl = await SettingsService.getProxyUrl();
+    const absoluteUrl = raw.startsWith('http://') || raw.startsWith('https://')
+        ? raw
+        : `${trimUrlBase(proxyUrl)}${raw.startsWith('/') ? raw : `/${raw}`}`;
+
+    return fetchWithTimeout(absoluteUrl, options, timeoutMs);
+}
+
+export async function fetchProxyJson(pathOrUrl, options = {}, timeoutMs = 10000) {
+    const response = await fetchProxyResponse(pathOrUrl, options, timeoutMs);
+    if (!response.ok) {
+        const error = new Error(`Proxy request failed (${response.status})`);
+        error.status = response.status;
+        error.response = response;
+        throw error;
+    }
+    return response.json();
+}
 
 const normalizeDriveFolderId = (rawValue = '') => {
     const value = String(rawValue || '').trim();
